@@ -2696,7 +2696,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         
-        if (currentWallet.coins < coupon.cost) {
+        if (currentWallet.coins < coupon.requiredCoins) {
             onError("Insufficient Coins")
             return
         }
@@ -2711,16 +2711,16 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 // Deduct coins safely using spendCoins which syncs with Room and Realtime Database
-                val purpose = "Redeemed ${coupon.title}"
-                val ok = spendCoins(coupon.cost, purpose)
+                val purpose = "Redeemed ${coupon.couponName}"
+                val ok = spendCoins(coupon.requiredCoins, purpose)
                 if (ok) {
                     val redemptionId = "red_" + System.currentTimeMillis() + "_" + (1000..9999).random()
                     val redemption = com.playwin.app.data.model.FirebaseRedemption(
                         id = redemptionId,
                         userId = userId,
-                        couponId = coupon.id,
-                        couponName = coupon.title,
-                        coinsSpent = coupon.cost,
+                        couponId = coupon.couponId,
+                        couponName = coupon.couponName,
+                        coinsSpent = coupon.requiredCoins,
                         status = "Pending",
                         timestamp = System.currentTimeMillis(),
                         couponCode = coupon.code,
@@ -2759,12 +2759,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        if (currentWallet.coins < coupon.cost) {
+        if (currentWallet.coins < coupon.requiredCoins) {
             onError("Insufficient Coins")
             return
         }
 
-        if (coupon.stock <= 0) {
+        if (coupon.remainingStock <= 0) {
             onError("This coupon is out of stock.")
             return
         }
@@ -2785,8 +2785,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     displayName = fullName,
                     email = email,
                     mobileNumber = mobileNumber,
-                    couponName = coupon.title,
-                    requiredCoins = coupon.cost,
+                    couponName = coupon.couponName,
+                    requiredCoins = coupon.requiredCoins,
                     giftCardOrRechargeNumber = rechargeNumber,
                     additionalNotes = additionalNotes,
                     status = "Pending",
@@ -2795,10 +2795,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
                 repository.submitCouponRedemptionTransaction(
                     redemption = redemption,
-                    couponId = coupon.id,
+                    couponId = coupon.couponId,
                     onSuccess = {
                         viewModelScope.launch {
-                            val newCoins = currentWallet.coins - coupon.cost
+                            val newCoins = currentWallet.coins - coupon.requiredCoins
                             val updatedWallet = currentWallet.copy(coins = newCoins)
                             repository.saveWalletLocally(updatedWallet)
                         }

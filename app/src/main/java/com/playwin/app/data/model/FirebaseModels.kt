@@ -14,18 +14,30 @@ data class FirebaseTask(
 
 @IgnoreExtraProperties
 data class FirebaseCoupon(
-    val id: String = "",
-    val title: String = "",
-    val cost: Int = 0,
+    val couponId: String = "",
+    val couponName: String = "",
+    val coinCost: Int = 0,
+    val requiredCoins: Int = 0,
+    val couponImage: String = "",
+    val enabled: Boolean = true,
+    val status: String = "In Stock",
+    val remainingStock: Int = 50,
+    val brand: String = "",
+    val featured: Boolean = false,
+    val category: String = "Shopping",
     val code: String = "",
     val description: String = "",
-    val category: String = "Shopping",
-    val availability: String = "In Stock",
-    val expiryDate: String = "",
-    val image: String = "",
-    val isEnabled: Boolean = true,
-    val stock: Int = 50
-)
+    val expiryDate: String = ""
+) {
+    // Backward-compatible computed properties for any existing code references
+    val id: String get() = couponId
+    val title: String get() = couponName
+    val cost: Int get() = if (requiredCoins > 0) requiredCoins else coinCost
+    val image: String get() = couponImage
+    val isEnabled: Boolean get() = enabled
+    val availability: String get() = status
+    val stock: Int get() = remainingStock
+}
 
 @IgnoreExtraProperties
 data class FirebaseRedemption(

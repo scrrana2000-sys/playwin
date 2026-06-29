@@ -57,104 +57,112 @@ class FirebaseDbManager {
                 if (!snapshot.exists() || snapshot.childrenCount == 0L) {
                     val initialCoupons = listOf(
                         FirebaseCoupon(
-                            id = "coupon_amazon",
-                            title = "Amazon Gift Card",
-                            cost = 100,
+                            couponId = "coupon_amazon",
+                            couponName = "Amazon Gift Card",
+                            coinCost = 100,
+                            requiredCoins = 100,
                             code = "AMZ-PW-100",
                             description = "Redeem for Amazon Pay Gift Card. Use for shopping, bills, and payments.",
-                            category = "Gift Cards",
-                            availability = "In Stock",
+                            category = "Shopping",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "🛍️",
-                            stock = 50
+                            couponImage = "🛍️",
+                            remainingStock = 50
                         ),
                         FirebaseCoupon(
-                            id = "coupon_flipkart",
-                            title = "Flipkart Gift Card",
-                            cost = 200,
+                            couponId = "coupon_flipkart",
+                            couponName = "Flipkart Gift Card",
+                            coinCost = 200,
+                            requiredCoins = 200,
                             code = "FK-PW-200",
                             description = "Redeem for Flipkart Gift Card. Shop from millions of items with free delivery options.",
-                            category = "Gift Cards",
-                            availability = "In Stock",
+                            category = "Shopping",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "🛒",
-                            stock = 40
+                            couponImage = "🛒",
+                            remainingStock = 40
                         ),
                         FirebaseCoupon(
-                            id = "coupon_google",
-                            title = "Google Play Gift Card",
-                            cost = 150,
+                            couponId = "coupon_google",
+                            couponName = "Google Play Gift Card",
+                            coinCost = 150,
+                            requiredCoins = 150,
                             code = "GP-PW-150",
                             description = "Get credits in Google Play Store. Buy premium apps, books, movies, or in-app items.",
-                            category = "Gift Cards",
-                            availability = "In Stock",
+                            category = "Shopping",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "🎮",
-                            stock = 30
+                            couponImage = "🎮",
+                            remainingStock = 30
                         ),
                         FirebaseCoupon(
-                            id = "coupon_jiohotstar",
-                            title = "JioHotstar",
-                            cost = 500,
+                            couponId = "coupon_jiohotstar",
+                            couponName = "JioHotstar",
+                            coinCost = 500,
+                            requiredCoins = 500,
                             code = "JH-PW-500",
                             description = "Enjoy premium movies, sports, and TV shows with JioHotstar subscription.",
-                            category = "Subscriptions",
-                            availability = "In Stock",
+                            category = "OTT",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "🎬",
-                            stock = 15
+                            couponImage = "🎬",
+                            remainingStock = 15
                         ),
                         FirebaseCoupon(
-                            id = "coupon_netflix",
-                            title = "Netflix",
-                            cost = 800,
+                            couponId = "coupon_netflix",
+                            couponName = "Netflix",
+                            coinCost = 800,
+                            requiredCoins = 800,
                             code = "NF-PW-800",
                             description = "Unlock Netflix Premium subscription for top-tier films and web series.",
-                            category = "Subscriptions",
-                            availability = "In Stock",
+                            category = "OTT",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "🍿",
-                            stock = 10
+                            couponImage = "🍿",
+                            remainingStock = 10
                         ),
                         FirebaseCoupon(
-                            id = "coupon_prime",
-                            title = "Amazon Prime",
-                            cost = 600,
+                            couponId = "coupon_prime",
+                            couponName = "Amazon Prime",
+                            coinCost = 600,
+                            requiredCoins = 600,
                             code = "AP-PW-600",
                             description = "Get free fast delivery, Prime Video, Prime Music, and exclusive deals.",
-                            category = "Subscriptions",
-                            availability = "In Stock",
+                            category = "OTT",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "👑",
-                            stock = 20
+                            couponImage = "👑",
+                            remainingStock = 20
                         ),
                         FirebaseCoupon(
-                            id = "coupon_sonyliv",
-                            title = "Sony LIV",
-                            cost = 400,
+                            couponId = "coupon_sonyliv",
+                            couponName = "Sony LIV",
+                            coinCost = 400,
+                            requiredCoins = 400,
                             code = "SL-PW-400",
                             description = "Watch exclusive sports events, original shows, and movies on Sony LIV.",
-                            category = "Subscriptions",
-                            availability = "In Stock",
+                            category = "OTT",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "📺",
-                            stock = 25
+                            couponImage = "📺",
+                            remainingStock = 25
                         ),
                         FirebaseCoupon(
-                            id = "coupon_zee5",
-                            title = "ZEE5",
-                            cost = 300,
+                            couponId = "coupon_zee5",
+                            couponName = "ZEE5",
+                            coinCost = 300,
+                            requiredCoins = 300,
                             code = "Z5-PW-300",
                             description = "Get access to unlimited blockbuster movies and exclusive web originals.",
-                            category = "Subscriptions",
-                            availability = "In Stock",
+                            category = "OTT",
+                            status = "In Stock",
                             expiryDate = "31 Dec 2026",
-                            image = "📱",
-                            stock = 35
+                            couponImage = "📱",
+                            remainingStock = 35
                         )
                     )
                     for (coupon in initialCoupons) {
-                        couponsRef.child(coupon.id).setValue(coupon)
+                        couponsRef.child(coupon.couponId).setValue(coupon)
                     }
                 }
             }
@@ -545,13 +553,152 @@ class FirebaseDbManager {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<FirebaseCoupon>()
+                val dbPath = try { couponsRef.path.toString() } catch (e: Exception) { "coupons" }
+                
+                android.util.Log.d("FirebaseDbManager", "observeCoupons: checking path '$dbPath'")
+                
+                if (!snapshot.exists()) {
+                    android.util.Log.w("FirebaseDbManager", "observeCoupons: Path '$dbPath' does NOT exist in Firebase.")
+                    trySend(emptyList())
+                    return
+                }
+                
                 for (child in snapshot.children) {
-                    child.getValue(FirebaseCoupon::class.java)?.let { list.add(it) }
+                    val childKey = child.key ?: "unknown_key"
+                    try {
+                        val couponIdVal = child.child("couponId").value ?: child.child("id").value
+                        val couponId = couponIdVal?.toString() ?: childKey
+                            
+                        val couponNameVal = child.child("couponName").value ?: child.child("title").value
+                        val couponName = couponNameVal?.toString() ?: ""
+                        
+                        val requiredCoinsVal = child.child("requiredCoins").value
+                        val coinCostVal = child.child("coinCost").value
+                        val costVal = child.child("cost").value
+                        val finalCoins = when {
+                            requiredCoinsVal != null -> when (requiredCoinsVal) {
+                                is Number -> requiredCoinsVal.toInt()
+                                is String -> requiredCoinsVal.toIntOrNull() ?: 0
+                                else -> requiredCoinsVal.toString().toIntOrNull() ?: 0
+                            }
+                            coinCostVal != null -> when (coinCostVal) {
+                                is Number -> coinCostVal.toInt()
+                                is String -> coinCostVal.toIntOrNull() ?: 0
+                                else -> coinCostVal.toString().toIntOrNull() ?: 0
+                            }
+                            costVal != null -> when (costVal) {
+                                is Number -> costVal.toInt()
+                                is String -> costVal.toIntOrNull() ?: 0
+                                else -> costVal.toString().toIntOrNull() ?: 0
+                            }
+                            else -> 0
+                        }
+                        
+                        val couponImageVal = child.child("couponImage").value ?: child.child("image").value
+                        val couponImage = couponImageVal?.toString() ?: ""
+                            
+                        val enabledVal = child.child("enabled").value
+                        val isEnabledVal = child.child("isEnabled").value
+                        val finalEnabled = when {
+                            enabledVal != null -> when (enabledVal) {
+                                is Boolean -> enabledVal
+                                is String -> enabledVal.toBoolean()
+                                is Number -> enabledVal.toInt() != 0
+                                else -> enabledVal.toString().toBoolean()
+                            }
+                            isEnabledVal != null -> when (isEnabledVal) {
+                                is Boolean -> isEnabledVal
+                                is String -> isEnabledVal.toBoolean()
+                                is Number -> isEnabledVal.toInt() != 0
+                                else -> isEnabledVal.toString().toBoolean()
+                            }
+                            else -> true
+                        }
+                        
+                        val statusVal = child.child("status").value ?: child.child("availability").value
+                        val status = statusVal?.toString() ?: "In Stock"
+                            
+                        val remainingStockVal = child.child("remainingStock").value
+                        val stockVal = child.child("stock").value
+                        val finalStock = when {
+                            remainingStockVal != null -> when (remainingStockVal) {
+                                is Number -> remainingStockVal.toInt()
+                                is String -> remainingStockVal.toIntOrNull() ?: 50
+                                else -> remainingStockVal.toString().toIntOrNull() ?: 50
+                            }
+                            stockVal != null -> when (stockVal) {
+                                is Number -> stockVal.toInt()
+                                is String -> stockVal.toIntOrNull() ?: 50
+                                else -> stockVal.toString().toIntOrNull() ?: 50
+                            }
+                            else -> 50
+                        }
+                        
+                        val brandVal = child.child("brand").value
+                        val brand = brandVal?.toString() ?: ""
+                        
+                        val featuredVal = child.child("featured").value
+                        val finalFeatured = when {
+                            featuredVal is Boolean -> featuredVal
+                            featuredVal is String -> featuredVal.toBoolean()
+                            featuredVal is Number -> featuredVal.toInt() != 0
+                            else -> featuredVal?.toString()?.toBoolean() ?: false
+                        }
+                        
+                        val categoryVal = child.child("category").value
+                        val category = categoryVal?.toString() ?: "Shopping"
+                        
+                        val codeVal = child.child("code").value
+                        val code = codeVal?.toString() ?: ""
+                        
+                        val descriptionVal = child.child("description").value
+                        val description = descriptionVal?.toString() ?: ""
+                        
+                        val expiryDateVal = child.child("expiryDate").value
+                        val expiryDate = when (expiryDateVal) {
+                            is Long -> {
+                                val sdf = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+                                sdf.format(java.util.Date(expiryDateVal))
+                            }
+                            is Number -> {
+                                val sdf = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+                                sdf.format(java.util.Date(expiryDateVal.toLong()))
+                            }
+                            else -> expiryDateVal?.toString() ?: ""
+                        }
+                        
+                        val coupon = FirebaseCoupon(
+                            couponId = couponId,
+                            couponName = couponName,
+                            coinCost = finalCoins,
+                            requiredCoins = finalCoins,
+                            couponImage = couponImage,
+                            enabled = finalEnabled,
+                            status = status,
+                            remainingStock = finalStock,
+                            brand = brand,
+                            featured = finalFeatured,
+                            category = category,
+                            code = code,
+                            description = description,
+                            expiryDate = expiryDate
+                        )
+                        list.add(coupon)
+                    } catch (e: Exception) {
+                        android.util.Log.e(
+                            "FirebaseDbManager",
+                            "CRITICAL BUG: DatabaseException inside onDataChange() at path: $dbPath, key: $childKey. Full Exception: ${e.message}",
+                            e
+                        )
+                    }
                 }
                 trySend(list)
             }
+
             override fun onCancelled(error: DatabaseError) {
-                close(error.toException())
+                val dbPath = try { couponsRef.path.toString() } catch (e: Exception) { "coupons" }
+                android.util.Log.e("FirebaseDbManager", "observeCoupons cancelled or failed. Path: $dbPath. Error: ${error.message}", error.toException())
+                trySend(emptyList())
             }
         }
         couponsRef.addValueEventListener(listener)
@@ -671,9 +818,9 @@ class FirebaseDbManager {
     }
 
     fun addFirebaseCoupon(coupon: FirebaseCoupon) {
-        val id = if (coupon.id.isEmpty()) couponsRef.push().key ?: "" else coupon.id
-        val finalCoupon = coupon.copy(id = id)
-        couponsRef.child(finalCoupon.id).setValue(finalCoupon)
+        val id = if (coupon.couponId.isEmpty()) couponsRef.push().key ?: "" else coupon.couponId
+        val finalCoupon = coupon.copy(couponId = id)
+        couponsRef.child(finalCoupon.couponId).setValue(finalCoupon)
     }
 
     fun deleteFirebaseCoupon(couponId: String) {
@@ -1150,7 +1297,12 @@ class FirebaseDbManager {
                 }
 
                 // 2. Check coupon stock
-                val couponStockVal = currentData.child("coupons").child(couponId).child("stock").getValue(Int::class.java) ?: 0
+                val remainingStockNode = currentData.child("coupons").child(couponId).child("remainingStock")
+                val stockNode = currentData.child("coupons").child(couponId).child("stock")
+                val remainingStockVal = remainingStockNode.getValue(Int::class.java)
+                val stockVal = stockNode.getValue(Int::class.java)
+                val couponStockVal = remainingStockVal ?: stockVal ?: 0
+                
                 if (couponStockVal <= 0) {
                     return com.google.firebase.database.Transaction.abort()
                 }
@@ -1159,7 +1311,11 @@ class FirebaseDbManager {
                 currentData.child("users").child(userId).child("coins").value = userCoinsVal - requiredCoins
 
                 // 4. Reduce coupon stock by 1
-                currentData.child("coupons").child(couponId).child("stock").value = couponStockVal - 1
+                if (remainingStockVal != null) {
+                    remainingStockNode.value = couponStockVal - 1
+                } else {
+                    stockNode.value = couponStockVal - 1
+                }
 
                 // 5. Create redemption request under couponRedemptions/{requestId}
                 val serverTime = System.currentTimeMillis()

@@ -4888,7 +4888,7 @@ fun StoreTabContent(
     onCouponClick: (FirebaseCoupon) -> Unit,
     onRedeemClick: (FirebaseCoupon) -> Unit
 ) {
-    val categories = listOf("All", "Shopping", "Recharge", "Gift Cards", "Special Offers")
+    val categories = listOf("All", "Shopping", "OTT", "Recharge", "Gift Cards", "Special Offers")
 
     // Filter and search logic
     val filteredCoupons = allCoupons.filter { coupon ->
@@ -6478,7 +6478,7 @@ fun AdminCouponFormDialog(
     var image by remember { mutableStateOf(couponToEdit?.image ?: "🎟️") }
     var isEnabled by remember { mutableStateOf(couponToEdit?.isEnabled ?: true) }
 
-    val categories = listOf("Shopping", "Recharge", "Gift Cards", "Special Offers")
+    val categories = listOf("Shopping", "OTT", "Recharge", "Gift Cards", "Special Offers")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -6593,16 +6593,18 @@ fun AdminCouponFormDialog(
                     val finalId = id.ifEmpty { "coupon_" + System.currentTimeMillis() }
                     val finalCost = costText.toIntOrNull() ?: 0
                     val coupon = FirebaseCoupon(
-                        id = finalId,
-                        title = title,
-                        cost = finalCost,
+                        couponId = finalId,
+                        couponName = title,
+                        coinCost = finalCost,
+                        requiredCoins = finalCost,
                         code = code,
                         description = description,
                         category = category,
-                        availability = availability,
+                        status = availability,
                         expiryDate = expiryDate,
-                        image = image,
-                        isEnabled = isEnabled
+                        couponImage = image,
+                        enabled = isEnabled,
+                        remainingStock = 50
                     )
                     onSave(coupon)
                 },
