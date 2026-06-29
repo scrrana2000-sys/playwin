@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "228349425977",
+    "project_id": "play-win-e01bc",
+    "storage_bucket": "play-win-e01bc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:228349425977:android:aab1297a8b24b543fc10e8",
+        "android_client_info": {
+          "package_name": "com.playwin.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYEXAmQ9jFGRlIqPcQ0PTh8R0UMkW_r0U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

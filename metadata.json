@@ -1,0 +1,8 @@
+{
+  "name": "Play Win",
+  "description": "A modern and vibrant rewarding application featuring gamified challenges, quizzes, puzzles, rewarded simulations, spins, and scratch cards with a seamless coin-wallet economy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
