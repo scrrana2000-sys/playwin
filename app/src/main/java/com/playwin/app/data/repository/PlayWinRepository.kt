@@ -45,6 +45,10 @@ class PlayWinRepository(private val dao: PlayWinDao) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
+        android.util.Log.d("PlayWin_Repository", "Entering submitCouponRedemptionTransaction:")
+        android.util.Log.d("PlayWin_Repository", "  couponId parameter (coupon.id / coupon.couponId): $couponId")
+        android.util.Log.d("PlayWin_Repository", "  Firebase node key: $couponId")
+        android.util.Log.d("PlayWin_Repository", "  Firebase path used for lookup: /coupons/$couponId")
         firebaseDbManager.submitCouponRedemptionTransaction(redemption, couponId, onSuccess, onError)
     }
 

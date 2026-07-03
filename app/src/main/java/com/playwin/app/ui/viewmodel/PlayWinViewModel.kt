@@ -2751,6 +2751,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
+        android.util.Log.d("PlayWin_ViewModel", "Entering redeemCouponWithForm:")
+        android.util.Log.d("PlayWin_ViewModel", "  coupon.id: ${coupon.id}")
+        android.util.Log.d("PlayWin_ViewModel", "  coupon.couponId: ${coupon.couponId}")
+        android.util.Log.d("PlayWin_ViewModel", "  Firebase node key: ${coupon.couponId}")
+        android.util.Log.d("PlayWin_ViewModel", "  Firebase path used for lookup: /coupons/${coupon.id}")
+
         val currentWallet = walletState.value
         val userId = currentWallet.userId
 

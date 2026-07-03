@@ -4693,6 +4693,12 @@ fun CouponsScreen(
             userEmail = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email ?: "",
             onDismiss = { showRedemptionFormCoupon = null },
             onSubmit = { fullName, mobileNumber, email, rechargeNumber, additionalNotes ->
+                android.util.Log.d("PlayWin_StoreScreen", "Redemption Dialog Submitted:")
+                android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
+                android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
+                android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
+                android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
+
                 viewModel.redeemCouponWithForm(
                     coupon = coupon,
                     fullName = fullName,
@@ -4852,8 +4858,20 @@ fun CouponsScreen(
                     onSearchQueryChange = { couponSearchQuery = it },
                     selectedCategory = selectedCategory,
                     onCategoryChange = { selectedCategory = it },
-                    onCouponClick = { selectedCouponDetails = it },
+                    onCouponClick = { coupon ->
+                        android.util.Log.d("PlayWin_StoreScreen", "Coupon Clicked (onCouponClick):")
+                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
+                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
+                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
+                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
+                        selectedCouponDetails = coupon
+                    },
                     onRedeemClick = { coupon ->
+                        android.util.Log.d("PlayWin_StoreScreen", "Redeem Clicked (onRedeemClick):")
+                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
+                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
+                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
+                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
                         if (wallet.coins < coupon.cost) {
                             coroutineScope.launch {
                                 snackbarHostState.showSnackbar("Insufficient Coins")

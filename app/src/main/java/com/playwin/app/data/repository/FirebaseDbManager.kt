@@ -567,7 +567,10 @@ class FirebaseDbManager {
                     val childKey = child.key ?: "unknown_key"
                     try {
                         val couponIdVal = child.child("couponId").value ?: child.child("id").value
-                        val couponId = couponIdVal?.toString() ?: childKey
+                        var couponId = couponIdVal?.toString() ?: ""
+                        if (couponId.isBlank()) {
+                            couponId = childKey
+                        }
                             
                         val couponNameVal = child.child("couponName").value ?: child.child("title").value
                         val couponName = couponNameVal?.toString() ?: ""
@@ -1282,73 +1285,276 @@ class FirebaseDbManager {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        val rootRef = database.reference
-        rootRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+        var failureReason: String? = null
+
+        android.util.Log.d("FirebaseDbManager", "BEFORE TRANSACTION LOG:")
+        android.util.Log.d("FirebaseDbManager", "Coupon ID = $couponId")
+        android.util.Log.d("FirebaseDbManager", "Coupon Name = ${redemption.couponName}")
+        android.util.Log.d("FirebaseDbManager", "Database Path = /coupons/$couponId")
+
+        if (couponId.trim().isEmpty()) {
+            onError("INVALID_COUPON_ID")
+            return
+        }
+
+        val couponRef = database.getReference("coupons").child(couponId)
+        couponRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
             override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                val userId = redemption.userUid
-                val requestId = redemption.requestId
-                val couponName = redemption.couponName
-                val requiredCoins = redemption.requiredCoins
+                // 0. Handle initial local cache null value safely.
+                if (currentData.value == null) {
+                    android.util.Log.d("FirebaseDbManager", "Initial local transaction run is null. Proceeding to force server-sync retry...")
+                    return com.google.firebase.database.Transaction.success(currentData)
+                }
 
-                // 1. Check user coins
-                val userCoinsVal = currentData.child("users").child(userId).child("coins").getValue(Int::class.java) ?: 0
-                if (userCoinsVal < requiredCoins) {
+                // Since we run on /coupons/{couponId}, currentData IS the coupon node itself.
+                val remainingStockNode = currentData.child("remainingStock")
+                val stockNode = currentData.child("stock")
+                val remainingStockRaw = remainingStockNode.value
+                val stockRaw = stockNode.value
+
+                // Logging details
+                android.util.Log.d("FirebaseDbManager", "COUPON TRANSACTION ATTEMPT DETAILS:")
+                android.util.Log.d("FirebaseDbManager", "couponId: $couponId")
+                android.util.Log.d("FirebaseDbManager", "coupon path: /coupons/$couponId")
+                android.util.Log.d("FirebaseDbManager", "remainingStock: $remainingStockRaw")
+                android.util.Log.d("FirebaseDbManager", "stock: $stockRaw")
+
+                // Check if coupon node has fields to ensure it actually exists (since it's a map)
+                if (currentData.value !is Map<*, *>) {
+                    failureReason = "COUPON_NOT_FOUND"
+                    android.util.Log.e("FirebaseDbManager", "TRANSACTION ABORTED: COUPON_NOT_FOUND")
                     return com.google.firebase.database.Transaction.abort()
                 }
 
-                // 2. Check coupon stock
-                val remainingStockNode = currentData.child("coupons").child(couponId).child("remainingStock")
-                val stockNode = currentData.child("coupons").child(couponId).child("stock")
-                val remainingStockVal = remainingStockNode.getValue(Int::class.java)
-                val stockVal = stockNode.getValue(Int::class.java)
-                val couponStockVal = remainingStockVal ?: stockVal ?: 0
-                
+                // Check remainingStock == null and stock == null
+                if (remainingStockRaw == null && stockRaw == null) {
+                    failureReason = "STOCK_FIELD_MISSING"
+                    android.util.Log.e("FirebaseDbManager", "TRANSACTION ABORTED: STOCK_FIELD_MISSING")
+                    return com.google.firebase.database.Transaction.abort()
+                }
+
+                val couponStockVal = when {
+                    remainingStockRaw is Number -> remainingStockRaw.toInt()
+                    remainingStockRaw is String -> remainingStockRaw.toIntOrNull() ?: 50
+                    stockRaw is Number -> stockRaw.toInt()
+                    stockRaw is String -> stockRaw.toIntOrNull() ?: 50
+                    else -> 0
+                }
+
                 if (couponStockVal <= 0) {
+                    failureReason = "OUT_OF_STOCK"
+                    android.util.Log.e("FirebaseDbManager", "TRANSACTION ABORTED: OUT_OF_STOCK")
                     return com.google.firebase.database.Transaction.abort()
                 }
 
-                // 3. Deduct coins from user
-                currentData.child("users").child(userId).child("coins").value = userCoinsVal - requiredCoins
-
-                // 4. Reduce coupon stock by 1
-                if (remainingStockVal != null) {
+                // Reduce stock by 1
+                if (remainingStockRaw != null) {
                     remainingStockNode.value = couponStockVal - 1
-                } else {
+                } else if (stockRaw != null) {
                     stockNode.value = couponStockVal - 1
+                } else {
+                    remainingStockNode.value = couponStockVal - 1
                 }
 
-                // 5. Create redemption request under couponRedemptions/{requestId}
-                val serverTime = System.currentTimeMillis()
-                val redemptionMap = mapOf(
-                    "requestId" to requestId,
-                    "userUid" to userId,
-                    "displayName" to redemption.displayName,
-                    "email" to redemption.email,
-                    "mobileNumber" to redemption.mobileNumber,
-                    "couponName" to couponName,
-                    "requiredCoins" to requiredCoins,
-                    "giftCardOrRechargeNumber" to redemption.giftCardOrRechargeNumber,
-                    "additionalNotes" to redemption.additionalNotes,
-                    "status" to "Pending",
-                    "createdAt" to serverTime
-                )
-                currentData.child("couponRedemptions").child(requestId).value = redemptionMap
+                // Update redeemedCount
+                val redeemedCountNode = currentData.child("redeemedCount")
+                val redeemedCountRaw = redeemedCountNode.value
+                val redeemedCountVal = when (redeemedCountRaw) {
+                    is Number -> redeemedCountRaw.toInt()
+                    is String -> redeemedCountRaw.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                redeemedCountNode.value = redeemedCountVal + 1
 
-                // 6. Create legacy / standard redemption history under redemptions/{userId}/{requestId}
-                val legacyRedemptionMap = mapOf(
-                    "id" to requestId,
-                    "userId" to userId,
-                    "couponId" to couponId,
-                    "couponName" to couponName,
-                    "coinsSpent" to requiredCoins,
-                    "status" to "Pending",
-                    "timestamp" to serverTime,
-                    "couponCode" to "Pending Approval",
-                    "expiryDate" to "N/A"
-                )
-                currentData.child("redemptions").child(userId).child(requestId).value = legacyRedemptionMap
+                return com.google.firebase.database.Transaction.success(currentData)
+            }
 
-                // 7. Create transaction history under transactions/{userId}/{txId}
+            override fun onComplete(
+                error: com.google.firebase.database.DatabaseError?,
+                committed: Boolean,
+                currentDataSnapshot: com.google.firebase.database.DataSnapshot?
+            ) {
+                if (error != null) {
+                    onError(error.message)
+                    return
+                }
+                if (!committed) {
+                    onError(failureReason ?: "TRANSACTION_ABORTED")
+                    return
+                }
+
+                if (currentDataSnapshot == null || currentDataSnapshot.value == null) {
+                    onError("COUPON_NOT_FOUND")
+                    return
+                }
+
+                android.util.Log.d("FirebaseDbManager", "Coupon stock updated successfully. Moving to deduct user coins...")
+                deductUserCoins(redemption, couponId, onSuccess, onError)
+            }
+        })
+    }
+
+    private fun rollbackCouponTransaction(couponId: String, onRollbackComplete: () -> Unit) {
+        val couponRef = database.getReference("coupons").child(couponId)
+        couponRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+            override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                if (currentData.value == null) {
+                    return com.google.firebase.database.Transaction.success(currentData)
+                }
+                val remainingStockNode = currentData.child("remainingStock")
+                val stockNode = currentData.child("stock")
+                val remainingStockRaw = remainingStockNode.value
+                val stockRaw = stockNode.value
+                
+                val couponStockVal = when {
+                    remainingStockRaw is Number -> remainingStockRaw.toInt()
+                    remainingStockRaw is String -> remainingStockRaw.toIntOrNull() ?: 50
+                    stockRaw is Number -> stockRaw.toInt()
+                    stockRaw is String -> stockRaw.toIntOrNull() ?: 50
+                    else -> 0
+                }
+
+                if (remainingStockRaw != null) {
+                    remainingStockNode.value = couponStockVal + 1
+                } else if (stockRaw != null) {
+                    stockNode.value = couponStockVal + 1
+                } else {
+                    remainingStockNode.value = couponStockVal + 1
+                }
+
+                val redeemedCountNode = currentData.child("redeemedCount")
+                val redeemedCountRaw = redeemedCountNode.value
+                val redeemedCountVal = when (redeemedCountRaw) {
+                    is Number -> redeemedCountRaw.toInt()
+                    is String -> redeemedCountRaw.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                if (redeemedCountVal > 0) {
+                    redeemedCountNode.value = redeemedCountVal - 1
+                }
+
+                return com.google.firebase.database.Transaction.success(currentData)
+            }
+
+            override fun onComplete(
+                error: com.google.firebase.database.DatabaseError?,
+                committed: Boolean,
+                currentData: com.google.firebase.database.DataSnapshot?
+            ) {
+                android.util.Log.d("FirebaseDbManager", "Rollback coupon stock completed (success=$committed)")
+                onRollbackComplete()
+            }
+        })
+    }
+
+    private fun deductUserCoins(
+        redemption: com.playwin.app.data.model.FirebaseCouponRedemption,
+        couponId: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val userId = redemption.userUid
+        val requiredCoins = redemption.requiredCoins
+        var userCoinsBefore = 0
+        var userCoinsAfter = 0
+
+        var userFailureReason: String? = null
+        val userRef = database.getReference("users").child(userId)
+        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+            override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                if (currentData.value == null) {
+                    return com.google.firebase.database.Transaction.success(currentData)
+                }
+
+                val coinsRaw = currentData.child("coins").value
+                val coinsVal = when (coinsRaw) {
+                    is Number -> coinsRaw.toInt()
+                    is String -> coinsRaw.toIntOrNull() ?: 0
+                    else -> 0
+                }
+
+                if (coinsVal < requiredCoins) {
+                    userFailureReason = "INSUFFICIENT_COINS"
+                    return com.google.firebase.database.Transaction.abort()
+                }
+
+                userCoinsBefore = coinsVal
+                userCoinsAfter = coinsVal - requiredCoins
+                currentData.child("coins").value = userCoinsAfter
+
+                return com.google.firebase.database.Transaction.success(currentData)
+            }
+
+            override fun onComplete(
+                error: com.google.firebase.database.DatabaseError?,
+                committed: Boolean,
+                currentDataSnapshot: com.google.firebase.database.DataSnapshot?
+            ) {
+                if (error != null || !committed || currentDataSnapshot == null || currentDataSnapshot.value == null) {
+                    // If coin deduction failed, roll back the coupon stock
+                    rollbackCouponTransaction(couponId) {
+                        onError(error?.message ?: userFailureReason ?: "INSUFFICIENT_COINS")
+                    }
+                    return
+                }
+
+                // Coin deduction succeeded! Proceed to create records outside transaction
+                createRedemptionRecords(redemption, couponId, userCoinsBefore, userCoinsAfter, onSuccess, onError)
+            }
+        })
+    }
+
+    private fun createRedemptionRecords(
+        redemption: com.playwin.app.data.model.FirebaseCouponRedemption,
+        couponId: String,
+        coinsBefore: Int,
+        coinsAfter: Int,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val userId = redemption.userUid
+        val requestId = redemption.requestId
+        val couponName = redemption.couponName
+        val requiredCoins = redemption.requiredCoins
+        val serverTime = System.currentTimeMillis()
+
+        // 2. Create the redemption record using updateChildren() outside the transaction.
+        // Under /couponRedemptions/{requestId}
+        val redemptionMap = mapOf(
+            "requestId" to requestId,
+            "userUid" to userId,
+            "displayName" to redemption.displayName,
+            "email" to redemption.email,
+            "mobileNumber" to redemption.mobileNumber,
+            "couponName" to couponName,
+            "requiredCoins" to requiredCoins,
+            "giftCardOrRechargeNumber" to redemption.giftCardOrRechargeNumber,
+            "additionalNotes" to redemption.additionalNotes,
+            "status" to "Pending",
+            "createdAt" to serverTime
+        )
+
+        // And legacy redemption record under /redemptions/{userId}/{requestId}
+        val legacyRedemptionMap = mapOf(
+            "id" to requestId,
+            "userId" to userId,
+            "couponId" to couponId,
+            "couponName" to couponName,
+            "coinsSpent" to requiredCoins,
+            "status" to "Pending",
+            "timestamp" to serverTime,
+            "couponCode" to "Pending Approval",
+            "expiryDate" to "N/A"
+        )
+
+        val updates = mapOf(
+            "couponRedemptions/$requestId" to redemptionMap,
+            "redemptions/$userId/$requestId" to legacyRedemptionMap
+        )
+
+        database.reference.updateChildren(updates)
+            .addOnSuccessListener {
+                // 3. Create transaction history outside the transaction.
                 val txId = "tx_red_" + serverTime + "_" + (1000..9999).random()
                 val txMap = mapOf(
                     "id" to txId,
@@ -1360,25 +1566,85 @@ class FirebaseDbManager {
                     "timestamp" to serverTime,
                     "amount" to -requiredCoins,
                     "source" to "Coupon Store",
-                    "coinsBefore" to userCoinsVal,
-                    "coinsAfter" to (userCoinsVal - requiredCoins)
+                    "coinsBefore" to coinsBefore,
+                    "coinsAfter" to coinsAfter
                 )
-                currentData.child("transactions").child(userId).child(txId).value = txMap
+                database.reference.child("transactions").child(userId).child(txId).setValue(txMap)
+                    .addOnSuccessListener {
+                        // 4. Update walletSummary outside the transaction.
+                        val walletSummaryMap = mapOf(
+                            "totalCoins" to coinsAfter,
+                            "lastUpdated" to serverTime
+                        )
+                        database.reference.child("walletSummary").child(userId).setValue(walletSummaryMap)
+                            .addOnSuccessListener {
+                                // 5. Create admin logs outside the transaction.
+                                val logId = "log_" + serverTime + "_" + (1000..9999).random()
+                                val adminLogMap = mapOf(
+                                    "id" to logId,
+                                    "action" to "COUPON_REDEMPTION_SUBMITTED",
+                                    "message" to "User $userId submitted redemption request for $couponName (Required: $requiredCoins coins)",
+                                    "timestamp" to serverTime,
+                                    "userId" to userId,
+                                    "couponId" to couponId
+                                )
+                                database.reference.child("adminLogs").child(logId).setValue(adminLogMap)
+                                    .addOnSuccessListener {
+                                        onSuccess()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        // Even if admin log fails, redemption succeeded, so we can call onSuccess or onError
+                                        android.util.Log.e("FirebaseDbManager", "Failed to write admin log", e)
+                                        onSuccess()
+                                    }
+                            }
+                            .addOnFailureListener { e ->
+                                android.util.Log.e("FirebaseDbManager", "Failed to update wallet summary", e)
+                                // We can still proceed as the core transaction and records are updated
+                                onSuccess()
+                            }
+                    }
+                    .addOnFailureListener { e ->
+                        onError("Failed to create transaction history: ${e.message}")
+                    }
+            }
+            .addOnFailureListener { e ->
+                // Refund and rollback if creating redemption records fails
+                refundCoinsAndRollbackCoupon(userId, couponId, requiredCoins) {
+                    onError("Failed to create redemption records: ${e.message}")
+                }
+            }
+    }
 
+    private fun refundCoinsAndRollbackCoupon(
+        userId: String,
+        couponId: String,
+        requiredCoins: Int,
+        onRollbackComplete: () -> Unit
+    ) {
+        val userRef = database.getReference("users").child(userId)
+        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+            override fun doTransaction(currentData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                if (currentData.value == null) {
+                    return com.google.firebase.database.Transaction.success(currentData)
+                }
+                val coinsRaw = currentData.child("coins").value
+                val coinsVal = when (coinsRaw) {
+                    is Number -> coinsRaw.toInt()
+                    is String -> coinsRaw.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                currentData.child("coins").value = coinsVal + requiredCoins
                 return com.google.firebase.database.Transaction.success(currentData)
             }
 
             override fun onComplete(
                 error: com.google.firebase.database.DatabaseError?,
                 committed: Boolean,
-                currentData: com.google.firebase.database.DataSnapshot?
+                currentDataSnapshot: com.google.firebase.database.DataSnapshot?
             ) {
-                if (error != null) {
-                    onError(error.message)
-                } else if (!committed) {
-                    onError("Transaction aborted. Either Insufficient Coins or Coupon Out of Stock.")
-                } else {
-                    onSuccess()
+                rollbackCouponTransaction(couponId) {
+                    onRollbackComplete()
                 }
             }
         })
