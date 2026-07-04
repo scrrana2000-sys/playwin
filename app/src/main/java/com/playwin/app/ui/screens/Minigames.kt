@@ -1471,13 +1471,31 @@ fun TriviaQuizScreen(
     quizSetId: String,
     onBack: () -> Unit
 ) {
+    val quizzes by viewModel.quizzesState.collectAsStateWithLifecycle()
+    val currentQuiz = remember(quizzes, quizSetId) { quizzes.find { it.id == quizSetId } }
+
+    val timerLimit = currentQuiz?.timerSeconds ?: 10
+    val timerLimitMs = timerLimit * 1000L
+    val rewardCoinsPerCorrect = currentQuiz?.rewardCoins ?: 50
+    val completionBonus = currentQuiz?.completionBonus ?: 50
+
     var quizQuestions by remember { mutableStateOf<List<com.playwin.app.data.model.Quiz>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(categoryId) {
-        viewModel.generateQuizForCategory(categoryId) { questions ->
-            quizQuestions = questions
-            isLoading = false
+    LaunchedEffect(quizzes, quizSetId) {
+        if (quizSetId.startsWith("set_")) {
+            viewModel.generateQuizForCategory(categoryId) { questions ->
+                quizQuestions = questions
+                isLoading = false
+            }
+        } else {
+            val matchingQuiz = quizzes.find { it.id == quizSetId }
+            if (matchingQuiz != null) {
+                quizQuestions = matchingQuiz.questions
+                isLoading = false
+            } else if (quizzes.isNotEmpty()) {
+                isLoading = false
+            }
         }
     }
 
@@ -1533,7 +1551,7 @@ fun TriviaQuizScreen(
     var adSecondsLeft by remember { mutableStateOf(3) }
 
     // Timer State
-    var timeLeftSeconds by remember { mutableStateOf(10) }
+    var timeLeftSeconds by remember(timerLimit) { mutableStateOf(timerLimit) }
     var timeLeftFraction by remember { mutableStateOf(1.0f) }
     var startTime by remember { mutableStateOf(System.currentTimeMillis()) }
     var isTimerActive by remember { mutableStateOf(true) }
@@ -1551,11 +1569,11 @@ fun TriviaQuizScreen(
     LaunchedEffect(currentQuestionIdx, isTimerActive) {
         if (!isTimerActive || isQuizFinished) return@LaunchedEffect
         startTime = System.currentTimeMillis()
-        var lastTickedSecond = 10
+        var lastTickedSecond = timerLimit
         
         while (true) {
             val elapsed = System.currentTimeMillis() - startTime
-            val remainingMs = 10000L - elapsed
+            val remainingMs = timerLimitMs - elapsed
             
             if (remainingMs <= 0) {
                 timeLeftSeconds = 0
@@ -1567,7 +1585,7 @@ fun TriviaQuizScreen(
                 
                 // Deduct 1 lifeline
                 lifelines = (lifelines - 1).coerceAtLeast(0)
-                viewModel.trackQuizStats(timeOut = true, lifelineLostByTimeout = true, answerTimeMs = 10000L)
+                viewModel.trackQuizStats(timeOut = true, lifelineLostByTimeout = true, answerTimeMs = timerLimitMs)
                 
                 // Track this as answered (or missed) question
                 if (!answeredQuestionIds.contains(quiz.id)) {
@@ -1585,7 +1603,7 @@ fun TriviaQuizScreen(
                         selectedAnswerIdx = null
                         isAnswered = false
                         resultMessage = ""
-                        timeLeftSeconds = 10
+                        timeLeftSeconds = timerLimit
                         timeLeftFraction = 1.0f
                         isTimerActive = true
                     } else {
@@ -1597,9 +1615,9 @@ fun TriviaQuizScreen(
                 break
             } else {
                 val sec = (remainingMs / 1000L).toInt() + 1
-                val coercedSec = sec.coerceIn(0, 10)
+                val coercedSec = sec.coerceIn(0, timerLimit)
                 timeLeftSeconds = coercedSec
-                timeLeftFraction = remainingMs.toFloat() / 10000.0f
+                timeLeftFraction = remainingMs.toFloat() / timerLimitMs.toFloat()
                 
                 if (coercedSec in 1..3 && coercedSec != lastTickedSecond) {
                     // Play Tick sound during last 3 seconds
@@ -1699,7 +1717,7 @@ fun TriviaQuizScreen(
             isAnswered = false
             selectedAnswerIdx = null
             resultMessage = ""
-            timeLeftSeconds = 10
+            timeLeftSeconds = timerLimit
             timeLeftFraction = 1.0f
             isTimerActive = true
         }
@@ -1859,7 +1877,7 @@ fun TriviaQuizScreen(
 
         // Progress indicators
         Text(
-            text = "Question ${currentQuestionIdx + 1} of 10",
+            text = "Question ${currentQuestionIdx + 1} of ${quizQuestions.size}",
             color = ElectricPink,
             fontWeight = FontWeight.Bold
         )
@@ -2002,12 +2020,12 @@ fun TriviaQuizScreen(
             Button(
                 onClick = {
                     if (lifelines > 0) {
-                        if (currentQuestionIdx < 9) {
+                        if (currentQuestionIdx < quizQuestions.size - 1) {
                             currentQuestionIdx++
                             selectedAnswerIdx = null
                             isAnswered = false
                             resultMessage = ""
-                            timeLeftSeconds = 10
+                            timeLeftSeconds = timerLimit
                             timeLeftFraction = 1.0f
                             isTimerActive = true
                         } else {
@@ -2026,7 +2044,7 @@ fun TriviaQuizScreen(
             ) {
                 Text(
                     text = if (lifelines > 0) {
-                        if (currentQuestionIdx < 9) "Next Question" else "Finish Quiz"
+                        if (currentQuestionIdx < quizQuestions.size - 1) "Next Question" else "Finish Quiz"
                     } else {
                         "No Lifelines Remaining"
                     },

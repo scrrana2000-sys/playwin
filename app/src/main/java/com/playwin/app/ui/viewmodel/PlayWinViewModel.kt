@@ -68,9 +68,11 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var couponRedemptionsJob: kotlinx.coroutines.Job? = null
     private var firebaseQuizProgressJob: kotlinx.coroutines.Job? = null
     private var referralsHistoryJob: kotlinx.coroutines.Job? = null
+    private var quizzesJob: kotlinx.coroutines.Job? = null
 
     val quizProgressState = MutableStateFlow<com.playwin.app.data.model.FirebaseQuizProgress?>(null)
     val referralHistoryState = MutableStateFlow<List<FirebaseReferralRecord>>(emptyList())
+    val quizzesState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseQuiz>>(emptyList())
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -1136,18 +1138,33 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun completeQuiz(category: String, quizSetId: String, score: Int, answeredQuestionIds: List<String>, onComplete: (Int) -> Unit) {
+    fun completeQuiz(
+        category: String,
+        quizSetId: String,
+        score: Int,
+        answeredQuestionIds: List<String>,
+        totalQuestions: Int = 10,
+        rewardCoinsPerCorrect: Int = 50,
+        completionBonus: Int = 50,
+        onComplete: (Int) -> Unit
+    ) {
         val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: return
-        val coinsPerCorrect = score * 50
-        val perfectBonus = if (score == 10) 50 else 0
-        val totalReward = coinsPerCorrect + perfectBonus
+        
+        val progress = quizProgressState.value ?: com.playwin.app.data.model.FirebaseQuizProgress()
+        val isAlreadyCompleted = progress.completedQuizIds.contains(quizSetId)
+
+        val totalReward = if (isAlreadyCompleted) {
+            0
+        } else {
+            (score * rewardCoinsPerCorrect) + (if (score == totalQuestions) completionBonus else 0)
+        }
 
         executeRewardTransaction(
             userId = currentUserId,
             amount = totalReward,
             type = "quiz_reward",
-            source = "Quiz Completed: $category ($score/10)",
-            extraCheck = { mutableData ->
+            source = "Quiz Completed: $category ($score/$totalQuestions)",
+            extraCheck = if (isAlreadyCompleted) null else { mutableData ->
                 val progressNode = mutableData.child("quizProgress")
                 val completedQuizIds = progressNode.child("completedQuizIds").children.mapNotNull { it.getValue(String::class.java) }
                 if (completedQuizIds.contains(quizSetId)) {
@@ -2626,6 +2643,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
+        quizzesJob = viewModelScope.launch {
+            repository.getFirebaseQuizzesFlow().collect { list ->
+                quizzesState.value = list
+            }
+        }
+
 
 
         referralsHistoryJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -2677,6 +2700,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         firebaseQuizProgressJob = null
         referralsHistoryJob?.cancel()
         referralsHistoryJob = null
+        quizzesJob?.cancel()
+        quizzesJob = null
         quizProgressState.value = null
         referralHistoryState.value = emptyList()
         currentUserState.value = null

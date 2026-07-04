@@ -198,4 +198,22 @@ data class FirebaseReferralRecord(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@IgnoreExtraProperties
+data class FirebaseQuiz(
+    val id: String = "",
+    val title: String = "",
+    val category: String = "",
+    val description: String = "",
+    val difficulty: String = "Medium",
+    val rewardCoins: Int = 0,
+    val completionBonus: Int = 0,
+    val timerSeconds: Int = 30,
+    val icon: String = "",
+    val published: Boolean = false,
+    val active: Boolean = false,
+    val status: String = "",
+    val allowReview: Boolean = true,
+    val questions: List<Quiz> = emptyList()
+)
+
 

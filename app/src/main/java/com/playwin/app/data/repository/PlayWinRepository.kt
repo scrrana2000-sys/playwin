@@ -154,4 +154,8 @@ class PlayWinRepository(private val dao: PlayWinDao) {
     ) {
         firebaseDbManager.submitWithdrawRequest(uid, userName, email, upiId, amount, coinsSpent, onComplete)
     }
+
+    fun getFirebaseQuizzesFlow(): Flow<List<com.playwin.app.data.model.FirebaseQuiz>> {
+        return firebaseDbManager.observeQuizzes()
+    }
 }

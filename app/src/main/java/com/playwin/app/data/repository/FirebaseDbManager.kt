@@ -1657,5 +1657,112 @@ class FirebaseDbManager {
             database.getReference("redemptions").child(userUid).child(requestId).child("status").setValue(status)
         }
     }
+
+    fun observeQuizzes(): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseQuiz>> = callbackFlow {
+        val ref = database.getReference("quizzes")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<com.playwin.app.data.model.FirebaseQuiz>()
+                if (!snapshot.exists()) {
+                    trySend(emptyList())
+                    return
+                }
+                for (child in snapshot.children) {
+                    try {
+                        val idVal = child.child("id").value ?: child.child("quizId").value ?: child.key ?: ""
+                        val id = idVal.toString()
+                        if (id.isEmpty()) continue
+
+                        val title = (child.child("title").value ?: child.child("quizTitle").value ?: child.child("name").value ?: "").toString()
+                        val category = (child.child("category").value ?: child.child("categoryId").value ?: "").toString()
+                        val description = (child.child("description").value ?: child.child("desc").value ?: "").toString()
+                        val difficulty = (child.child("difficulty").value ?: child.child("level").value ?: "Medium").toString()
+                        
+                        val rewardCoins = (child.child("rewardCoins").value ?: child.child("reward").value ?: child.child("coins").value ?: 0).toString().toIntOrNull() ?: 0
+                        val completionBonus = (child.child("completionBonus").value ?: child.child("bonus").value ?: child.child("perfectBonus").value ?: 0).toString().toIntOrNull() ?: 0
+                        val timerSeconds = (child.child("timerSeconds").value ?: child.child("timer").value ?: child.child("timeLimit").value ?: child.child("duration").value ?: 30).toString().toIntOrNull() ?: 30
+                        val icon = (child.child("icon").value ?: child.child("thumbnail").value ?: child.child("imageUrl").value ?: "").toString()
+                        
+                        val pubVal = child.child("published").value ?: child.child("isPublished").value
+                        val published = if (pubVal is Boolean) pubVal else pubVal?.toString()?.toBoolean() ?: false
+                        
+                        val actVal = child.child("active").value ?: child.child("isActive").value
+                        val active = if (actVal is Boolean) actVal else actVal?.toString()?.toBoolean() ?: false
+
+                        val status = (child.child("status").value ?: "").toString()
+                        
+                        val revVal = child.child("allowReview").value ?: child.child("reviewEnabled").value ?: true
+                        val allowReview = if (revVal is Boolean) revVal else revVal.toString().toBoolean()
+
+                        val questionsList = mutableListOf<com.playwin.app.data.model.Quiz>()
+                        val questionsSnap = child.child("questions")
+                        if (questionsSnap.exists()) {
+                            for (qChild in questionsSnap.children) {
+                                try {
+                                    val qId = (qChild.child("id").value ?: qChild.key ?: "").toString()
+                                    val qText = (qChild.child("question").value ?: qChild.child("title").value ?: qChild.child("text").value ?: "").toString()
+                                    
+                                    val optSnap = qChild.child("options")
+                                    val options = mutableListOf<String>()
+                                    if (optSnap.exists()) {
+                                        for (optChild in optSnap.children) {
+                                            optChild.value?.toString()?.let { options.add(it) }
+                                        }
+                                    } else {
+                                        for (i in 1..4) {
+                                            val oVal = qChild.child("option$i").value ?: qChild.child("option_$i").value
+                                            if (oVal != null) {
+                                                options.add(oVal.toString())
+                                            }
+                                        }
+                                    }
+                                    
+                                    val correctIdx = (qChild.child("correctAnswerIdx").value 
+                                        ?: qChild.child("correctAnswerIndex").value 
+                                        ?: qChild.child("correctAnswer").value 
+                                        ?: qChild.child("answerIdx").value 
+                                        ?: qChild.child("answer").value 
+                                        ?: 0).toString().toIntOrNull() ?: 0
+                                    
+                                    if (qText.isNotEmpty()) {
+                                        questionsList.add(com.playwin.app.data.model.Quiz(qId, qText, options, correctIdx))
+                                    }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("FirebaseDbManager", "Error parsing dynamic question", e)
+                                }
+                            }
+                        }
+
+                        val quizItem = com.playwin.app.data.model.FirebaseQuiz(
+                            id = id,
+                            title = title,
+                            category = category,
+                            description = description,
+                            difficulty = difficulty,
+                            rewardCoins = rewardCoins,
+                            completionBonus = completionBonus,
+                            timerSeconds = timerSeconds,
+                            icon = icon,
+                            published = published,
+                            active = active,
+                            status = status,
+                            allowReview = allowReview,
+                            questions = questionsList
+                        )
+                        list.add(quizItem)
+                    } catch (e: Exception) {
+                        android.util.Log.e("FirebaseDbManager", "Error parsing dynamic quiz", e)
+                    }
+                }
+                trySend(list)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                close(error.toException())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
 }
 
