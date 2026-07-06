@@ -1263,11 +1263,12 @@ fun QuizArenaScreen(
 ) {
     val quizzes by viewModel.quizzesState.collectAsStateWithLifecycle()
     val quizProgress by viewModel.quizProgressState.collectAsStateWithLifecycle()
+    val completedQuizzes by viewModel.completedQuizzesState.collectAsStateWithLifecycle()
+    val weeklyQuizProgress by viewModel.weeklyQuizProgressState.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val todayDate = viewModel.getLocalDateString()
 
-    val activeQuizzes = remember(quizzes) {
-        quizzes.filter { it.published && it.active }
-    }
+    val activeQuizzes = quizzes
 
     Column(
         modifier = Modifier
@@ -1361,198 +1362,433 @@ fun QuizArenaScreen(
             }
         } else {
             activeQuizzes.forEach { quiz ->
-                val isCompleted = quizProgress?.completedQuizIds?.contains(quiz.id) == true
-                val status = if (isCompleted) "COMPLETED" else if (!quiz.active) "LOCKED" else "NEW"
+                val isWeeklyQuiz = quiz.dayOfWeek.isNotEmpty()
+                val todayDayName = viewModel.getTodayDayOfWeekName()
 
-                val emoji = when (quiz.category.lowercase()) {
-                    "gk" -> "🧠"
-                    "sports" -> "⚽"
-                    "movies", "cinema" -> "🎬"
-                    "science" -> "🧪"
-                    "history" -> "🏛️"
-                    "tech", "technology" -> "💻"
-                    else -> "🌟"
-                }
+                if (isWeeklyQuiz) {
+                    val weekdays = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+                    val quizDayIndex = weekdays.indexOfFirst { it.equals(quiz.dayOfWeek, ignoreCase = true) }
+                    val todayDayIndex = weekdays.indexOfFirst { it.equals(todayDayName, ignoreCase = true) }
+                    
+                    val weeklyRecord = weeklyQuizProgress[quiz.dayOfWeek]
+                    val isWeeklyCompletedToday = weeklyRecord != null && weeklyRecord.completed && weeklyRecord.date == todayDate
+                    val isWeeklyCompletedPreviously = weeklyRecord != null && weeklyRecord.completed && weeklyRecord.date != todayDate
+                    
+                    val isTodayQuiz = quiz.dayOfWeek.equals(todayDayName, ignoreCase = true)
+                    
+                    val cardStatus = when {
+                        isTodayQuiz && !isWeeklyCompletedToday -> "AVAILABLE"
+                        isTodayQuiz && isWeeklyCompletedToday -> "COMPLETED_TODAY"
+                        quizDayIndex > todayDayIndex -> "FUTURE"
+                        else -> {
+                            if (isWeeklyCompletedPreviously || (weeklyRecord != null && weeklyRecord.completed)) "COMPLETED" else "LOCKED"
+                        }
+                    }
 
-                val color = when (quiz.category.lowercase()) {
-                    "gk" -> Color(0xFF9C27B0)
-                    "sports" -> Color(0xFF2196F3)
-                    "movies", "cinema" -> Color(0xFFE91E63)
-                    "science" -> Color(0xFF4CAF50)
-                    "history" -> Color(0xFFFF9800)
-                    "tech", "technology" -> Color(0xFF00E5FF)
-                    else -> Color(0xFFFFD700)
-                }
+                    val color = when (cardStatus) {
+                        "AVAILABLE" -> Color(0xFF9C27B0)
+                        "COMPLETED_TODAY" -> Color(0xFF4CAF50)
+                        "FUTURE" -> Color.Gray
+                        "COMPLETED" -> Color(0xFF2196F3)
+                        else -> Color.Gray
+                    }
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .clickable {
-                            if (isCompleted) {
-                                if (quiz.allowReview) {
-                                    android.widget.Toast.makeText(context, "Entering Review Mode (rewards disabled)", android.widget.Toast.LENGTH_SHORT).show()
-                                    onNavigateToGame(AppScreen.TriviaGame(quiz.category, quiz.id))
-                                } else {
-                                    android.widget.Toast.makeText(context, "Quiz completed! Review mode is disabled for this quiz.", android.widget.Toast.LENGTH_LONG).show()
-                                }
-                            } else if (!quiz.active) {
-                                android.widget.Toast.makeText(context, "This quiz is locked.", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                onNavigateToGame(AppScreen.TriviaGame(quiz.category, quiz.id))
-                            }
-                        },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isCompleted) Color(0xFF2196F3).copy(alpha = 0.4f)
-                        else if (!quiz.active) Color.Gray.copy(alpha = 0.2f)
-                        else color.copy(alpha = 0.6f)
-                    )
-                ) {
-                    Column(
+                    val isClickable = cardStatus == "AVAILABLE"
+
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .background(
-                                        if (quiz.active) color.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.05f),
-                                        RoundedCornerShape(12.dp)
-                                    )
-                                    .border(
-                                        1.dp,
-                                        if (quiz.active) color.copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.2f),
-                                        RoundedCornerShape(12.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (quiz.icon.startsWith("http")) {
-                                    val painter = coil.compose.rememberAsyncImagePainter(quiz.icon)
-                                    androidx.compose.foundation.Image(
-                                        painter = painter,
-                                        contentDescription = "Quiz Icon",
-                                        modifier = Modifier.size(36.dp),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                    )
+                            .padding(vertical = 8.dp)
+                            .then(
+                                if (isClickable) {
+                                    Modifier.clickable {
+                                        onNavigateToGame(AppScreen.TriviaGame(quiz.categoryId.ifEmpty { quiz.category }, quiz.id))
+                                    }
                                 } else {
+                                    Modifier
+                                }
+                            ),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            when (cardStatus) {
+                                "AVAILABLE" -> Color(0xFF7C4DFF).copy(alpha = 0.6f)
+                                "COMPLETED_TODAY" -> Color(0xFF4CAF50).copy(alpha = 0.4f)
+                                else -> Color.Gray.copy(alpha = 0.3f)
+                            }
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .background(
+                                            color.copy(alpha = 0.15f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            color.copy(alpha = 0.5f),
+                                            RoundedCornerShape(12.dp)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Text(
-                                        text = if (quiz.icon.isNotEmpty()) quiz.icon else emoji,
+                                        text = "📅",
                                         fontSize = 24.sp
                                     )
                                 }
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = quiz.title,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        modifier = Modifier.weight(1f, fill = false)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${quiz.title} (${quiz.dayOfWeek})",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        
+                                        // Badge
+                                        when (cardStatus) {
+                                            "AVAILABLE" -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(Color(0xFF9C27B0).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
+                                                        .border(0.5.dp, Color(0xFF9C27B0), RoundedCornerShape(100.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Available", color = Color(0xFF9C27B0), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            "COMPLETED_TODAY" -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(Color(0xFF2E7D32).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
+                                                        .border(0.5.dp, Color(0xFF4CAF50), RoundedCornerShape(100.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Completed Today", color = Color(0xFF4CAF50), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            "FUTURE" -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(100.dp))
+                                                        .border(0.5.dp, Color.Gray, RoundedCornerShape(100.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Locked", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            "COMPLETED" -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(Color(0xFF2196F3).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
+                                                        .border(0.5.dp, Color(0xFF2196F3), RoundedCornerShape(100.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Completed", color = Color(0xFF2196F3), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            "LOCKED" -> {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(100.dp))
+                                                        .border(0.5.dp, Color.Gray, RoundedCornerShape(100.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Locked", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "WEEKLY CHALLENGE • ${quiz.difficulty}",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "⏱️ ${quiz.timerSeconds}s limit",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(
+                                            if (cardStatus == "AVAILABLE") Color(0xFF9C27B0).copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (cardStatus == "AVAILABLE") Icons.Default.PlayArrow else Icons.Default.Lock,
+                                        contentDescription = if (cardStatus == "AVAILABLE") "Play" else "Locked",
+                                        tint = if (cardStatus == "AVAILABLE") Color(0xFF9C27B0) else Color.Gray,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    when (status) {
-                                        "NEW" -> {
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = quiz.description,
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 12.sp
+                            )
+
+                            if (cardStatus == "COMPLETED_TODAY") {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF2E7D32).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                        .border(0.5.dp, Color(0xFF4CAF50).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        text = "Come back tomorrow for the next quiz.",
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "🏆 ${if (quiz.rewardPerQuestion > 0) quiz.rewardPerQuestion else quiz.rewardCoins} Coins / Correct Answer • Perfect Bonus +${if (quiz.passBonus > 0) quiz.passBonus else quiz.completionBonus}",
+                                    color = if (cardStatus == "AVAILABLE") color else Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "${quiz.questions.size} Questions",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    val completedRecord = completedQuizzes[quiz.id]
+                    val isCompletedToday = (completedRecord != null && completedRecord.completed && completedRecord.completedDate == todayDate) ||
+                        (quizProgress?.completedQuizIds?.contains(quiz.id) == true && quizProgress?.lastQuizDate == todayDate)
+
+                    val categoryText = quiz.categoryName.ifEmpty { quiz.category }
+                    val emoji = when (categoryText.lowercase()) {
+                        "gk" -> "🧠"
+                        "sports" -> "⚽"
+                        "movies", "cinema" -> "🎬"
+                        "science" -> "🧪"
+                        "history" -> "🏛️"
+                        "tech", "technology" -> "💻"
+                        else -> "🌟"
+                    }
+
+                    val color = when (categoryText.lowercase()) {
+                        "gk" -> Color(0xFF9C27B0)
+                        "sports" -> Color(0xFF2196F3)
+                        "movies", "cinema" -> Color(0xFFE91E63)
+                        "science" -> Color(0xFF4CAF50)
+                        "history" -> Color(0xFFFF9800)
+                        "tech", "technology" -> Color(0xFF00E5FF)
+                        else -> Color(0xFFFFD700)
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .then(
+                                if (isCompletedToday) {
+                                    Modifier
+                                } else {
+                                    Modifier.clickable {
+                                        onNavigateToGame(AppScreen.TriviaGame(quiz.categoryId.ifEmpty { quiz.category }, quiz.id))
+                                    }
+                                }
+                            ),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isCompletedToday) Color(0xFF4CAF50).copy(alpha = 0.4f)
+                            else color.copy(alpha = 0.6f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(50.dp)
+                                        .background(
+                                            color.copy(alpha = 0.15f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            color.copy(alpha = 0.5f),
+                                            RoundedCornerShape(12.dp)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (quiz.icon.startsWith("http")) {
+                                        val painter = coil.compose.rememberAsyncImagePainter(quiz.icon)
+                                        androidx.compose.foundation.Image(
+                                            painter = painter,
+                                            contentDescription = "Quiz Icon",
+                                            modifier = Modifier.size(36.dp),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        )
+                                    } else {
+                                        Text(
+                                            text = if (quiz.icon.isNotEmpty()) quiz.icon else emoji,
+                                            fontSize = 24.sp
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = quiz.title,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        if (isCompletedToday) {
                                             Box(
                                                 modifier = Modifier
                                                     .background(Color(0xFF2E7D32).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
                                                     .border(0.5.dp, Color(0xFF4CAF50), RoundedCornerShape(100.dp))
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
-                                                Text("New", color = Color(0xFF4CAF50), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                Text("Completed Today", color = Color(0xFF4CAF50), fontSize = 8.sp, fontWeight = FontWeight.Bold)
                                             }
-                                        }
-                                        "COMPLETED" -> {
+                                        } else {
                                             Box(
                                                 modifier = Modifier
-                                                    .background(Color(0xFF1E88E5).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
-                                                    .border(0.5.dp, Color(0xFF2196F3), RoundedCornerShape(100.dp))
+                                                    .background(Color(0xFF9C27B0).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
+                                                    .border(0.5.dp, Color(0xFF9C27B0), RoundedCornerShape(100.dp))
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
-                                                Text("Completed", color = Color(0xFF2196F3), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                        "LOCKED" -> {
-                                            Box(
-                                                modifier = Modifier
-                                                    .background(Color.Gray.copy(alpha = 0.1f), RoundedCornerShape(100.dp))
-                                                    .border(0.5.dp, Color.Gray.copy(alpha = 0.4f), RoundedCornerShape(100.dp))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Locked", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                                Text("Available", color = Color(0xFF9C27B0), fontSize = 8.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${categoryText.uppercase()} • ${quiz.difficulty}",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "⏱️ ${quiz.timerSeconds}s limit",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp
+                                        )
+                                    }
                                 }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(
+                                            if (isCompletedToday) Color.Gray.copy(alpha = 0.2f) else Color(0xFF9C27B0).copy(alpha = 0.2f),
+                                            CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isCompletedToday) Icons.Default.Lock else Icons.Default.PlayArrow,
+                                        contentDescription = if (isCompletedToday) "Locked" else "Play",
+                                        tint = if (isCompletedToday) Color.Gray else Color(0xFF9C27B0),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = quiz.description,
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 12.sp
+                            )
+
+                            if (isCompletedToday) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF2E7D32).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                        .border(0.5.dp, Color(0xFF4CAF50).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
                                     Text(
-                                        text = "${quiz.category.uppercase()} • ${quiz.difficulty}",
-                                        color = Color.Gray,
-                                        fontSize = 11.sp,
+                                        text = "Come back tomorrow for a new quiz.",
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "⏱️ ${quiz.timerSeconds}s limit",
-                                        color = Color.Gray,
-                                        fontSize = 11.sp
-                                    )
                                 }
                             }
-
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(
-                                        if (quiz.active && !isCompleted) color.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.05f),
-                                        CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = if (isCompleted) Icons.Default.Check else if (!quiz.active) Icons.Default.Lock else Icons.Default.PlayArrow,
-                                    contentDescription = status,
-                                    tint = if (isCompleted) Color(0xFF2196F3) else if (!quiz.active) Color.Gray else color,
-                                    modifier = Modifier.size(16.dp)
+                                Text(
+                                    text = "🏆 ${if (quiz.rewardPerQuestion > 0) quiz.rewardPerQuestion else quiz.rewardCoins} Coins / Correct Answer • Perfect Bonus +${if (quiz.passBonus > 0) quiz.passBonus else quiz.completionBonus}",
+                                    color = if (isCompletedToday) Color.Gray else color,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "${quiz.questions.size} Questions",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = quiz.description,
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 12.sp
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "🏆 ${quiz.rewardCoins} Coins / Correct Answer • Perfect Bonus +${quiz.completionBonus}",
-                                color = if (quiz.active) color else Color.Gray,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "${quiz.questions.size} Questions",
-                                color = Color.Gray,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
                     }
                 }
@@ -1860,6 +2096,36 @@ fun HomeScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
+    val scratchSettings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
+    
+    // Dynamic Scratch card variables
+    val scratchesToday = currentUser?.scratchesToday ?: 0
+    val scratchDailyLimit = scratchSettings.dailyLimit
+    val remainingScratches = maxOf(0, scratchDailyLimit - scratchesToday)
+    val scratchEnabled = scratchSettings.enabled
+    
+    // Cooldown
+    val lastScratchTime = currentUser?.lastScratchResetTime ?: 0L
+    val cooldownDurationMs = scratchSettings.cooldownMinutes * 60 * 1000L
+    val timeElapsed = System.currentTimeMillis() - lastScratchTime
+    val isCooldownActive = lastScratchTime > 0L && timeElapsed < cooldownDurationMs
+    
+    var cooldownSecondsLeft by remember { mutableStateOf(0L) }
+    LaunchedEffect(lastScratchTime, scratchSettings.cooldownMinutes) {
+        while (true) {
+            val elapsed = System.currentTimeMillis() - lastScratchTime
+            val remaining = cooldownDurationMs - elapsed
+            cooldownSecondsLeft = if (remaining > 0L) remaining / 1000L else 0L
+            delay(1000L)
+        }
+    }
+
+    val scratchDesc = when {
+        !scratchEnabled -> "Temporarily Disabled"
+        isCooldownActive -> String.format("Cooldown: %02dm:%02ds", cooldownSecondsLeft / 60, cooldownSecondsLeft % 60)
+        remainingScratches <= 0 -> "Daily Limit Reached ($scratchDailyLimit)"
+        else -> "$remainingScratches Left • Today: $scratchesToday/$scratchDailyLimit"
+    }
     
     // Dynamic user display name from Realtime Database or Auth, with Player fallback
     val displayName = currentUser?.displayName?.ifEmpty { null }
@@ -2472,9 +2738,9 @@ fun HomeScreen(
                 Box(modifier = Modifier.weight(1f)) {
                     HomeFeatureCard(
                         title = "Scratch Card",
-                        description = "Scratch & Win Coins",
-                        emoji = "🎫",
-                        color = Color(0xFF7C4DFF),
+                        description = scratchDesc,
+                        emoji = if (!scratchEnabled) "🔒" else "🎫",
+                        color = if (!scratchEnabled) Color.Gray else Color(0xFF7C4DFF),
                         onClick = { onNavigateToGame(AppScreen.ScratchGame) }
                     )
                 }

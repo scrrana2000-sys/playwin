@@ -25,6 +25,11 @@ class FirebaseDbManager {
     private val referralsRef = database.getReference("referrals")
 
     init {
+        try {
+            database.setPersistenceEnabled(true)
+        } catch (e: Exception) {
+            // persistence already enabled or initialization issue
+        }
         seedInitialDataIfNeeded()
     }
 
@@ -281,6 +286,27 @@ class FirebaseDbManager {
                         for (q in list) {
                             questionsRef.child(category).child(q.id).setValue(q)
                         }
+                    }
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        })
+
+        val spinWheelRewardsRef = database.getReference("spinWheelRewards")
+        spinWheelRewardsRef.addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists() || snapshot.childrenCount == 0L) {
+                    val initialSpinRewards = listOf(
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, probabilityWeight = 35, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, probabilityWeight = 25, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, probabilityWeight = 20, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, probabilityWeight = 10, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, probabilityWeight = 7, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, probabilityWeight = 2, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, probabilityWeight = 1, active = true)
+                    )
+                    for (reward in initialSpinRewards) {
+                        spinWheelRewardsRef.child(reward.id).setValue(reward)
                     }
                 }
             }
@@ -553,7 +579,7 @@ class FirebaseDbManager {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = mutableListOf<FirebaseCoupon>()
-                val dbPath = try { couponsRef.path.toString() } catch (e: Exception) { "coupons" }
+                val dbPath = "coupons"
                 
                 android.util.Log.d("FirebaseDbManager", "observeCoupons: checking path '$dbPath'")
                 
@@ -699,13 +725,101 @@ class FirebaseDbManager {
             }
 
             override fun onCancelled(error: DatabaseError) {
-                val dbPath = try { couponsRef.path.toString() } catch (e: Exception) { "coupons" }
+                val dbPath = "coupons"
                 android.util.Log.e("FirebaseDbManager", "observeCoupons cancelled or failed. Path: $dbPath. Error: ${error.message}", error.toException())
                 trySend(emptyList())
             }
         }
         couponsRef.addValueEventListener(listener)
         awaitClose { couponsRef.removeEventListener(listener) }
+    }
+
+    fun observeSpinRewards(): Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = callbackFlow {
+        val spinRef = database.getReference("spinWheelRewards")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    trySend(emptyList())
+                    return
+                }
+                
+                var isMalformed = false
+                val list = mutableListOf<com.playwin.app.data.model.FirebaseSpinReward>()
+                
+                for (child in snapshot.children) {
+                    if (!child.hasChildren()) {
+                        isMalformed = true
+                        break
+                    }
+                    try {
+                        val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
+                        val name = child.child("name").getValue(String::class.java) ?: ""
+                        val type = child.child("type").getValue(String::class.java) ?: "Coins"
+                        
+                        val rawValue = child.child("value").value
+                        val value = when (rawValue) {
+                            is String -> rawValue
+                            is Number -> rawValue.toLong().toString()
+                            null -> ""
+                            else -> rawValue.toString()
+                        }
+                        
+                        val displayOrder = when (val orderVal = child.child("displayOrder").value ?: child.child("order").value) {
+                            is Number -> orderVal.toInt()
+                            is String -> orderVal.toIntOrNull() ?: 0
+                            else -> 0
+                        }
+                        
+                        val probabilityWeight = when (val weightVal = child.child("probabilityWeight").value ?: child.child("weight").value) {
+                            is Number -> weightVal.toInt()
+                            is String -> weightVal.toIntOrNull() ?: 1
+                            else -> 1
+                        }
+                        
+                        val activeVal = child.child("active").value ?: child.child("isActive").value
+                        val active = when (activeVal) {
+                            is Boolean -> activeVal
+                            is String -> activeVal.equals("true", ignoreCase = true) || activeVal.equals("active", ignoreCase = true)
+                            is Number -> activeVal.toInt() != 0
+                            else -> true
+                        }
+                        
+                        list.add(com.playwin.app.data.model.FirebaseSpinReward(id, name, type, value, displayOrder, probabilityWeight, active))
+                    } catch (e: Exception) {
+                        android.util.Log.e("FirebaseDbManager", "Error parsing spin reward: ${e.message}")
+                    }
+                }
+                
+                if (isMalformed) {
+                    android.util.Log.w("FirebaseDbManager", "observeSpinRewards: Detected malformed/flat structure under spinWheelRewards. Resetting to initial rewards.")
+                    val initialSpinRewards = listOf(
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, probabilityWeight = 35, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, probabilityWeight = 25, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, probabilityWeight = 20, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, probabilityWeight = 10, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, probabilityWeight = 7, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, probabilityWeight = 2, active = true),
+                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, probabilityWeight = 1, active = true)
+                    )
+                    spinRef.removeValue().addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            for (reward in initialSpinRewards) {
+                                spinRef.child(reward.id).setValue(reward)
+                            }
+                        }
+                    }
+                    trySend(initialSpinRewards)
+                } else {
+                    trySend(list)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                trySend(emptyList())
+            }
+        }
+        spinRef.addValueEventListener(listener)
+        awaitClose { spinRef.removeEventListener(listener) }
     }
 
     fun observeFirebaseUser(userId: String): Flow<FirebaseUser?> = callbackFlow {
@@ -1205,6 +1319,78 @@ class FirebaseDbManager {
         database.getReference("users/$userId/quizProgress").setValue(progress)
     }
 
+    fun observeCompletedQuizzes(userId: String): kotlinx.coroutines.flow.Flow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>> = callbackFlow {
+        if (userId.isEmpty()) {
+            trySend(emptyMap())
+            close()
+            return@callbackFlow
+        }
+        val ref = database.getReference("users/$userId/completedQuizzes")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val completed = mutableMapOf<String, com.playwin.app.data.model.FirebaseCompletedQuiz>()
+                for (child in snapshot.children) {
+                    val key = child.key ?: continue
+                    val valObj = try {
+                        child.getValue(com.playwin.app.data.model.FirebaseCompletedQuiz::class.java)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (valObj != null) {
+                        completed[key] = valObj
+                    }
+                }
+                trySend(completed)
+            }
+            override fun onCancelled(error: DatabaseError) {
+                close(error.toException())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    fun saveCompletedQuiz(userId: String, quizId: String, completedQuiz: com.playwin.app.data.model.FirebaseCompletedQuiz) {
+        if (userId.isEmpty() || quizId.isEmpty()) return
+        database.getReference("users/$userId/completedQuizzes/$quizId").setValue(completedQuiz)
+    }
+
+    fun observeWeeklyQuizProgress(userId: String): kotlinx.coroutines.flow.Flow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>> = callbackFlow {
+        if (userId.isEmpty()) {
+            trySend(emptyMap())
+            close()
+            return@callbackFlow
+        }
+        val ref = database.getReference("users/$userId/weeklyQuizProgress")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val progressMap = mutableMapOf<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>()
+                for (child in snapshot.children) {
+                    val key = child.key ?: continue
+                    val valObj = try {
+                        child.getValue(com.playwin.app.data.model.FirebaseWeeklyQuizProgress::class.java)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (valObj != null) {
+                        progressMap[key] = valObj
+                    }
+                }
+                trySend(progressMap)
+            }
+            override fun onCancelled(error: DatabaseError) {
+                close(error.toException())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    fun saveWeeklyQuizProgress(userId: String, dayOfWeek: String, progress: com.playwin.app.data.model.FirebaseWeeklyQuizProgress) {
+        if (userId.isEmpty() || dayOfWeek.isEmpty()) return
+        database.getReference("users/$userId/weeklyQuizProgress/$dayOfWeek").setValue(progress)
+    }
+
     fun getQuestionsForCategory(category: String, onResult: (List<com.playwin.app.data.model.Quiz>) -> Unit) {
         val ref = database.getReference("questions/$category")
         ref.addListenerForSingleValueEvent(object : ValueEventListener {
@@ -1674,12 +1860,17 @@ class FirebaseDbManager {
                         if (id.isEmpty()) continue
 
                         val title = (child.child("title").value ?: child.child("quizTitle").value ?: child.child("name").value ?: "").toString()
+                        val categoryId = (child.child("categoryId").value ?: child.child("category").value ?: "").toString()
+                        val categoryName = (child.child("categoryName").value ?: child.child("category").value ?: child.child("categoryId").value ?: "").toString()
                         val category = (child.child("category").value ?: child.child("categoryId").value ?: "").toString()
                         val description = (child.child("description").value ?: child.child("desc").value ?: "").toString()
                         val difficulty = (child.child("difficulty").value ?: child.child("level").value ?: "Medium").toString()
                         
-                        val rewardCoins = (child.child("rewardCoins").value ?: child.child("reward").value ?: child.child("coins").value ?: 0).toString().toIntOrNull() ?: 0
-                        val completionBonus = (child.child("completionBonus").value ?: child.child("bonus").value ?: child.child("perfectBonus").value ?: 0).toString().toIntOrNull() ?: 0
+                        val rewardPerQuestion = (child.child("rewardPerQuestion").value ?: child.child("rewardCoins").value ?: child.child("reward").value ?: child.child("coins").value ?: 0).toString().toIntOrNull() ?: 0
+                        val rewardCoins = rewardPerQuestion
+                        val passBonus = (child.child("passBonus").value ?: child.child("completionBonus").value ?: child.child("bonus").value ?: child.child("perfectBonus").value ?: 0).toString().toIntOrNull() ?: 0
+                        val completionBonus = passBonus
+                        val passingPercentage = (child.child("passingPercentage").value ?: 0).toString().toIntOrNull() ?: 0
                         val timerSeconds = (child.child("timerSeconds").value ?: child.child("timer").value ?: child.child("timeLimit").value ?: child.child("duration").value ?: 30).toString().toIntOrNull() ?: 30
                         val icon = (child.child("icon").value ?: child.child("thumbnail").value ?: child.child("imageUrl").value ?: "").toString()
                         
@@ -1691,6 +1882,16 @@ class FirebaseDbManager {
 
                         val status = (child.child("status").value ?: "").toString()
                         
+                        // 1. Filter: status == "Published" OR published == true. Ignore Draft, Disabled and Inactive quizzes.
+                        val statusLower = status.lowercase().trim()
+                        if (statusLower == "draft" || statusLower == "disabled" || statusLower == "inactive" || statusLower == "drafts") {
+                            continue
+                        }
+                        val isPublished = status.equals("Published", ignoreCase = true) || published
+                        if (!isPublished) {
+                            continue
+                        }
+
                         val revVal = child.child("allowReview").value ?: child.child("reviewEnabled").value ?: true
                         val allowReview = if (revVal is Boolean) revVal else revVal.toString().toBoolean()
 
@@ -1699,33 +1900,58 @@ class FirebaseDbManager {
                         if (questionsSnap.exists()) {
                             for (qChild in questionsSnap.children) {
                                 try {
-                                    val qId = (qChild.child("id").value ?: qChild.key ?: "").toString()
+                                    val qId = (qChild.child("id").value ?: qChild.child("questionId").value ?: qChild.key ?: "").toString()
                                     val qText = (qChild.child("question").value ?: qChild.child("title").value ?: qChild.child("text").value ?: "").toString()
                                     
-                                    val optSnap = qChild.child("options")
                                     val options = mutableListOf<String>()
+                                    val optSnap = qChild.child("options")
                                     if (optSnap.exists()) {
                                         for (optChild in optSnap.children) {
                                             optChild.value?.toString()?.let { options.add(it) }
                                         }
                                     } else {
-                                        for (i in 1..4) {
-                                            val oVal = qChild.child("option$i").value ?: qChild.child("option_$i").value
-                                            if (oVal != null) {
-                                                options.add(oVal.toString())
+                                        val oA = qChild.child("optionA").value ?: qChild.child("option_A").value
+                                        val oB = qChild.child("optionB").value ?: qChild.child("option_B").value
+                                        val oC = qChild.child("optionC").value ?: qChild.child("option_C").value
+                                        val oD = qChild.child("optionD").value ?: qChild.child("option_D").value
+                                        if (oA != null || oB != null || oC != null || oD != null) {
+                                            if (oA != null) options.add(oA.toString())
+                                            if (oB != null) options.add(oB.toString())
+                                            if (oC != null) options.add(oC.toString())
+                                            if (oD != null) options.add(oD.toString())
+                                        } else {
+                                            for (i in 1..4) {
+                                                val oVal = qChild.child("option$i").value ?: qChild.child("option_$i").value
+                                                if (oVal != null) {
+                                                    options.add(oVal.toString())
+                                                }
                                             }
                                         }
                                     }
                                     
-                                    val correctIdx = (qChild.child("correctAnswerIdx").value 
+                                    val correctVal = qChild.child("correctAnswer").value 
+                                        ?: qChild.child("correctAnswerIdx").value 
                                         ?: qChild.child("correctAnswerIndex").value 
-                                        ?: qChild.child("correctAnswer").value 
                                         ?: qChild.child("answerIdx").value 
                                         ?: qChild.child("answer").value 
-                                        ?: 0).toString().toIntOrNull() ?: 0
+                                        ?: "0"
+                                    val correctString = correctVal.toString().trim()
+                                    val correctIdx = when (correctString.uppercase()) {
+                                        "A" -> 0
+                                        "B" -> 1
+                                        "C" -> 2
+                                        "D" -> 3
+                                        "1" -> 0
+                                        "2" -> 1
+                                        "3" -> 2
+                                        "4" -> 3
+                                        else -> correctString.toIntOrNull() ?: 0
+                                    }
+                                    
+                                    val explanation = (qChild.child("explanation").value ?: "").toString()
                                     
                                     if (qText.isNotEmpty()) {
-                                        questionsList.add(com.playwin.app.data.model.Quiz(qId, qText, options, correctIdx))
+                                        questionsList.add(com.playwin.app.data.model.Quiz(qId, qText, options, correctIdx, explanation))
                                     }
                                 } catch (e: Exception) {
                                     android.util.Log.e("FirebaseDbManager", "Error parsing dynamic question", e)
@@ -1733,14 +1959,24 @@ class FirebaseDbManager {
                             }
                         }
 
+                        // 5. Hide the quiz if questions count is 0
+                        if (questionsList.isEmpty()) {
+                            continue
+                        }
+
                         val quizItem = com.playwin.app.data.model.FirebaseQuiz(
                             id = id,
                             title = title,
+                            categoryId = categoryId,
+                            categoryName = categoryName,
                             category = category,
                             description = description,
                             difficulty = difficulty,
+                            rewardPerQuestion = rewardPerQuestion,
                             rewardCoins = rewardCoins,
+                            passBonus = passBonus,
                             completionBonus = completionBonus,
+                            passingPercentage = passingPercentage,
                             timerSeconds = timerSeconds,
                             icon = icon,
                             published = published,
@@ -1764,5 +2000,306 @@ class FirebaseDbManager {
         ref.addValueEventListener(listener)
         awaitClose { ref.removeEventListener(listener) }
     }
+
+    fun observeScratchCardSettings(): Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = callbackFlow {
+        val ref = database.getReference("settings/scratchCard")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    val defaultSettings = com.playwin.app.data.model.FirebaseScratchCardSettings()
+                    ref.setValue(defaultSettings)
+                    trySend(defaultSettings)
+                    return
+                }
+                try {
+                    val enabled = snapshot.child("enabled").getValue(Boolean::class.java) ?: true
+                    val dailyLimit = snapshot.child("dailyLimit").getValue(Int::class.java) ?: 5
+                    val cooldownMinutes = snapshot.child("cooldownMinutes").getValue(Int::class.java) ?: 15
+                    val rewardAdRequired = snapshot.child("rewardAdRequired").getValue(Boolean::class.java) ?: false
+                    val minimumLevel = snapshot.child("minimumLevel").getValue(Int::class.java) ?: 1
+                    trySend(com.playwin.app.data.model.FirebaseScratchCardSettings(enabled, dailyLimit, cooldownMinutes, rewardAdRequired, minimumLevel))
+                } catch (e: Exception) {
+                    trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    fun observeScratchCardRewards(): Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = callbackFlow {
+        val ref = database.getReference("scratchCardRewards")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists() || snapshot.childrenCount == 0L) {
+                    val initialRewards = listOf(
+                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = "reward_1", name = "+10 Coins", type = "Coins", value = "10",
+                            probabilityWeight = 40, displayOrder = 1, active = true, icon = "🪙", color = "#FFD700"
+                        ),
+                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = "reward_2", name = "+50 Coins", type = "Coins", value = "50",
+                            probabilityWeight = 20, displayOrder = 2, active = true, icon = "💎", color = "#00E5FF"
+                        ),
+                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = "reward_3", name = "+100 Coins", type = "Coins", value = "100",
+                            probabilityWeight = 10, displayOrder = 3, active = true, icon = "🎁", color = "#E040FB"
+                        ),
+                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = "reward_4", name = "Retry Scratch", type = "Retry Scratch", value = "0",
+                            probabilityWeight = 15, displayOrder = 4, active = true, icon = "🔄", color = "#00E676"
+                        ),
+                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = "reward_5", name = "Amazon Coupon", type = "Coupon", value = "AMZ-PW-100",
+                            probabilityWeight = 5, displayOrder = 5, active = true, icon = "🛍️", color = "#FF9100"
+                        ),
+                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = "reward_6", name = "Better Luck Next Time", type = "Better Luck Next Time", value = "0",
+                            probabilityWeight = 10, displayOrder = 6, active = true, icon = "😢", color = "#90A4AE"
+                        )
+                    )
+                    for (reward in initialRewards) {
+                        ref.child(reward.id).setValue(reward)
+                    }
+                    trySend(initialRewards)
+                    return
+                }
+
+                val list = mutableListOf<com.playwin.app.data.model.FirebaseScratchCardReward>()
+                for (child in snapshot.children) {
+                    try {
+                        val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
+                        val name = child.child("name").getValue(String::class.java) ?: ""
+                        val type = child.child("type").getValue(String::class.java) ?: "Coins"
+                        val value = (child.child("value").value ?: "0").toString()
+                        val probabilityWeight = child.child("probabilityWeight").getValue(Int::class.java) ?: 10
+                        val displayOrder = child.child("displayOrder").getValue(Int::class.java) ?: 0
+                        val active = child.child("active").getValue(Boolean::class.java) ?: true
+                        val icon = child.child("icon").getValue(String::class.java) ?: "🎁"
+                        val color = child.child("color").getValue(String::class.java) ?: "#7C4DFF"
+                        val createdAt = child.child("createdAt").getValue(Long::class.java) ?: System.currentTimeMillis()
+                        val updatedAt = child.child("updatedAt").getValue(Long::class.java) ?: System.currentTimeMillis()
+
+                        list.add(com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id, name, type, value, probabilityWeight, displayOrder, active, icon, color, createdAt, updatedAt
+                        ))
+                    } catch (e: Exception) {
+                        // skip
+                    }
+                }
+                list.sortBy { it.displayOrder }
+                trySend(list)
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                trySend(emptyList())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    fun updateScratchCardSettings(settings: com.playwin.app.data.model.FirebaseScratchCardSettings, onComplete: (Boolean) -> Unit = {}) {
+        database.getReference("settings/scratchCard").setValue(settings)
+            .addOnCompleteListener { onComplete(it.isSuccessful) }
+    }
+
+    fun saveScratchCardReward(reward: com.playwin.app.data.model.FirebaseScratchCardReward, onComplete: (Boolean) -> Unit = {}) {
+        val id = if (reward.id.isNotEmpty()) reward.id else database.getReference("scratchCardRewards").push().key ?: "reward_${System.currentTimeMillis()}"
+        val updatedReward = reward.copy(id = id, updatedAt = System.currentTimeMillis())
+        database.getReference("scratchCardRewards").child(id).setValue(updatedReward)
+            .addOnCompleteListener { onComplete(it.isSuccessful) }
+    }
+
+    fun deleteScratchCardReward(rewardId: String, onComplete: (Boolean) -> Unit = {}) {
+        database.getReference("scratchCardRewards").child(rewardId).removeValue()
+            .addOnCompleteListener { onComplete(it.isSuccessful) }
+    }
+
+    fun performScratchCardDbTransaction(
+        userId: String,
+        reward: com.playwin.app.data.model.FirebaseScratchCardReward,
+        transactionId: String,
+        onComplete: (Boolean, String?, Int, Int) -> Unit
+    ) {
+        if (userId.isEmpty()) {
+            onComplete(false, "User not authenticated.", 0, 0)
+            return
+        }
+        val userRef = database.getReference("users").child(userId)
+        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+            var coinsBefore = 0
+            var coinsAfter = 0
+
+            override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                if (mutableData.value == null) {
+                    return com.google.firebase.database.Transaction.success(mutableData)
+                }
+
+                // Duplicate protection: Check if transactionId already processed
+                if (mutableData.child("processedScratchTx").child(transactionId).value != null) {
+                    return com.google.firebase.database.Transaction.abort()
+                }
+
+                val currentCoins = mutableData.child("wallet").child("balance").getValue(Int::class.java)
+                    ?: mutableData.child("coins").getValue(Int::class.java)
+                    ?: 0
+                coinsBefore = currentCoins
+                
+                var coinIncrement = 0
+                if (reward.type == "Coins") {
+                    coinIncrement = reward.value.toIntOrNull() ?: 0
+                }
+                coinsAfter = currentCoins + coinIncrement
+                
+                // Update coins directly on user node
+                mutableData.child("coins").value = coinsAfter
+
+                // Update wallet balance path atomically inside the transaction
+                mutableData.child("wallet").child("balance").value = coinsAfter
+                mutableData.child("wallet").child("coins").value = coinsAfter
+                
+                // Update totalScratchCoins in stats atomically inside the transaction
+                val currentTotalScratchCoins = mutableData.child("stats").child("totalScratchCoins").getValue(Int::class.java) ?: 0
+                mutableData.child("stats").child("totalScratchCoins").value = currentTotalScratchCoins + coinIncrement
+                
+                // Mark transactionId as processed
+                mutableData.child("processedScratchTx").child(transactionId).value = true
+                
+                // Update scratchesToday and lastScratchDate
+                val lastScratchDate = mutableData.child("lastScratchDate").getValue(String::class.java) ?: ""
+                var scratchesToday = mutableData.child("scratchesToday").getValue(Int::class.java) ?: 0
+                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                if (lastScratchDate != today) {
+                    scratchesToday = 0
+                }
+                scratchesToday += 1
+                mutableData.child("scratchesToday").value = scratchesToday
+                
+                // Decrement cards count or check limits
+                val remainingScratchCards = mutableData.child("remainingScratchCards").getValue(Int::class.java) ?: 0
+                if (reward.type == "Retry Scratch") {
+                    // Won a retry, don't decrement the cards count
+                    mutableData.child("remainingScratchCards").value = remainingScratchCards
+                } else if (remainingScratchCards > 0) {
+                    mutableData.child("remainingScratchCards").value = remainingScratchCards - 1
+                }
+                
+                val totalRewardsVal = mutableData.child("totalScratchRewards").getValue(Int::class.java) ?: 0
+                mutableData.child("totalScratchRewards").value = totalRewardsVal + coinIncrement
+                
+                mutableData.child("lastScratchDate").value = today
+                mutableData.child("lastScratchResetTime").value = System.currentTimeMillis()
+                
+                return com.google.firebase.database.Transaction.success(mutableData)
+            }
+
+            override fun onComplete(
+                error: DatabaseError?,
+                committed: Boolean,
+                currentData: DataSnapshot?
+            ) {
+                val isSuccess = committed && error == null
+                val statusStr = if (isSuccess) "Completed" else "Failed"
+                val errorMsg = error?.message ?: (if (!committed) "Transaction aborted/not committed" else "None")
+
+                // REQUIRED LOGGING
+                android.util.Log.d(
+                    "PlayWinScratchDebug",
+                    """
+                    ================ SCRATCH REWARD TRANSACTION REPORT ================
+                    User UID: $userId
+                    Reward ID: ${reward.id}
+                    Reward Type: ${reward.type}
+                    Reward Value: ${reward.value}
+                    Wallet Before: $coinsBefore
+                    Wallet After: $coinsAfter
+                    Transaction Status: $statusStr
+                    Firebase Write Success: $isSuccess
+                    Firebase Error Message: $errorMsg
+                    ===================================================================
+                    """.trimIndent()
+                )
+
+                if (isSuccess) {
+                    val timestamp = System.currentTimeMillis()
+                    val txId = transactionId
+                    
+                    val tx = FirebaseTransaction(
+                        id = txId,
+                        userId = userId,
+                        type = "scratch_reward",
+                        title = "Scratch Card: ${reward.name}",
+                        coins = if (reward.type == "Coins") reward.value.toIntOrNull() ?: 0 else 0,
+                        status = "Completed",
+                        timestamp = timestamp,
+                        amount = if (reward.type == "Coins") reward.value.toIntOrNull() ?: 0 else 0,
+                        source = "Scratch Card: ${reward.name}",
+                        coinsBefore = coinsBefore,
+                        coinsAfter = coinsAfter
+                    )
+                    database.getReference("transactions").child(userId).child(txId).setValue(tx)
+                    
+                    // Duplicate transaction in users/uid/transactions
+                    database.getReference("users").child(userId).child("transactions").child(txId).setValue(tx)
+
+                    // Write transaction to users/uid/wallet/history (CRITICAL FIX)
+                    database.getReference("users").child(userId).child("wallet").child("history").child(txId).setValue(tx)
+                    
+                    // Set users/uid/wallet subkeys individually (CRITICAL FIX: Do not overwrite the entire wallet node, preserving the history)
+                    val walletRef = database.getReference("users").child(userId).child("wallet")
+                    walletRef.child("coins").setValue(coinsAfter)
+                    walletRef.child("balance").setValue(coinsAfter)
+                    walletRef.child("lastScratchTime").setValue(timestamp)
+                    walletRef.child("updatedAt").setValue(timestamp)
+                    
+                    // users/uid/scratchHistory
+                    val historyId = database.getReference("users").child(userId).child("scratchHistory").push().key ?: "sc_$timestamp"
+                    val deviceTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    val history = com.playwin.app.data.model.FirebaseScratchHistory(
+                        id = historyId,
+                        timestamp = timestamp,
+                        rewardId = reward.id,
+                        rewardName = reward.name,
+                        rewardType = reward.type,
+                        rewardValue = reward.value,
+                        walletBefore = coinsBefore,
+                        walletAfter = coinsAfter,
+                        status = "Completed",
+                        deviceTime = deviceTime,
+                        serverTime = timestamp,
+                        transactionId = txId
+                    )
+                    database.getReference("users").child(userId).child("scratchHistory").child(historyId).setValue(history)
+                    
+                    // Create rewardHistory entry
+                    val rewardHistoryId = database.getReference("rewardHistory").child(userId).push().key ?: "hist_$timestamp"
+                    val rewardHistoryMap = mapOf(
+                        "type" to "scratch_reward",
+                        "reward" to (if (reward.type == "Coins") reward.value.toIntOrNull() ?: 0 else 0),
+                        "timestamp" to timestamp,
+                        "coinsBefore" to coinsBefore,
+                        "coinsAfter" to coinsAfter
+                    )
+                    database.getReference("rewardHistory").child(userId).child(rewardHistoryId).setValue(rewardHistoryMap)
+
+                    // Update walletSummary
+                    val walletSummaryMap = mapOf(
+                        "totalCoins" to coinsAfter,
+                        "lastUpdated" to timestamp
+                    )
+                    database.getReference("walletSummary").child(userId).setValue(walletSummaryMap)
+                    
+                    onComplete(true, null, coinsBefore, coinsAfter)
+                } else {
+                    onComplete(false, errorMsg, 0, 0)
+                }
+            }
+        })
+    }
 }
+
 

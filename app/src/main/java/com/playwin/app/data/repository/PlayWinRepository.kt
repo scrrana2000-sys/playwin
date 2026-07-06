@@ -16,6 +16,30 @@ class PlayWinRepository(private val dao: PlayWinDao) {
 
     val firebaseTasksFlow: Flow<List<FirebaseTask>> = firebaseDbManager.observeTasks()
     val firebaseCouponsFlow: Flow<List<FirebaseCoupon>> = firebaseDbManager.observeCoupons()
+    val firebaseSpinRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = firebaseDbManager.observeSpinRewards()
+    val firebaseScratchCardSettingsFlow: Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = firebaseDbManager.observeScratchCardSettings()
+    val firebaseScratchCardRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = firebaseDbManager.observeScratchCardRewards()
+
+    fun updateScratchCardSettings(settings: com.playwin.app.data.model.FirebaseScratchCardSettings, onComplete: (Boolean) -> Unit = {}) {
+        firebaseDbManager.updateScratchCardSettings(settings, onComplete)
+    }
+
+    fun saveScratchCardReward(reward: com.playwin.app.data.model.FirebaseScratchCardReward, onComplete: (Boolean) -> Unit = {}) {
+        firebaseDbManager.saveScratchCardReward(reward, onComplete)
+    }
+
+    fun deleteScratchCardReward(rewardId: String, onComplete: (Boolean) -> Unit = {}) {
+        firebaseDbManager.deleteScratchCardReward(rewardId, onComplete)
+    }
+
+    fun performScratchCardDbTransaction(
+        userId: String,
+        reward: com.playwin.app.data.model.FirebaseScratchCardReward,
+        transactionId: String,
+        onComplete: (Boolean, String?, Int, Int) -> Unit
+    ) {
+        firebaseDbManager.performScratchCardDbTransaction(userId, reward, transactionId, onComplete)
+    }
 
     fun getFirebaseTransactionsFlow(userId: String): Flow<List<FirebaseTransaction>> {
         return firebaseDbManager.observeTransactions(userId)
@@ -125,6 +149,22 @@ class PlayWinRepository(private val dao: PlayWinDao) {
 
     fun saveFirebaseQuizProgress(userId: String, progress: com.playwin.app.data.model.FirebaseQuizProgress) {
         firebaseDbManager.saveQuizProgress(userId, progress)
+    }
+
+    fun getFirebaseCompletedQuizzesFlow(userId: String): Flow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>> {
+        return firebaseDbManager.observeCompletedQuizzes(userId)
+    }
+
+    fun saveFirebaseCompletedQuiz(userId: String, quizId: String, completedQuiz: com.playwin.app.data.model.FirebaseCompletedQuiz) {
+        firebaseDbManager.saveCompletedQuiz(userId, quizId, completedQuiz)
+    }
+
+    fun getFirebaseWeeklyQuizProgressFlow(userId: String): Flow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>> {
+        return firebaseDbManager.observeWeeklyQuizProgress(userId)
+    }
+
+    fun saveFirebaseWeeklyQuizProgress(userId: String, dayOfWeek: String, progress: com.playwin.app.data.model.FirebaseWeeklyQuizProgress) {
+        firebaseDbManager.saveWeeklyQuizProgress(userId, dayOfWeek, progress)
     }
 
     fun getQuestionsForCategory(category: String, onResult: (List<com.playwin.app.data.model.Quiz>) -> Unit) {

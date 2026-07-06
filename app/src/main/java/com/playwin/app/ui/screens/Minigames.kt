@@ -33,6 +33,10 @@ import androidx.compose.ui.unit.sp
 import com.playwin.app.ui.theme.*
 import com.playwin.app.ui.viewmodel.PlayWinViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -68,28 +72,28 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         else -> "0/2 Available"
     }
 
-    val sectors = remember {
-        listOf(
-            "+5 Coins",     // Index 0
-            "+10 Coins",    // Index 1
-            "+20 Coins",    // Index 2
-            "+30 Coins",    // Index 3
-            "+50 Coins",    // Index 4
-            "+100 Coins",   // Index 5
-            "+200 Coins"    // Index 6
-        )
+    val spinRewards by viewModel.spinRewardsState.collectAsStateWithLifecycle()
+    val activeRewards = remember(spinRewards) {
+        spinRewards.filter { it.active }.sortedBy { it.displayOrder }
     }
-
-    val sectorColors = remember {
-        listOf(
-            Color(0xFFFF5252), // Vivid Coral Red (+5)
-            Color(0xFFFF9F1C), // Gold Orange (+10)
-            Color(0xFF2EC4B6), // Bright Teal (+20)
-            Color(0xFF1D3557), // Royal Navy Blue (+30)
-            Color(0xFFE05780), // Rose Indigo (+50)
-            Color(0xFF9C27B0), // Vibrant Purple (+100 - Rare)
-            Color(0xFF4CAF50)  // Gold Green (+200 - Ultra Rare)
-        )
+    val customPalette = listOf(
+        Color(0xFFFF5252), // Coral Red
+        Color(0xFFFF9F1C), // Gold Orange
+        Color(0xFF2EC4B6), // Bright Teal
+        Color(0xFF1D3557), // Royal Navy Blue
+        Color(0xFFE05780), // Rose Indigo
+        Color(0xFF9C27B0), // Vibrant Purple
+        Color(0xFF4CAF50), // Gold Green
+        Color(0xFF00B0FF), // Neon Blue
+        Color(0xFFFFD600)  // Vivid Yellow
+    )
+    val sectorColors = remember(activeRewards) {
+        activeRewards.mapIndexed { index, _ ->
+            customPalette[index % customPalette.size]
+        }
+    }
+    val sectors = remember(activeRewards) {
+        activeRewards.map { it.name }
     }
 
     LaunchedEffect(Unit) {
@@ -217,431 +221,469 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Main Stats Dashboard Panel
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        if (activeRewards.isEmpty()) {
+            Spacer(modifier = Modifier.height(48.dp))
             Card(
-                modifier = Modifier.weight(1f),
                 colors = CardDefaults.cardColors(containerColor = CardDark),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Daily Spins",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextWhite.copy(alpha = 0.6f)
+                        text = "⚙️",
+                        fontSize = 56.sp,
+                        modifier = Modifier.padding(bottom = 16.dp)
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = spinsAvailableText,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = GoldCoin,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            Card(
-                modifier = Modifier.weight(1f),
-                colors = CardDefaults.cardColors(containerColor = CardDark),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Total Spin Wins",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextWhite.copy(alpha = 0.6f)
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "+${wallet.totalSpinRewards} Coins",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color(0xFF4CAF50),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Display Current Spin Status Text or Banner
-        val statusText = when {
-            !freeSpinUsed -> "FREE SPIN AVAILABLE"
-            !rewardAdSpinUsed -> "WATCH AD FOR EXTRA SPIN"
-            else -> "DAILY SPIN LIMIT REACHED"
-        }
-        val statusColor = when {
-            !freeSpinUsed -> Color(0xFF4CAF50) // Green
-            !rewardAdSpinUsed -> GoldCoin // Orange/Gold
-            else -> Color(0xFFE57373) // Light Red
-        }
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(vertical = 8.dp)
-        ) {
-            if (freeSpinUsed && rewardAdSpinUsed) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Locked",
-                    tint = statusColor,
-                    modifier = Modifier.size(20.dp).padding(end = 4.dp)
-                )
-            }
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.titleMedium,
-                color = statusColor,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Pointer Indicator
-        Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = "Indicator pointer",
-            tint = GoldCoin,
-            modifier = Modifier
-                .size(44.dp)
-                .rotate(90f) // Points pointing down
-        )
-
-        // Spinner Canvas Frame
-        Box(
-            modifier = Modifier
-                .size(280.dp)
-                .rotate(rotationAngle)
-                .shadow(16.dp, CircleShape)
-                .clip(CircleShape)
-                .background(CardDark),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val sweepAngle = 360f / sectors.size
-                for (i in sectors.indices) {
-                    drawArc(
-                        color = sectorColors[i],
-                        startAngle = i * sweepAngle - 90f,
-                        sweepAngle = sweepAngle,
-                        useCenter = true
-                    )
-                }
-
-                // Draw white borders separating segments
-                val center = size.width / 2
-                val radius = size.width / 2
-                for (i in sectors.indices) {
-                    val angleRad = (i * sweepAngle - 90f) * PI / 180f
-                    drawLine(
-                        color = DarkBg.copy(alpha = 0.5f),
-                        start = Offset(center, center),
-                        end = Offset(
-                            (center + radius * cos(angleRad)).toFloat(),
-                            (center + radius * sin(angleRad)).toFloat()
-                        ),
-                        strokeWidth = 3f
-                    )
-                }
-
-                // Draw premium gold center hub
-                drawCircle(
-                    color = DarkBg,
-                    radius = center * 0.18f,
-                    center = Offset(center, center)
-                )
-                drawCircle(
-                    color = GoldCoin,
-                    radius = center * 0.15f,
-                    center = Offset(center, center)
-                )
-                drawCircle(
-                    color = Color.White,
-                    radius = center * 0.05f,
-                    center = Offset(center, center)
-                )
-            }
-
-            // Radial slot texts overlay
-            sectors.forEachIndexed { index, text ->
-                val sectorAngle = 360f / sectors.size
-                val midAngle = index * sectorAngle + sectorAngle / 2f
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .rotate(midAngle),
-                    contentAlignment = Alignment.TopCenter
-                ) {
-                    Text(
-                        text = text,
+                        text = "Spin Wheel is temporarily unavailable.",
+                        style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
-                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 36.dp)
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        text = "Please check back later! Our admin is updating the prize pool.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
                     )
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        // SPIN NOW Button
-        val buttonEnabled = !isSpinning && (
-            !freeSpinUsed || (freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins > 0)
-        )
-        
-        val buttonText = when {
-            isSpinning -> "SPINNING..."
-            !freeSpinUsed -> "SPIN NOW (FREE)"
-            !rewardAdSpinUsed -> "SPIN NOW" // Will be disabled, but shown as "SPIN NOW"
-            wallet.remainingSpins > 0 -> "SPIN NOW"
-            else -> "Today's Spins Completed"
-        }
-
-        Button(
-            onClick = {
-                if (!isSpinning) {
-                    when {
-                        !freeSpinUsed -> {
-                            isSpinning = true
-                            val rolledReward = viewModel.rollSpinReward()
-                            coroutineScope.launch {
-                                val targetSector = rolledReward.index
-                                val sectorAngle = 360f / sectors.size
-                                val targetAngle = 360f - (targetSector * sectorAngle + sectorAngle / 2f)
-                                val extraTurns = 5 * 360f
-                                val finalRotationTarget = rotationAngle - (rotationAngle % 360f) + extraTurns + targetAngle
-
-                                animate(
-                                    initialValue = rotationAngle,
-                                    targetValue = finalRotationTarget,
-                                    animationSpec = tween(
-                                        durationMillis = 4000,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                ) { value, _ ->
-                                    rotationAngle = value
-                                }
-
-                                viewModel.performSpinWheelTransaction(rolledReward.index, isAdSpin = false) { success, errorMsg ->
-                                    isSpinning = false
-                                    if (success) {
-                                        val finalSector = sectors[targetSector]
-                                        showResultTitle = "🎉 Congratulations!"
-                                        showResultMessage = "You won $finalSector"
-                                        showResultPopup = true
-                                    } else {
-                                        errorMessage = errorMsg ?: "Transaction failed."
-                                    }
-                                }
-                            }
-                        }
-                        freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins > 0 -> {
-                            isSpinning = true
-                            val rolledReward = viewModel.rollSpinReward()
-                            coroutineScope.launch {
-                                val targetSector = rolledReward.index
-                                val sectorAngle = 360f / sectors.size
-                                val targetAngle = 360f - (targetSector * sectorAngle + sectorAngle / 2f)
-                                val extraTurns = 5 * 360f
-                                val finalRotationTarget = rotationAngle - (rotationAngle % 360f) + extraTurns + targetAngle
-
-                                animate(
-                                    initialValue = rotationAngle,
-                                    targetValue = finalRotationTarget,
-                                    animationSpec = tween(
-                                        durationMillis = 4000,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                ) { value, _ ->
-                                    rotationAngle = value
-                                }
-
-                                viewModel.performSpinWheelTransaction(rolledReward.index, isAdSpin = true) { success, errorMsg ->
-                                    isSpinning = false
-                                    if (success) {
-                                        val finalSector = sectors[targetSector]
-                                        showResultTitle = "🎉 Congratulations!"
-                                        showResultMessage = "You won $finalSector"
-                                        showResultPopup = true
-                                    } else {
-                                        errorMessage = errorMsg ?: "Transaction failed."
-                                    }
-                                }
-                            }
-                        }
+        } else {
+            // Main Stats Dashboard Panel
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = CardDark),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Daily Spins",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = spinsAvailableText,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = GoldCoin,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (buttonEnabled) GoldCoin else Color.Gray,
-                disabledContainerColor = Color.Gray
-            ),
-            modifier = Modifier
-                .width(280.dp)
-                .height(48.dp)
-                .testTag("spin_now_button"),
-            enabled = buttonEnabled,
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Text(
-                text = buttonText,
-                color = if (buttonEnabled) PrimaryDark else Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
-        }
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = CardDark),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Total Spin Wins",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "+${wallet.totalSpinRewards} Coins",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
 
-        // 2. Reward Ad logic:
-        // After the free spin is used, disable the Spin button.
-        // Show "Watch Reward Ad to Unlock 1 Extra Spin" (Only when freeSpinUsed and not rewardAdSpinUsed)
-        if (freeSpinUsed && !rewardAdSpinUsed && !isSpinning) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Display Current Spin Status Text or Banner
+            val statusText = when {
+                !freeSpinUsed -> "FREE SPIN AVAILABLE"
+                !rewardAdSpinUsed -> "WATCH AD FOR EXTRA SPIN"
+                else -> "DAILY SPIN LIMIT REACHED"
+            }
+            val statusColor = when {
+                !freeSpinUsed -> Color(0xFF4CAF50) // Green
+                !rewardAdSpinUsed -> GoldCoin // Orange/Gold
+                else -> Color(0xFFE57373) // Light Red
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 8.dp)
+            ) {
+                if (freeSpinUsed && rewardAdSpinUsed) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = statusColor,
+                        modifier = Modifier.size(20.dp).padding(end = 4.dp)
+                    )
+                }
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = statusColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Pointer Indicator
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "Indicator pointer",
+                tint = GoldCoin,
+                modifier = Modifier
+                    .size(44.dp)
+                    .rotate(90f) // Points pointing down
+            )
+
+            // Spinner Canvas Frame
+            Box(
+                modifier = Modifier
+                    .size(280.dp)
+                    .rotate(rotationAngle)
+                    .shadow(16.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(CardDark),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val sweepAngle = 360f / sectors.size
+                    for (i in sectors.indices) {
+                        drawArc(
+                            color = sectorColors[i],
+                            startAngle = i * sweepAngle - 90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = true
+                        )
+                    }
+
+                    // Draw white borders separating segments
+                    val center = size.width / 2
+                    val radius = size.width / 2
+                    for (i in sectors.indices) {
+                        val angleRad = (i * sweepAngle - 90f) * PI / 180f
+                        drawLine(
+                            color = DarkBg.copy(alpha = 0.5f),
+                            start = Offset(center, center),
+                            end = Offset(
+                                (center + radius * cos(angleRad)).toFloat(),
+                                (center + radius * sin(angleRad)).toFloat()
+                            ),
+                            strokeWidth = 3f
+                        )
+                    }
+
+                    // Draw premium gold center hub
+                    drawCircle(
+                        color = DarkBg,
+                        radius = center * 0.18f,
+                        center = Offset(center, center)
+                    )
+                    drawCircle(
+                        color = GoldCoin,
+                        radius = center * 0.15f,
+                        center = Offset(center, center)
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        radius = center * 0.05f,
+                        center = Offset(center, center)
+                    )
+                }
+
+                // Radial slot texts overlay
+                sectors.forEachIndexed { index, text ->
+                    val sectorAngle = 360f / sectors.size
+                    val midAngle = index * sectorAngle + sectorAngle / 2f
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .rotate(midAngle),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Text(
+                            text = text,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 36.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // SPIN NOW Button
+            val buttonEnabled = !isSpinning && (
+                !freeSpinUsed || (freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins > 0)
+            )
+
+            val buttonText = when {
+                isSpinning -> "SPINNING..."
+                !freeSpinUsed -> "SPIN NOW (FREE)"
+                !rewardAdSpinUsed -> "SPIN NOW" // Will be disabled, but shown as "SPIN NOW"
+                wallet.remainingSpins > 0 -> "SPIN NOW"
+                else -> "Today's Spins Completed"
+            }
+
             Button(
                 onClick = {
-                    if (activity != null) {
-                        showAdLoadingDialog = true
-                        val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                        val adUnitId = "ca-app-pub-3940256099942544/5224354917" // AdMob Test Rewarded Ad Unit ID
-                        
-                        com.google.android.gms.ads.rewarded.RewardedAd.load(
-                            activity,
-                            adUnitId,
-                            adRequest,
-                            object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                                override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
-                                    showAdLoadingDialog = false
-                                    var earnedReward = false
-                                    
-                                    ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                                        override fun onAdDismissedFullScreenContent() {
-                                            android.util.Log.d("PlayWinAds", "Spin Ad dismissed")
-                                            if (earnedReward) {
-                                                viewModel.unlockAdSpin { success, errorMsg ->
-                                                    if (!success) {
-                                                        errorMessage = errorMsg ?: "Failed to unlock extra spin."
-                                                    }
-                                                }
+                    if (!isSpinning) {
+                        when {
+                            !freeSpinUsed -> {
+                                isSpinning = true
+                                val targetSector = viewModel.rollSpinRewardDynamic()
+                                if (targetSector != -1) {
+                                    coroutineScope.launch {
+                                        val sectorAngle = 360f / sectors.size
+                                        val targetAngle = 360f - (targetSector * sectorAngle + sectorAngle / 2f)
+                                        val extraTurns = 5 * 360f
+                                        val finalRotationTarget = rotationAngle - (rotationAngle % 360f) + extraTurns + targetAngle
+
+                                        animate(
+                                            initialValue = rotationAngle,
+                                            targetValue = finalRotationTarget,
+                                            animationSpec = tween(
+                                                durationMillis = 4000,
+                                                easing = FastOutSlowInEasing
+                                            )
+                                        ) { value, _ ->
+                                            rotationAngle = value
+                                        }
+
+                                        viewModel.performSpinWheelTransaction(targetSector, isAdSpin = false) { success, errorMsg ->
+                                            isSpinning = false
+                                            if (success) {
+                                                val finalSector = sectors[targetSector]
+                                                showResultTitle = "🎉 Congratulations!"
+                                                showResultMessage = "You won $finalSector"
+                                                showResultPopup = true
                                             } else {
-                                                errorMessage = "Ad skipped or closed early. No spin unlocked."
+                                                errorMessage = errorMsg ?: "Transaction failed."
                                             }
                                         }
-                                        
-                                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                                            android.util.Log.e("PlayWinAds", "Failed to show spin ad: ${error.message}")
-                                            // Fallback to simulation
-                                            adSecondsLeft = 3
-                                            showAdOverlay = true
-                                        }
                                     }
-                                    
-                                    ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
-                                        earnedReward = true
-                                    })
-                                }
-
-                                override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                                    android.util.Log.e("PlayWinAds", "Failed to load spin ad: ${loadAdError.message}")
-                                    // Fallback to simulation so user is not blocked
-                                    showAdLoadingDialog = false
-                                    adSecondsLeft = 3
-                                    showAdOverlay = true
+                                } else {
+                                    isSpinning = false
+                                    errorMessage = "No active rewards available to spin."
                                 }
                             }
-                        )
-                    } else {
-                        // Fallback directly
-                        adSecondsLeft = 3
-                        showAdOverlay = true
+                            freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins > 0 -> {
+                                isSpinning = true
+                                val targetSector = viewModel.rollSpinRewardDynamic()
+                                if (targetSector != -1) {
+                                    coroutineScope.launch {
+                                        val sectorAngle = 360f / sectors.size
+                                        val targetAngle = 360f - (targetSector * sectorAngle + sectorAngle / 2f)
+                                        val extraTurns = 5 * 360f
+                                        val finalRotationTarget = rotationAngle - (rotationAngle % 360f) + extraTurns + targetAngle
+
+                                        animate(
+                                            initialValue = rotationAngle,
+                                            targetValue = finalRotationTarget,
+                                            animationSpec = tween(
+                                                durationMillis = 4000,
+                                                easing = FastOutSlowInEasing
+                                            )
+                                        ) { value, _ ->
+                                            rotationAngle = value
+                                        }
+
+                                        viewModel.performSpinWheelTransaction(targetSector, isAdSpin = true) { success, errorMsg ->
+                                            isSpinning = false
+                                            if (success) {
+                                                val finalSector = sectors[targetSector]
+                                                showResultTitle = "🎉 Congratulations!"
+                                                showResultMessage = "You won $finalSector"
+                                                showResultPopup = true
+                                            } else {
+                                                errorMessage = errorMsg ?: "Transaction failed."
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    isSpinning = false
+                                    errorMessage = "No active rewards available to spin."
+                                }
+                            }
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD32F2F) // Beautiful active Red button for rewarded ad
+                    containerColor = if (buttonEnabled) GoldCoin else Color.Gray,
+                    disabledContainerColor = Color.Gray
                 ),
                 modifier = Modifier
                     .width(280.dp)
                     .height(48.dp)
-                    .testTag("watch_reward_ad_spin_button"),
+                    .testTag("spin_now_button"),
+                enabled = buttonEnabled,
                 shape = RoundedCornerShape(24.dp)
             ) {
                 Text(
-                    text = "🎬 Watch Reward Ad to Unlock 1 Extra Spin",
-                    color = Color.White,
+                    text = buttonText,
+                    color = if (buttonEnabled) PrimaryDark else Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
+                    fontSize = 16.sp
                 )
             }
-        }
 
-        if (freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins == 0 && !isSpinning) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Today's Spins Completed. Come Back Tomorrow.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextWhite.copy(alpha = 0.6f),
-                fontWeight = FontWeight.Bold
-            )
-        }
+            // 2. Reward Ad logic:
+            // After the free spin is used, disable the Spin button.
+            // Show "Watch Reward Ad to Unlock 1 Extra Spin" (Only when freeSpinUsed and not rewardAdSpinUsed)
+            if (freeSpinUsed && !rewardAdSpinUsed && !isSpinning) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = {
+                        if (activity != null) {
+                            showAdLoadingDialog = true
+                            val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
+                            val adUnitId = "ca-app-pub-3940256099942544/5224354917" // AdMob Test Rewarded Ad Unit ID
+                            
+                            com.google.android.gms.ads.rewarded.RewardedAd.load(
+                                activity,
+                                adUnitId,
+                                adRequest,
+                                object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
+                                    override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
+                                        showAdLoadingDialog = false
+                                        var earnedReward = false
+                                        
+                                        ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                                            override fun onAdDismissedFullScreenContent() {
+                                                android.util.Log.d("PlayWinAds", "Spin Ad dismissed")
+                                                if (earnedReward) {
+                                                    viewModel.unlockAdSpin { success, errorMsg ->
+                                                        if (!success) {
+                                                            errorMessage = errorMsg ?: "Failed to unlock extra spin."
+                                                        }
+                                                    }
+                                                } else {
+                                                    errorMessage = "Ad skipped or closed early. No spin unlocked."
+                                                }
+                                            }
+                                            
+                                            override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
+                                                android.util.Log.e("PlayWinAds", "Failed to show spin ad: ${error.message}")
+                                                // Fallback to simulation
+                                                adSecondsLeft = 3
+                                                showAdOverlay = true
+                                            }
+                                        }
+                                        
+                                        ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
+                                            earnedReward = true
+                                        })
+                                    }
 
-        Spacer(modifier = Modifier.height(24.dp))
+                                    override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
+                                        android.util.Log.e("PlayWinAds", "Failed to load spin ad: ${loadAdError.message}")
+                                        // Fallback to simulation so user is not blocked
+                                        showAdLoadingDialog = false
+                                        adSecondsLeft = 3
+                                        showAdOverlay = true
+                                    }
+                                }
+                            )
+                        } else {
+                            // Fallback directly
+                            adSecondsLeft = 3
+                            showAdOverlay = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFD32F2F) // Beautiful active Red button for rewarded ad
+                    ),
+                    modifier = Modifier
+                        .width(280.dp)
+                        .height(48.dp)
+                        .testTag("watch_reward_ad_spin_button"),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Text(
+                        text = "🎬 Watch Reward Ad to Unlock 1 Extra Spin",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
 
-        // Weighted details list card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = CardDark),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
+            if (freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins == 0 && !isSpinning) {
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "🎡 Spinner Probabilities & Rules",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = GoldCoin,
+                    text = "Today's Spins Completed. Come Back Tomorrow.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.6f),
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                val items = listOf(
-                    "+5 Coins → 35%",
-                    "+10 Coins → 25%",
-                    "+20 Coins → 20%",
-                    "+30 Coins → 10%",
-                    "+50 Coins → 7%",
-                    "+100 Coins → 2% (Rare)",
-                    "+200 Coins → 1% (Ultra Rare)"
-                )
-                
-                items.forEach { line ->
-                    Row(
-                        modifier = Modifier.padding(vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(GoldCoin)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = line,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextWhite.copy(alpha = 0.8f)
-                        )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Weighted details list card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = CardDark),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "🎡 Spinner Probabilities & Rules",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = GoldCoin,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    val totalWeight = activeRewards.sumOf { it.probabilityWeight }
+                    activeRewards.forEach { reward ->
+                        val percentage = if (totalWeight > 0) {
+                            (reward.probabilityWeight.toFloat() / totalWeight * 100).toInt()
+                        } else {
+                            0
+                        }
+                        Row(
+                            modifier = Modifier.padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(GoldCoin)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "${reward.name} → $percentage% (${reward.type})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                        }
                     }
                 }
             }
@@ -706,6 +748,1275 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
 @Composable
 fun LuckyScratchScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
+    var isAdminMode by remember { mutableStateOf(false) }
+
+    if (isAdminMode) {
+        LuckyScratchAdminScreen(viewModel = viewModel, onBack = { isAdminMode = false })
+    } else {
+        LuckyScratchUserScreen(viewModel = viewModel, onBack = onBack, onAdminClick = { isAdminMode = true })
+    }
+}
+
+// Particle class for win confetti animation
+data class ScratchConfetti(
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    var color: Color,
+    var size: Float,
+    var rotation: Float,
+    var rotationSpeed: Float
+)
+
+data class ScratchParticle(
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    var alpha: Float,
+    var size: Float,
+    var color: Color
+)
+
+data class FallingCoin(
+    var x: Float,
+    var y: Float,
+    var vx: Float,
+    var vy: Float,
+    var alpha: Float,
+    val size: Float,
+    var rotation: Float,
+    var rotationSpeed: Float
+)
+
+object ScratchSoundPlayer {
+    private var toneGen: android.media.ToneGenerator? = null
+    init {
+        try {
+            toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 100)
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    fun playScratchTick() {
+        try {
+            toneGen?.startTone(android.media.ToneGenerator.TONE_CDMA_PIP, 25)
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    fun playWinSound() {
+        try {
+            Thread {
+                try {
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_1, 120)
+                    Thread.sleep(120)
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_5, 120)
+                    Thread.sleep(120)
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_9, 200)
+                } catch (e: Exception) {}
+            }.start()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    fun playCoinBurst() {
+        try {
+            Thread {
+                repeat(4) {
+                    try {
+                        toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_S, 80)
+                        Thread.sleep(120)
+                    } catch (e: Exception) {}
+                }
+            }.start()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    fun playBetterLuckSound() {
+        try {
+            Thread {
+                try {
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_9, 150)
+                    Thread.sleep(150)
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_5, 150)
+                    Thread.sleep(150)
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_1, 250)
+                } catch (e: Exception) {}
+            }.start()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    fun playCoinCollectionSound() {
+        try {
+            Thread {
+                try {
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_3, 100)
+                    Thread.sleep(100)
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_7, 100)
+                    Thread.sleep(100)
+                    toneGen?.startTone(android.media.ToneGenerator.TONE_DTMF_D, 180)
+                } catch (e: Exception) {}
+            }.start()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit, onAdminClick: () -> Unit) {
+    val wallet by viewModel.walletState.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
+    val settings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
+    val rewards by viewModel.scratchCardRewardsState.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val activity = context as? android.app.Activity
+    val coroutineScope = rememberCoroutineScope()
+
+    // Local state variables
+    val dragPoints = remember { mutableStateListOf<Offset>() }
+    var isProcessing by remember { mutableStateOf(false) }
+    var isStarted by remember { mutableStateOf(false) }
+    var isFullyScratched by remember { mutableStateOf(false) }
+    var scratchTxId by remember { mutableStateOf("") }
+    
+    // Result reward tracking
+    var wonReward by remember { mutableStateOf<com.playwin.app.data.model.FirebaseScratchCardReward?>(null) }
+    var showResultDialog by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Ad management states
+    var showAdLoadingDialog by remember { mutableStateOf(false) }
+    var showAdOverlay by remember { mutableStateOf(false) }
+    var adSecondsLeft by remember { mutableStateOf(0) }
+
+    // Dynamic checks
+    val scratchesToday = currentUser?.scratchesToday ?: 0
+    val cardsLeft = maxOf(0, settings.dailyLimit - scratchesToday)
+    val userLevel = currentUser?.level ?: 1
+
+    // Cooldown verification
+    val lastScratchTime = currentUser?.lastScratchResetTime ?: 0L
+    val cooldownDurationMs = settings.cooldownMinutes * 60 * 1000L
+    val timeElapsed = System.currentTimeMillis() - lastScratchTime
+    val isCooldownActive = lastScratchTime > 0L && timeElapsed < cooldownDurationMs
+
+    // Live countdown timer state
+    var cooldownSecondsLeft by remember { mutableStateOf(0L) }
+    LaunchedEffect(lastScratchTime, settings.cooldownMinutes) {
+        while (true) {
+            val elapsed = System.currentTimeMillis() - lastScratchTime
+            val remaining = cooldownDurationMs - elapsed
+            cooldownSecondsLeft = if (remaining > 0L) remaining / 1000L else 0L
+            delay(1000L)
+        }
+    }
+
+    // Grid scratch area tracker (12x8 grid)
+    val cols = 12
+    val rows = 8
+    val scratchedCells = remember { mutableStateMapOf<Int, Boolean>() }
+
+    val scratchParticles = remember { mutableStateListOf<ScratchParticle>() }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    LaunchedEffect(scratchParticles.size) {
+        if (scratchParticles.isNotEmpty()) {
+            while (scratchParticles.isNotEmpty()) {
+                val iterator = scratchParticles.iterator()
+                while (iterator.hasNext()) {
+                    val p = iterator.next()
+                    p.x += p.vx
+                    p.y += p.vy
+                    p.vx *= 0.92f
+                    p.vy *= 0.92f
+                    p.vy += 0.2f // gravity
+                    p.alpha -= 0.04f
+                    if (p.alpha <= 0f) {
+                        iterator.remove()
+                    }
+                }
+                delay(16)
+            }
+        }
+    }
+
+    val cardScale by animateFloatAsState(
+        targetValue = if (isFullyScratched) 1.08f else 1.0f,
+        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+        label = "card_scale"
+    )
+
+    val cardRotation by animateFloatAsState(
+        targetValue = if (isFullyScratched) 360f else 0f,
+        animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+        label = "card_rotation"
+    )
+
+    // Confetti particles state
+    val confettiList = remember { mutableStateListOf<ScratchConfetti>() }
+    var animateConfetti by remember { mutableStateOf(false) }
+
+    LaunchedEffect(animateConfetti) {
+        if (animateConfetti) {
+            confettiList.clear()
+            val colors = listOf(Color(0xFFFFD700), Color(0xFF00E676), Color(0xFF00E5FF), Color(0xFFE040FB), Color(0xFFFF9100), Color(0xFFFF4081))
+            repeat(80) {
+                confettiList.add(
+                    ScratchConfetti(
+                        x = (100..700).random().toFloat(),
+                        y = -50f,
+                        vx = (-8..8).random().toFloat(),
+                        vy = (5..15).random().toFloat(),
+                        color = colors.random(),
+                        size = (12..32).random().toFloat(),
+                        rotation = (0..360).random().toFloat(),
+                        rotationSpeed = (-10..10).random().toFloat()
+                    )
+                )
+            }
+            while (confettiList.isNotEmpty() && animateConfetti) {
+                for (i in confettiList.indices) {
+                    val c = confettiList[i]
+                    c.x += c.vx
+                    c.y += c.vy
+                    c.vy += 0.2f // gravity
+                    c.rotation += c.rotationSpeed
+                }
+                confettiList.removeAll { it.y > 2200f || it.x < -100f || it.x > 1200f }
+                delay(16)
+            }
+            animateConfetti = false
+        }
+    }
+
+    // Glowing animation border around the scratch card frame
+    val infiniteTransition = rememberInfiniteTransition(label = "border_glow")
+    val glowIntensity by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow_val"
+    )
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DarkBg)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Header panel with Admin Console switch button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextWhite)
+                    }
+                    Text(
+                        text = "Premium Scratch Card",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onAdminClick,
+                    modifier = Modifier
+                        .testTag("admin_panel_button")
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(PrimaryDark.copy(alpha = 0.2f))
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = "Admin Console", tint = PrimaryDark)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Scratch the silver holographic safe film to reveal your instant reward!",
+                style = MaterialTheme.typography.bodyLarge,
+                color = TextWhite.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Stats row cards
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = CardDark),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Remaining Cards",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextWhite.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "$cardsLeft / ${settings.dailyLimit}",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = GoldCoin,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = CardDark),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Total Coin Wins",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextWhite.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "+${wallet.totalScratchRewards} Coins",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color(0xFF00E676),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Dynamic Eligibility Screen overlays
+            if (!settings.enabled) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Red.copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color.Red)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = "Disabled", tint = Color.Red, modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Game Disabled", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("The scratch card feature is temporarily disabled by the admin. Please try again later.", color = TextWhite.copy(alpha = 0.7f), textAlign = TextAlign.Center)
+                    }
+                }
+            } else if (userLevel < settings.minimumLevel) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = PrimaryDark.copy(alpha = 0.1f)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, PrimaryDark)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = "Level Locked", tint = PrimaryDark, modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Requires Level ${settings.minimumLevel}", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("You are currently Level $userLevel. Continue completing tasks to level up and unlock this game!", color = TextWhite.copy(alpha = 0.7f), textAlign = TextAlign.Center)
+                    }
+                }
+            } else if (isCooldownActive) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFF9800).copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFF9800))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = "Cooldown Active", tint = Color(0xFFFF9800), modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Cooldown Active", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val minutes = cooldownSecondsLeft / 60
+                        val seconds = cooldownSecondsLeft % 60
+                        Text(
+                            text = String.format("Next card available in %02d:%02d", minutes, seconds),
+                            color = GoldCoin,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                    }
+                }
+            } else if (cardsLeft <= 0) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Daily scratch limit reached!",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Come back tomorrow for another ${settings.dailyLimit} cards!",
+                        color = TextWhite.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                // Scratch Card Main Frame
+                val glowColor = PrimaryDark.copy(alpha = glowIntensity)
+                Box(
+                    modifier = Modifier
+                        .size(width = 300.dp, height = 200.dp)
+                        .graphicsLayer {
+                            scaleX = cardScale
+                            scaleY = cardScale
+                            rotationY = cardRotation
+                            cameraDistance = 12f * density
+                        }
+                        .shadow(24.dp, RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(CardDark)
+                        .border(BorderStroke(3.dp, glowColor), RoundedCornerShape(16.dp))
+                        .testTag("scratch_card_container"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Underneath prize structure
+                    wonReward?.let { reward ->
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = reward.icon,
+                                fontSize = 54.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "YOU REVEALED",
+                                color = TextWhite.copy(alpha = 0.8f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = reward.name,
+                                color = try {
+                                    Color(android.graphics.Color.parseColor(reward.color))
+                                } catch (e: Exception) {
+                                    GoldCoin
+                                },
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } ?: Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🎁",
+                            fontSize = 50.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Scratch to Reveal Reward!",
+                            color = TextWhite.copy(alpha = 0.6f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Scratch overlay layer
+                    if (!isFullyScratched) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = 0.99f }
+                                .pointerInput(isProcessing) {
+                                    if (isProcessing || isFullyScratched) return@pointerInput
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            if (!isStarted && !isProcessing) {
+                                                isStarted = true
+                                                errorMessage = null
+                                                scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
+                                                wonReward = viewModel.rollScratchRewardFromFirebase()
+                                            }
+                                            if (isStarted && !isProcessing) {
+                                                dragPoints.add(offset)
+                                            }
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            if (isStarted && !isProcessing && !isFullyScratched) {
+                                                val currentPoint = change.position
+                                                dragPoints.add(currentPoint)
+
+                                                // Calculate grid cells scratched area
+                                                val cellWidth = size.width / cols
+                                                val cellHeight = size.height / rows
+                                                val col = (currentPoint.x / cellWidth).toInt().coerceIn(0, cols - 1)
+                                                val row = (currentPoint.y / cellHeight).toInt().coerceIn(0, rows - 1)
+                                                val cellKey = row * cols + col
+                                                if (!scratchedCells.containsKey(cellKey)) {
+                                                    scratchedCells[cellKey] = true
+                                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                                    ScratchSoundPlayer.playScratchTick()
+                                                }
+
+                                                // Spawn real silver glitter dust scratch particles!
+                                                repeat(4) {
+                                                    scratchParticles.add(
+                                                        ScratchParticle(
+                                                            x = currentPoint.x,
+                                                            y = currentPoint.y,
+                                                            vx = (-6..6).random().toFloat(),
+                                                            vy = (-8..3).random().toFloat(),
+                                                            alpha = 1.0f,
+                                                            size = (5..12).random().toFloat(),
+                                                            color = Color(0xFFCFD8DC)
+                                                        )
+                                                    )
+                                                }
+
+                                                val percentScratched = (scratchedCells.size.toFloat() / (cols * rows)) * 100f
+                                                if (percentScratched >= 70f) {
+                                                    isFullyScratched = true
+                                                    animateConfetti = true
+                                                    showResultDialog = true
+
+                                                    // Play premium winning sound based on type
+                                                    wonReward?.let { r ->
+                                                        if (r.type == "Coins") {
+                                                            ScratchSoundPlayer.playCoinBurst()
+                                                        } else if (r.type == "Retry Scratch") {
+                                                            ScratchSoundPlayer.playWinSound()
+                                                        } else {
+                                                            ScratchSoundPlayer.playBetterLuckSound()
+                                                        }
+                                                    }
+
+                                                    // Rich haptic feedback vibration
+                                                    try {
+                                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                    } catch (ex: Exception) {}
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                        ) {
+                            // Authentic premium silver holographic gradient
+                            drawRect(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color(0xFFE0E0E0),
+                                        Color(0xFFB0BEC5),
+                                        Color(0xFFECEFF1),
+                                        Color(0xFFCFD8DC),
+                                        Color(0xFF90A4AE)
+                                    ),
+                                    start = Offset.Zero,
+                                    end = Offset(size.width, size.height)
+                                )
+                            )
+
+                            // Silver holographic grid lines
+                            val spacing = 35f
+                            for (x in 0..(size.width / spacing).toInt()) {
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    start = Offset(x * spacing, 0f),
+                                    end = Offset(x * spacing, size.height),
+                                    strokeWidth = 2f
+                                )
+                            }
+                            for (y in 0..(size.height / spacing).toInt()) {
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    start = Offset(0f, y * spacing),
+                                    end = Offset(size.width, y * spacing),
+                                    strokeWidth = 2f
+                                )
+                            }
+
+                            // Erased transparent paths
+                            dragPoints.forEach { pt ->
+                                drawCircle(
+                                    color = Color.Transparent,
+                                    radius = 48f,
+                                    center = pt,
+                                    blendMode = BlendMode.Clear
+                                )
+                            }
+                        }
+                    }
+
+                    // Render active scratch particles inside the card
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        scratchParticles.forEach { p ->
+                            drawCircle(
+                                color = p.color.copy(alpha = p.alpha),
+                                radius = p.size,
+                                center = Offset(p.x, p.y)
+                            )
+                        }
+                    }
+
+                    // Processing / Securing State loader
+                    if (isProcessing) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.7f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = GoldCoin, modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Securing reward...", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
+                    } else if (!isStarted && cardsLeft > 0) {
+                        // Instruct overlay sitting on the front
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Lock, contentDescription = "Safe Lock Icon", tint = PrimaryDark, modifier = Modifier.size(42.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Scratch Safe Film Here!",
+                                    color = PrimaryDark,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                if (isFullyScratched) {
+                    Button(
+                        onClick = {
+                            dragPoints.clear()
+                            scratchedCells.clear()
+                            isFullyScratched = false
+                            isStarted = false
+                            wonReward = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
+                        modifier = Modifier
+                            .width(220.dp)
+                            .height(48.dp)
+                            .testTag("scratch_another_button"),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("SCRATCH ANOTHER", color = CardDark, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                } else {
+                    Text(
+                        text = "Swipe/Scratch Here!",
+                        color = GoldCoin,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Rules & Probabilities Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = CardDark),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "🎟️ Scratch Card Pool Probabilities",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = GoldCoin,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val activePool = rewards.filter { it.active }
+                    val totalWeight = activePool.sumOf { it.probabilityWeight }
+
+                    if (activePool.isEmpty()) {
+                        Text("No active rewards in the pool. Modify in admin console.", color = Color.Gray, fontSize = 13.sp)
+                    } else {
+                        activePool.forEach { reward ->
+                            val pct = if (totalWeight > 0) {
+                                maxOf(0.1f, (reward.probabilityWeight.toFloat() / totalWeight * 100f))
+                            } else {
+                                100f / activePool.size
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Text(reward.icon, fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(reward.name, color = TextWhite.copy(alpha = 0.8f), fontSize = 14.sp, maxLines = 1)
+                                }
+                                Text(
+                                    text = String.format("%.1f%%", pct),
+                                    color = try {
+                                        Color(android.graphics.Color.parseColor(reward.color))
+                                    } catch (e: Exception) {
+                                        GoldCoin
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Confetti Canvas layer overlaying the whole screen
+        if (animateConfetti) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                confettiList.forEach { c ->
+                    drawContext.canvas.save()
+                    drawContext.canvas.rotate(c.rotation, c.x, c.y)
+                    drawRect(
+                        color = c.color,
+                        topLeft = Offset(c.x, c.y),
+                        size = androidx.compose.ui.geometry.Size(c.size, c.size / 2)
+                    )
+                    drawContext.canvas.restore()
+                }
+            }
+        }
+
+    // High Fidelity Post-Scratch Premium Reward Dialog
+    if (showResultDialog) {
+        wonReward?.let { reward ->
+            val fallingCoins = remember { mutableStateListOf<FallingCoin>() }
+            var scaleVal by remember { mutableStateOf(0.8f) }
+            val animScale by animateFloatAsState(
+                targetValue = scaleVal,
+                animationSpec = tween(400, easing = FastOutSlowInEasing),
+                label = "dialog_scale"
+            )
+            
+            // Shimmer shine animation for coupons/vouchers
+            val shimmerTransition = rememberInfiniteTransition(label = "voucher_shimmer")
+            val shimmerX by shimmerTransition.animateFloat(
+                initialValue = -300f,
+                targetValue = 600f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(1800, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "shimmer_x"
+            )
+
+            LaunchedEffect(Unit) {
+                scaleVal = 1.0f
+                // Spawn physical coin particles exploding
+                fallingCoins.clear()
+                if (reward.type == "Coins") {
+                    repeat(25) {
+                        fallingCoins.add(
+                            FallingCoin(
+                                x = 150f + (0..60).random().toFloat(),
+                                y = 150f + (0..60).random().toFloat(),
+                                vx = (-12..12).random().toFloat(),
+                                vy = (-22..-8).random().toFloat(),
+                                alpha = 1.0f,
+                                size = (15..32).random().toFloat(),
+                                rotation = (0..360).random().toFloat(),
+                                rotationSpeed = (-12..12).random().toFloat()
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Gravity loop for falling coins
+            LaunchedEffect(fallingCoins.size) {
+                if (fallingCoins.isNotEmpty()) {
+                    while (fallingCoins.isNotEmpty() && showResultDialog) {
+                        val iterator = fallingCoins.iterator()
+                        while (iterator.hasNext()) {
+                            val c = iterator.next()
+                            c.x += c.vx
+                            c.y += c.vy
+                            c.vy += 1.0f // Gravity acceleration
+                            c.rotation += c.rotationSpeed
+                            c.alpha -= 0.015f
+                            if (c.alpha <= 0f || c.y > 1000f) {
+                                iterator.remove()
+                            }
+                        }
+                        delay(16)
+                    }
+                }
+            }
+
+            Dialog(onDismissRequest = { /* Dismiss only on explicit button action */ }) {
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer {
+                            scaleX = animScale
+                            scaleY = animScale
+                        }
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardDark),
+                        shape = RoundedCornerShape(24.dp),
+                        border = BorderStroke(2.dp, try {
+                            Color(android.graphics.Color.parseColor(reward.color))
+                        } catch (e: Exception) {
+                            PrimaryDark
+                        }),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(24.dp)
+                                    .fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                when (reward.type) {
+                                    "Coins" -> {
+                                        Text(
+                                            text = "🎉 Congratulations!",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = GoldCoin,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        
+                                        // Glowing ring container
+                                        Box(
+                                            modifier = Modifier
+                                                .size(110.dp)
+                                                .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(55.dp))
+                                                .border(BorderStroke(3.dp, GoldCoin), RoundedCornerShape(55.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("🪙", fontSize = 56.sp)
+                                        }
+
+                                        Text(
+                                            text = "You Won",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = TextWhite.copy(alpha = 0.8f),
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        Text(
+                                            text = "${reward.value} Coins",
+                                            style = MaterialTheme.typography.headlineLarge,
+                                            color = Color(0xFF00E676),
+                                            fontWeight = FontWeight.Black,
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        Text(
+                                            text = "Added Successfully!",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextWhite.copy(alpha = 0.6f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                    "Coupon" -> {
+                                        Text(
+                                            text = "🎁 Congratulations!",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = Color(0xFFE040FB),
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        
+                                        // Shimmering Coupon container
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 180.dp, height = 100.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color(0xFF263238))
+                                                .border(BorderStroke(2.dp, Color(0xFFE040FB)), RoundedCornerShape(12.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            // Shimmer shine overlay
+                                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                                drawRect(
+                                                    brush = Brush.linearGradient(
+                                                        colors = listOf(
+                                                            Color.Transparent,
+                                                            Color.White.copy(alpha = 0.25f),
+                                                            Color.Transparent
+                                                        ),
+                                                        start = Offset(shimmerX, 0f),
+                                                        end = Offset(shimmerX + 150f, size.height)
+                                                    )
+                                                )
+                                            }
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("🎁", fontSize = 32.sp)
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(reward.name, color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            }
+                                        }
+
+                                        Text(
+                                            text = reward.value,
+                                            style = MaterialTheme.typography.headlineMedium,
+                                            color = Color(0xFF00E5FF),
+                                            fontWeight = FontWeight.Black,
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        Text(
+                                            text = "Saved to Coupon Wallet",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextWhite.copy(alpha = 0.6f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                    "Retry Scratch" -> {
+                                        Text(
+                                            text = "🔄 Lucky!",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = Color(0xFF00E5FF),
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .size(110.dp)
+                                                .background(Color(0xFF00E5FF).copy(alpha = 0.15f), RoundedCornerShape(55.dp))
+                                                .border(BorderStroke(3.dp, Color(0xFF00E5FF)), RoundedCornerShape(55.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("🔄", fontSize = 56.sp)
+                                        }
+
+                                        Text(
+                                            text = "Extra Scratch",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = TextWhite,
+                                            fontWeight = FontWeight.Black,
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        Text(
+                                            text = "Added Successfully!",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = TextWhite.copy(alpha = 0.6f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                    else -> {
+                                        Text(
+                                            text = "😔 Better Luck Next Time",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = Color.LightGray,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .size(110.dp)
+                                                .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(55.dp))
+                                                .border(BorderStroke(3.dp, Color.Gray), RoundedCornerShape(55.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("😔", fontSize = 56.sp)
+                                        }
+
+                                        Text(
+                                            text = "Try Again!",
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            color = TextWhite,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                var isCollecting by remember { mutableStateOf(false) }
+
+                                // Collect button
+                                Button(
+                                    onClick = {
+                                        if (isCollecting) return@Button
+                                        isCollecting = true
+                                        
+                                        // Play coin collection sound & trigger vibration
+                                        ScratchSoundPlayer.playCoinCollectionSound()
+                                        try {
+                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                        } catch (ex: Exception) {}
+
+                                        wonReward?.let { r ->
+                                            android.util.Log.d("PlayWinScratch", "[UI_CLICK] Collecting reward: ${r.name}, type: ${r.type}, value: ${r.value}, txId: $scratchTxId")
+                                            viewModel.performScratchCardTransactionSecure(r, scratchTxId) { success, reward, err ->
+                                                isCollecting = false
+                                                if (success && reward != null) {
+                                                    android.util.Log.d("PlayWinScratch", "[UI_SUCCESS] Reward collection committed successfully!")
+                                                    android.widget.Toast.makeText(context, "Reward Collected Successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    showResultDialog = false
+                                                    dragPoints.clear()
+                                                    scratchedCells.clear()
+                                                    isFullyScratched = false
+                                                    isStarted = false
+                                                    wonReward = null
+                                                } else {
+                                                    android.util.Log.e("PlayWinScratch", "[UI_FAILURE] Reward collection failed: $err")
+                                                    errorMessage = err ?: "Failed to process reward transaction."
+                                                }
+                                            }
+                                        } ?: run {
+                                            isCollecting = false
+                                            showResultDialog = false
+                                            dragPoints.clear()
+                                            scratchedCells.clear()
+                                            isFullyScratched = false
+                                            isStarted = false
+                                            wonReward = null
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = try {
+                                            Color(android.graphics.Color.parseColor(reward.color))
+                                        } catch (e: Exception) {
+                                            GoldCoin
+                                        }
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("collect_reward_btn"),
+                                    shape = RoundedCornerShape(24.dp)
+                                ) {
+                                    if (isCollecting) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            color = CardDark,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = if (reward.type == "Better Luck Next Time") "TRY AGAIN" else "COLLECT REWARD",
+                                            color = CardDark,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp
+                                        )
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        showResultDialog = false
+                                        dragPoints.clear()
+                                        scratchedCells.clear()
+                                        isFullyScratched = false
+                                        isStarted = false
+                                        wonReward = null
+                                        onBack()
+                                    },
+                                    border = BorderStroke(1.dp, Color.Gray),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextWhite),
+                                    modifier = Modifier.fillMaxWidth().testTag("home_button"),
+                                    shape = RoundedCornerShape(24.dp)
+                                ) {
+                                    Text("Go Home")
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        showResultDialog = false
+                                        dragPoints.clear()
+                                        scratchedCells.clear()
+                                        isFullyScratched = false
+                                        isStarted = false
+                                        wonReward = null
+                                        android.widget.Toast.makeText(context, "Redirecting to History Logs...", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.testTag("history_button")
+                                ) {
+                                    Text("View Transaction History", color = GoldCoin, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (fallingCoins.isNotEmpty()) {
+                                Canvas(modifier = Modifier.matchParentSize()) {
+                                    fallingCoins.forEach { coin ->
+                                        drawCircle(
+                                            color = Color(0xFFFFD700).copy(alpha = coin.alpha),
+                                            radius = coin.size / 2f,
+                                            center = Offset(coin.x, coin.y)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+    // Error Alert Dialog
+    if (errorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorMessage = null },
+            confirmButton = {
+                Button(
+                    onClick = { errorMessage = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("OK", color = Color.White)
+                }
+            },
+            title = { Text("Information", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = { Text(errorMessage ?: "", color = Color.White.copy(alpha = 0.8f)) },
+            containerColor = CardDark,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // Ad watch / delay overlay dialogues
+    if (showAdOverlay) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = {
+                Text("📺 Watching Rewarded Ad", color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(
+                        progress = adSecondsLeft.toFloat() / 3f,
+                        color = GoldCoin,
+                        strokeWidth = 4.dp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Your ad is playing... extra scratch in ${adSecondsLeft}s",
+                        color = Color.White.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            },
+            containerColor = CardDark,
+            shape = RoundedCornerShape(24.dp)
+        )
+
+        LaunchedEffect(Unit) {
+            adSecondsLeft = 3
+            while (adSecondsLeft > 0) {
+                delay(1000L)
+                adSecondsLeft--
+            }
+            showAdOverlay = false
+            viewModel.unlockAdScratch { success, errorMsg ->
+                if (success) {
+                    dragPoints.clear()
+                    isFullyScratched = false
+                    isStarted = false
+                    errorMessage = null
+                } else {
+                    errorMessage = errorMsg ?: "Failed to unlock extra scratch."
+                }
+            }
+        }
+    }
+
+    if (showAdLoadingDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            text = {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(color = GoldCoin)
+                    Text("Loading Reward Ad...", color = Color.White, fontWeight = FontWeight.Medium)
+                }
+            },
+            containerColor = CardDark,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+/* DELETED LEFTOVER START
     val wallet by viewModel.walletState.collectAsStateWithLifecycle()
     val dragPoints = remember { mutableStateListOf<Offset>() }
     var isProcessing by remember { mutableStateOf(false) }
@@ -1291,6 +2602,7 @@ fun LuckyScratchScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         )
     }
 }
+DELETED LEFTOVER END */
 
 @Composable
 fun AdRewardButton(
@@ -1476,11 +2788,101 @@ fun TriviaQuizScreen(
 
     val timerLimit = currentQuiz?.timerSeconds ?: 10
     val timerLimitMs = timerLimit * 1000L
-    val rewardCoinsPerCorrect = currentQuiz?.rewardCoins ?: 50
-    val completionBonus = currentQuiz?.completionBonus ?: 50
+    val rewardCoinsPerCorrect = if (currentQuiz != null && currentQuiz.rewardPerQuestion > 0) currentQuiz.rewardPerQuestion else currentQuiz?.rewardCoins ?: 50
+    val completionBonus = if (currentQuiz != null && currentQuiz.passBonus > 0) currentQuiz.passBonus else currentQuiz?.completionBonus ?: 50
 
     var quizQuestions by remember { mutableStateOf<List<com.playwin.app.data.model.Quiz>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val today = viewModel.getLocalDateString()
+    var isCheckingFirebase by remember { mutableStateOf(true) }
+    var isAlreadyCompletedTodayFirebase by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentQuiz, quizSetId, quizzes) {
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        if (uid != null) {
+            val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+            val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+            
+            val quiz = currentQuiz
+            if (quiz != null && quiz.dayOfWeek.isNotEmpty()) {
+                val qDayOfWeek = quiz.dayOfWeek
+                val todayDayName = viewModel.getTodayDayOfWeekName()
+                
+                // 1. Strict weekday matching: Only play if quiz.dayOfWeek == today's weekday
+                if (!qDayOfWeek.equals(todayDayName, ignoreCase = true)) {
+                    android.widget.Toast.makeText(context, "This quiz is locked. It is only available on $qDayOfWeek.", android.widget.Toast.LENGTH_LONG).show()
+                    onBack()
+                    return@LaunchedEffect
+                }
+                
+                // 2. Strict completion check from Firebase under weeklyQuizProgress
+                db.getReference("users/$uid/weeklyQuizProgress/$qDayOfWeek")
+                    .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+                        override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                            val compDate = snapshot.child("date").getValue(String::class.java)
+                            val completed = snapshot.child("completed").getValue(Boolean::class.java) ?: false
+                            if (completed && compDate == today) {
+                                isAlreadyCompletedTodayFirebase = true
+                                android.widget.Toast.makeText(context, "You have already completed today's quiz.", android.widget.Toast.LENGTH_LONG).show()
+                                onBack()
+                            }
+                            isCheckingFirebase = false
+                        }
+
+                        override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
+                            isCheckingFirebase = false
+                        }
+                    })
+            } else {
+                // If currentQuiz is null, wait until it's loaded if quizzes is not empty
+                if (currentQuiz == null && quizzes.isNotEmpty()) {
+                    // Not found in quizzes, or maybe it's generated. We can fallback to standard check
+                    db.getReference("users/$uid/completedQuizzes/$quizSetId")
+                        .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+                            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                                val compDate = snapshot.child("completedDate").getValue(String::class.java)
+                                val completed = snapshot.child("completed").getValue(Boolean::class.java) ?: false
+                                if (completed && compDate == today) {
+                                    isAlreadyCompletedTodayFirebase = true
+                                    android.widget.Toast.makeText(context, "You have already completed today's quiz.", android.widget.Toast.LENGTH_LONG).show()
+                                    onBack()
+                                }
+                                isCheckingFirebase = false
+                            }
+
+                            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
+                                isCheckingFirebase = false
+                            }
+                        })
+                } else if (currentQuiz == null) {
+                    // Wait for quizzes to load
+                } else {
+                    // Standard quiz (dayOfWeek is empty)
+                    db.getReference("users/$uid/completedQuizzes/$quizSetId")
+                        .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+                            override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                                val compDate = snapshot.child("completedDate").getValue(String::class.java)
+                                val completed = snapshot.child("completed").getValue(Boolean::class.java) ?: false
+                                if (completed && compDate == today) {
+                                    isAlreadyCompletedTodayFirebase = true
+                                    android.widget.Toast.makeText(context, "You have already completed today's quiz.", android.widget.Toast.LENGTH_LONG).show()
+                                    onBack()
+                                }
+                                isCheckingFirebase = false
+                            }
+
+                            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
+                                isCheckingFirebase = false
+                            }
+                        })
+                }
+            }
+        } else {
+            isCheckingFirebase = false
+        }
+    }
 
     LaunchedEffect(quizzes, quizSetId) {
         if (quizSetId.startsWith("set_")) {
@@ -1499,7 +2901,7 @@ fun TriviaQuizScreen(
         }
     }
 
-    if (isLoading) {
+    if (isLoading || isCheckingFirebase) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1509,9 +2911,18 @@ fun TriviaQuizScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(color = ElectricPurple)
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Loading quiz questions from Firebase...", color = TextWhite)
+                Text("Validating status with Firebase...", color = TextWhite)
             }
         }
+        return
+    }
+
+    if (isAlreadyCompletedTodayFirebase) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DarkBg)
+        )
         return
     }
 
@@ -1741,7 +3152,11 @@ fun TriviaQuizScreen(
                 category = categoryId,
                 quizSetId = quizSetId,
                 score = score,
-                answeredQuestionIds = answeredQuestionIds.toList()
+                answeredQuestionIds = answeredQuestionIds.toList(),
+                totalQuestions = quizQuestions.size,
+                rewardCoinsPerCorrect = rewardCoinsPerCorrect,
+                completionBonus = completionBonus,
+                dayOfWeek = currentQuiz?.dayOfWeek ?: ""
             ) { totalEarned ->
                 earnedCoins = totalEarned
                 isSubmitting = false
@@ -1796,7 +3211,7 @@ fun TriviaQuizScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Correct Answers:", color = Color.Gray, fontSize = 14.sp)
-                        Text("$score/10", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("$score/${quizQuestions.size}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -1804,7 +3219,7 @@ fun TriviaQuizScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Coins From Correct Answers:", color = Color.Gray, fontSize = 14.sp)
-                        Text("${score * 50} Coins", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("${score * rewardCoinsPerCorrect} Coins", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
@@ -1812,7 +3227,7 @@ fun TriviaQuizScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Perfect Score Bonus:", color = Color.Gray, fontSize = 14.sp)
-                        Text(if (score == 10) "+50 Coins" else "0 Coins", color = if (score == 10) Color(0xFF4CAF50) else Color.Gray, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(if (score == quizQuestions.size) "+$completionBonus Coins" else "0 Coins", color = if (score == quizQuestions.size) Color(0xFF4CAF50) else Color.Gray, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     
                     Spacer(modifier = Modifier.height(16.dp))

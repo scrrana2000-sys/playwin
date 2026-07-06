@@ -53,6 +53,17 @@ data class FirebaseRedemption(
 )
 
 @IgnoreExtraProperties
+data class FirebaseSpinReward(
+    val id: String = "",
+    val name: String = "",
+    val type: String = "", // "Coins", "Coupon", "Retry", "Better Luck Next Time"
+    val value: String = "", // amount of coins or coupon code/id, empty for retry / better luck
+    val displayOrder: Int = 0,
+    val probabilityWeight: Int = 1,
+    val active: Boolean = true
+)
+
+@IgnoreExtraProperties
 data class FirebaseCouponRedemption(
     val requestId: String = "",
     val userUid: String = "",
@@ -116,6 +127,7 @@ data class FirebaseUser(
     val rewardAdScratchUsed: Boolean = false,
     val lastScratchDate: String = "",
     val lastRewardAdTime: Long = 0L,
+    val scratchesToday: Int = 0,
     
     // Block status
     val isBlocked: Boolean = false,
@@ -129,7 +141,8 @@ data class FirebaseUser(
     val pendingRewards: Int = 0,
     val referralsCoinsEarned: Int = 0,
     val deviceId: String = "",
-    val referralCode: String = ""
+    val referralCode: String = "",
+    val stats: Map<String, Int> = emptyMap()
 )
 
 @IgnoreExtraProperties
@@ -180,11 +193,33 @@ data class FirebaseQuizProgress(
 )
 
 @IgnoreExtraProperties
+data class FirebaseCompletedQuiz(
+    val completed: Boolean = false,
+    val completedAt: Long = 0L,
+    val completedDate: String = "",
+    val score: Int = 0,
+    val correctAnswers: Int = 0,
+    val wrongAnswers: Int = 0,
+    val coinsEarned: Int = 0
+)
+
+@IgnoreExtraProperties
+data class FirebaseWeeklyQuizProgress(
+    val completed: Boolean = false,
+    val completedAt: Long = 0L,
+    val quizId: String = "",
+    val coinsEarned: Int = 0,
+    val score: Int = 0,
+    val date: String = ""
+)
+
+@IgnoreExtraProperties
 data class Quiz(
     val id: String = "",
     val question: String = "",
     val options: List<String> = emptyList(),
-    val correctAnswerIdx: Int = 0
+    val correctAnswerIdx: Int = 0,
+    val explanation: String = ""
 )
 
 @IgnoreExtraProperties
@@ -202,18 +237,65 @@ data class FirebaseReferralRecord(
 data class FirebaseQuiz(
     val id: String = "",
     val title: String = "",
-    val category: String = "",
+    val categoryId: String = "",
+    val categoryName: String = "",
+    val category: String = "", // for compatibility
     val description: String = "",
     val difficulty: String = "Medium",
-    val rewardCoins: Int = 0,
-    val completionBonus: Int = 0,
+    val rewardPerQuestion: Int = 0,
+    val rewardCoins: Int = 0, // for compatibility
+    val passBonus: Int = 0,
+    val completionBonus: Int = 0, // for compatibility
+    val passingPercentage: Int = 0,
     val timerSeconds: Int = 30,
     val icon: String = "",
     val published: Boolean = false,
     val active: Boolean = false,
     val status: String = "",
     val allowReview: Boolean = true,
+    val dayOfWeek: String = "",
     val questions: List<Quiz> = emptyList()
 )
+
+@IgnoreExtraProperties
+data class FirebaseScratchCardSettings(
+    val enabled: Boolean = true,
+    val dailyLimit: Int = 5,
+    val cooldownMinutes: Int = 15,
+    val rewardAdRequired: Boolean = false,
+    val minimumLevel: Int = 1
+)
+
+@IgnoreExtraProperties
+data class FirebaseScratchCardReward(
+    val id: String = "",
+    val name: String = "",
+    val type: String = "Coins", // "Coins", "Coupon", "Retry Scratch", "Better Luck Next Time"
+    val value: String = "0",
+    val probabilityWeight: Int = 10,
+    val displayOrder: Int = 0,
+    val active: Boolean = true,
+    val icon: String = "🎁",
+    val color: String = "#7C4DFF",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@IgnoreExtraProperties
+data class FirebaseScratchHistory(
+    val id: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val rewardId: String = "",
+    val rewardName: String = "",
+    val rewardType: String = "",
+    val rewardValue: String = "",
+    val walletBefore: Int = 0,
+    val walletAfter: Int = 0,
+    val status: String = "Completed",
+    val deviceTime: String = "",
+    val serverTime: Long = 0L,
+    val transactionId: String = ""
+)
+
 
 

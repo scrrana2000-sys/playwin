@@ -38,6 +38,9 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val transactionsState: StateFlow<List<FirebaseTransaction>>
     val tasksState: StateFlow<List<FirebaseTask>>
     val couponsState: StateFlow<List<FirebaseCoupon>>
+    val spinRewardsState: StateFlow<List<com.playwin.app.data.model.FirebaseSpinReward>>
+    val scratchCardSettingsState: StateFlow<com.playwin.app.data.model.FirebaseScratchCardSettings>
+    val scratchCardRewardsState: StateFlow<List<com.playwin.app.data.model.FirebaseScratchCardReward>>
 
     val searchQuery = MutableStateFlow("")
     val selectedFilter = MutableStateFlow("All")
@@ -67,10 +70,14 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var allUsersJob: kotlinx.coroutines.Job? = null
     private var couponRedemptionsJob: kotlinx.coroutines.Job? = null
     private var firebaseQuizProgressJob: kotlinx.coroutines.Job? = null
+    private var firebaseCompletedQuizzesJob: kotlinx.coroutines.Job? = null
+    private var firebaseWeeklyQuizProgressJob: kotlinx.coroutines.Job? = null
     private var referralsHistoryJob: kotlinx.coroutines.Job? = null
     private var quizzesJob: kotlinx.coroutines.Job? = null
 
     val quizProgressState = MutableStateFlow<com.playwin.app.data.model.FirebaseQuizProgress?>(null)
+    val completedQuizzesState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>>(emptyMap())
+    val weeklyQuizProgressState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>>(emptyMap())
     val referralHistoryState = MutableStateFlow<List<FirebaseReferralRecord>>(emptyList())
     val quizzesState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseQuiz>>(emptyList())
 
@@ -146,6 +153,27 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             )
 
         couponsState = repository.firebaseCouponsFlow
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
+        spinRewardsState = repository.firebaseSpinRewardsFlow
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
+
+        scratchCardSettingsState = repository.firebaseScratchCardSettingsFlow
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = com.playwin.app.data.model.FirebaseScratchCardSettings()
+            )
+
+        scratchCardRewardsState = repository.firebaseScratchCardRewardsFlow
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -1093,6 +1121,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         return sdf.format(java.util.Date())
     }
 
+    fun getTodayDayOfWeekName(): String {
+        val calendar = java.util.Calendar.getInstance()
+        val sdf = java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
+        return sdf.format(calendar.time)
+    }
+
     fun getQuizSetStatus(setIndex: Int): String {
         val todayIndex = getDayOfWeek()
         if (setIndex < todayIndex) {
@@ -1146,14 +1180,28 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         totalQuestions: Int = 10,
         rewardCoinsPerCorrect: Int = 50,
         completionBonus: Int = 50,
+        dayOfWeek: String = "",
         onComplete: (Int) -> Unit
     ) {
         val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: return
         
         val progress = quizProgressState.value ?: com.playwin.app.data.model.FirebaseQuizProgress()
-        val isAlreadyCompleted = progress.completedQuizIds.contains(quizSetId)
+        val today = getLocalDateString()
+        val currentDayName = getTodayDayOfWeekName()
+        val quizDayOfWeek = if (dayOfWeek.isNotEmpty()) {
+            dayOfWeek
+        } else {
+            quizzesState.value.find { it.id == quizSetId }?.dayOfWeek?.ifEmpty { currentDayName } ?: currentDayName
+        }
 
-        val totalReward = if (isAlreadyCompleted) {
+        val weeklyProgressRecord = weeklyQuizProgressState.value[quizDayOfWeek]
+        val isAlreadyCompletedTodayWeekly = weeklyProgressRecord != null && weeklyProgressRecord.completed && weeklyProgressRecord.date == today
+
+        val isAlreadyCompletedToday = (completedQuizzesState.value[quizSetId]?.completed == true && completedQuizzesState.value[quizSetId]?.completedDate == today) ||
+            (progress.completedQuizIds.contains(quizSetId) && progress.lastQuizDate == today) ||
+            isAlreadyCompletedTodayWeekly
+
+        val totalReward = if (isAlreadyCompletedToday) {
             0
         } else {
             (score * rewardCoinsPerCorrect) + (if (score == totalQuestions) completionBonus else 0)
@@ -1164,11 +1212,17 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             amount = totalReward,
             type = "quiz_reward",
             source = "Quiz Completed: $category ($score/$totalQuestions)",
-            extraCheck = if (isAlreadyCompleted) null else { mutableData ->
+            extraCheck = { mutableData ->
                 val progressNode = mutableData.child("quizProgress")
                 val completedQuizIds = progressNode.child("completedQuizIds").children.mapNotNull { it.getValue(String::class.java) }
-                if (completedQuizIds.contains(quizSetId)) {
-                    "Quiz already completed."
+                val lastQuizDate = progressNode.child("lastQuizDate").getValue(String::class.java) ?: ""
+                
+                val completedTodayFromProgress = completedQuizIds.contains(quizSetId) && lastQuizDate == today
+                val completedTodayFromCompletedQuizzes = mutableData.child("completedQuizzes").child(quizSetId).child("completedDate").getValue(String::class.java) == today
+                val completedTodayFromWeekly = mutableData.child("weeklyQuizProgress").child(quizDayOfWeek).child("date").getValue(String::class.java) == today
+                
+                if (completedTodayFromProgress || completedTodayFromCompletedQuizzes || completedTodayFromWeekly) {
+                    "Quiz already completed today."
                 } else {
                     null
                 }
@@ -1198,6 +1252,42 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 if (score > currentHistoryScore) {
                     catNode.value = score
                 }
+
+                // Save completion to weeklyQuizProgress/{dayOfWeek}
+                val weeklyProgressNode = mutableData.child("weeklyQuizProgress").child(quizDayOfWeek)
+                weeklyProgressNode.child("completed").value = true
+                weeklyProgressNode.child("completedAt").value = System.currentTimeMillis()
+                weeklyProgressNode.child("quizId").value = quizSetId
+                weeklyProgressNode.child("coinsEarned").value = totalReward
+                weeklyProgressNode.child("score").value = score
+                weeklyProgressNode.child("date").value = localDate
+
+                // 2. Save Completion in Firebase under users/{uid}/completedQuizzes/{quizId}
+                val completedQuizNode = mutableData.child("completedQuizzes").child(quizSetId)
+                completedQuizNode.child("completed").value = true
+                completedQuizNode.child("completedAt").value = System.currentTimeMillis()
+                completedQuizNode.child("completedDate").value = localDate
+                completedQuizNode.child("score").value = score
+                completedQuizNode.child("correctAnswers").value = score
+                completedQuizNode.child("wrongAnswers").value = totalQuestions - score
+                completedQuizNode.child("coinsEarned").value = totalReward
+
+                // 8. After quiz completion, save Completed, Score, Coins Earned, Correct Answers, Wrong Answers, Completion Time inside Firebase.
+                val historyNode = mutableData.child("quizHistory").child(quizSetId)
+                historyNode.child("completed").value = true
+                historyNode.child("score").value = score
+                historyNode.child("coinsEarned").value = totalReward
+                historyNode.child("correctAnswers").value = score
+                historyNode.child("wrongAnswers").value = totalQuestions - score
+                historyNode.child("completionTime").value = System.currentTimeMillis()
+
+                val resultsNode = mutableData.child("quizResults").child(quizSetId)
+                resultsNode.child("completed").value = true
+                resultsNode.child("score").value = score
+                resultsNode.child("coinsEarned").value = totalReward
+                resultsNode.child("correctAnswers").value = score
+                resultsNode.child("wrongAnswers").value = totalQuestions - score
+                resultsNode.child("completionTime").value = System.currentTimeMillis()
             },
             onComplete = { success, _, _, _ ->
                 if (success) {
@@ -2162,6 +2252,22 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun rollSpinRewardDynamic(): Int {
+        val activeRewards = spinRewardsState.value.filter { it.active }.sortedBy { it.displayOrder }
+        if (activeRewards.isEmpty()) return -1
+        val totalWeight = activeRewards.sumOf { it.probabilityWeight }
+        if (totalWeight <= 0) return 0
+        val roll = kotlin.random.Random.nextInt(totalWeight)
+        var cumulative = 0
+        for (i in activeRewards.indices) {
+            cumulative += activeRewards[i].probabilityWeight
+            if (roll < cumulative) {
+                return i
+            }
+        }
+        return 0
+    }
+
     fun performSpinWheelTransaction(rewardIndex: Int, isAdSpin: Boolean, onResult: (Boolean, String?) -> Unit) {
         val userId = walletState.value.userId
         if (userId.isEmpty()) {
@@ -2169,28 +2275,24 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        val sectorsCount = 7
-        if (rewardIndex < 0 || rewardIndex >= sectorsCount) {
+        val activeRewards = spinRewardsState.value.filter { it.active }.sortedBy { it.displayOrder }
+        if (rewardIndex < 0 || rewardIndex >= activeRewards.size) {
             onResult(false, "Invalid reward option.")
             return
         }
 
-        val rewardRoll = when (rewardIndex) {
-            0 -> SpinRewardOption(5, "+5 Coins", index = 0)
-            1 -> SpinRewardOption(10, "+10 Coins", index = 1)
-            2 -> SpinRewardOption(20, "+20 Coins", index = 2)
-            3 -> SpinRewardOption(30, "+30 Coins", index = 3)
-            4 -> SpinRewardOption(50, "+50 Coins", index = 4)
-            5 -> SpinRewardOption(100, "+100 Coins", index = 5)
-            6 -> SpinRewardOption(200, "+200 Coins", index = 6)
-            else -> SpinRewardOption(5, "+5 Coins", index = 0)
+        val selectedReward = activeRewards[rewardIndex]
+        val rewardAmount = if (selectedReward.type.trim().equals("Coins", ignoreCase = true)) {
+            selectedReward.value.toIntOrNull() ?: 0
+        } else {
+            0
         }
 
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
 
         executeRewardTransaction(
             userId = userId,
-            amount = rewardRoll.amount,
+            amount = rewardAmount,
             type = "spin_reward",
             source = "Spin Wheel Reward",
             extraCheck = { mutableData ->
@@ -2243,11 +2345,14 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     remainingSpins = 1
                 }
 
-                if (isAdSpin) {
-                    remainingSpins = 0
-                } else {
-                    freeSpinUsed = true
-                    remainingSpins = 0
+                val isRetry = selectedReward.type.trim().equals("Retry", ignoreCase = true)
+                if (!isRetry) {
+                    if (isAdSpin) {
+                        remainingSpins = 0
+                    } else {
+                        freeSpinUsed = true
+                        remainingSpins = 0
+                    }
                 }
 
                 mutableData.child("lastSpinDate").value = today
@@ -2256,9 +2361,58 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 mutableData.child("remainingSpins").value = remainingSpins
 
                 val totalRewards = mutableData.child("totalSpinRewards").getValue(Int::class.java) ?: 0
-                mutableData.child("totalSpinRewards").value = totalRewards + rewardRoll.amount
+                mutableData.child("totalSpinRewards").value = totalRewards + rewardAmount
             },
             onComplete = { success, _, _, errorMsg ->
+                if (success) {
+                    viewModelScope.launch {
+                        try {
+                            val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                            val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                            val historyId = db.getReference("spinHistory/$userId").push().key ?: "spin_${System.currentTimeMillis()}"
+                            
+                            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                            val formattedDate = sdf.format(java.util.Date())
+
+                            val historyMap = mapOf(
+                                "userId" to userId,
+                                "dateTime" to formattedDate,
+                                "timestamp" to System.currentTimeMillis(),
+                                "rewardName" to selectedReward.name,
+                                "rewardType" to selectedReward.type,
+                                "rewardValue" to selectedReward.value,
+                                "spinType" to if (isAdSpin) "Rewarded Ad" else "Free"
+                            )
+
+                            db.getReference("spinHistory/$userId/$historyId").setValue(historyMap)
+                            db.getReference("spinHistoryGlobal/$historyId").setValue(historyMap)
+
+                            if (selectedReward.type.trim().equals("Coupon", ignoreCase = true)) {
+                                val requestId = "spin_coupon_" + System.currentTimeMillis()
+                                val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                                val currentUser = auth.currentUser
+                                val dName = currentUser?.displayName ?: "Player"
+                                val emailVal = currentUser?.email ?: ""
+                                val couponCodeVal = "SPIN-" + selectedReward.name.take(4).uppercase() + "-" + (100000..999999).random()
+                                val couponRedemption = com.playwin.app.data.model.FirebaseCouponRedemption(
+                                    requestId = requestId,
+                                    userUid = userId,
+                                    displayName = dName,
+                                    email = emailVal,
+                                    mobileNumber = "",
+                                    couponName = selectedReward.name,
+                                    requiredCoins = 0,
+                                    giftCardOrRechargeNumber = couponCodeVal,
+                                    status = "Approved",
+                                    createdAt = System.currentTimeMillis()
+                                )
+                                db.getReference("couponRedemptions/$requestId").setValue(couponRedemption)
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("PlayWinViewModel", "Error saving spin reward history / coupon redemption: ${e.message}")
+                        }
+                    }
+                }
                 onResult(success, errorMsg)
             }
         )
@@ -2637,6 +2791,18 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
+        firebaseCompletedQuizzesJob = viewModelScope.launch {
+            repository.getFirebaseCompletedQuizzesFlow(userId).collect { completedMap ->
+                completedQuizzesState.value = completedMap
+            }
+        }
+
+        firebaseWeeklyQuizProgressJob = viewModelScope.launch {
+            repository.getFirebaseWeeklyQuizProgressFlow(userId).collect { progressMap ->
+                weeklyQuizProgressState.value = progressMap
+            }
+        }
+
         allUsersJob = viewModelScope.launch {
             repository.firebaseAllUsersFlow.collect { list ->
                 allUsersState.value = list
@@ -2698,11 +2864,17 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         couponRedemptionsJob = null
         firebaseQuizProgressJob?.cancel()
         firebaseQuizProgressJob = null
+        firebaseCompletedQuizzesJob?.cancel()
+        firebaseCompletedQuizzesJob = null
+        firebaseWeeklyQuizProgressJob?.cancel()
+        firebaseWeeklyQuizProgressJob = null
         referralsHistoryJob?.cancel()
         referralsHistoryJob = null
         quizzesJob?.cancel()
         quizzesJob = null
         quizProgressState.value = null
+        completedQuizzesState.value = emptyMap()
+        weeklyQuizProgressState.value = emptyMap()
         referralHistoryState.value = emptyList()
         currentUserState.value = null
         currentUserBlockedState.value = false
@@ -2895,5 +3067,74 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         )
+    }
+
+    fun rollScratchRewardFromFirebase(): com.playwin.app.data.model.FirebaseScratchCardReward {
+        val activeRewards = scratchCardRewardsState.value.filter { it.active }
+        if (activeRewards.isEmpty()) {
+            return com.playwin.app.data.model.FirebaseScratchCardReward(
+                id = "fallback",
+                name = "Better Luck Next Time",
+                type = "Better Luck Next Time",
+                value = "0",
+                icon = "😢",
+                color = "#90A4AE"
+            )
+        }
+        val totalWeight = activeRewards.sumOf { it.probabilityWeight }
+        if (totalWeight <= 0) {
+            return activeRewards.random()
+        }
+        val randomVal = (0 until totalWeight).random()
+        var currentSum = 0
+        for (reward in activeRewards) {
+            currentSum += reward.probabilityWeight
+            if (randomVal < currentSum) {
+                return reward
+            }
+        }
+        return activeRewards.last()
+    }
+
+    fun performScratchCardTransactionSecure(
+        rolledReward: com.playwin.app.data.model.FirebaseScratchCardReward,
+        transactionId: String,
+        onResult: (Boolean, com.playwin.app.data.model.FirebaseScratchCardReward?, String?) -> Unit
+    ) {
+        val userId = walletState.value.userId
+        if (userId.isEmpty()) {
+            onResult(false, null, "User not authenticated.")
+            return
+        }
+
+        repository.performScratchCardDbTransaction(userId, rolledReward, transactionId) { success, error, _, coinsAfter ->
+            if (success) {
+                viewModelScope.launch {
+                    val currentWallet = walletState.value
+                    val rewardValueCoins = if (rolledReward.type == "Coins") rolledReward.value.toIntOrNull() ?: 0 else 0
+                    val updatedWallet = currentWallet.copy(
+                        coins = coinsAfter,
+                        totalScratchRewards = currentWallet.totalScratchRewards + rewardValueCoins
+                    )
+                    repository.saveWalletLocally(updatedWallet)
+                    refreshUserData()
+                    onResult(true, rolledReward, null)
+                }
+            } else {
+                onResult(false, null, error ?: "Transaction aborted.")
+            }
+        }
+    }
+
+    fun updateScratchCardSettings(settings: com.playwin.app.data.model.FirebaseScratchCardSettings, onComplete: (Boolean) -> Unit = {}) {
+        repository.updateScratchCardSettings(settings, onComplete)
+    }
+
+    fun saveScratchCardReward(reward: com.playwin.app.data.model.FirebaseScratchCardReward, onComplete: (Boolean) -> Unit = {}) {
+        repository.saveScratchCardReward(reward, onComplete)
+    }
+
+    fun deleteScratchCardReward(rewardId: String, onComplete: (Boolean) -> Unit = {}) {
+        repository.deleteScratchCardReward(rewardId, onComplete)
     }
 }
