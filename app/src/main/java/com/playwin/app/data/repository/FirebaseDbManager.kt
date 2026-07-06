@@ -2102,23 +2102,6 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun updateScratchCardSettings(settings: com.playwin.app.data.model.FirebaseScratchCardSettings, onComplete: (Boolean) -> Unit = {}) {
-        database.getReference("settings/scratchCard").setValue(settings)
-            .addOnCompleteListener { onComplete(it.isSuccessful) }
-    }
-
-    fun saveScratchCardReward(reward: com.playwin.app.data.model.FirebaseScratchCardReward, onComplete: (Boolean) -> Unit = {}) {
-        val id = if (reward.id.isNotEmpty()) reward.id else database.getReference("scratchCardRewards").push().key ?: "reward_${System.currentTimeMillis()}"
-        val updatedReward = reward.copy(id = id, updatedAt = System.currentTimeMillis())
-        database.getReference("scratchCardRewards").child(id).setValue(updatedReward)
-            .addOnCompleteListener { onComplete(it.isSuccessful) }
-    }
-
-    fun deleteScratchCardReward(rewardId: String, onComplete: (Boolean) -> Unit = {}) {
-        database.getReference("scratchCardRewards").child(rewardId).removeValue()
-            .addOnCompleteListener { onComplete(it.isSuccessful) }
-    }
-
     fun performScratchCardDbTransaction(
         userId: String,
         reward: com.playwin.app.data.model.FirebaseScratchCardReward,

@@ -20,18 +20,6 @@ class PlayWinRepository(private val dao: PlayWinDao) {
     val firebaseScratchCardSettingsFlow: Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = firebaseDbManager.observeScratchCardSettings()
     val firebaseScratchCardRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = firebaseDbManager.observeScratchCardRewards()
 
-    fun updateScratchCardSettings(settings: com.playwin.app.data.model.FirebaseScratchCardSettings, onComplete: (Boolean) -> Unit = {}) {
-        firebaseDbManager.updateScratchCardSettings(settings, onComplete)
-    }
-
-    fun saveScratchCardReward(reward: com.playwin.app.data.model.FirebaseScratchCardReward, onComplete: (Boolean) -> Unit = {}) {
-        firebaseDbManager.saveScratchCardReward(reward, onComplete)
-    }
-
-    fun deleteScratchCardReward(rewardId: String, onComplete: (Boolean) -> Unit = {}) {
-        firebaseDbManager.deleteScratchCardReward(rewardId, onComplete)
-    }
-
     fun performScratchCardDbTransaction(
         userId: String,
         reward: com.playwin.app.data.model.FirebaseScratchCardReward,

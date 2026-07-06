@@ -748,13 +748,7 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
 @Composable
 fun LuckyScratchScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
-    var isAdminMode by remember { mutableStateOf(false) }
-
-    if (isAdminMode) {
-        LuckyScratchAdminScreen(viewModel = viewModel, onBack = { isAdminMode = false })
-    } else {
-        LuckyScratchUserScreen(viewModel = viewModel, onBack = onBack, onAdminClick = { isAdminMode = true })
-    }
+    LuckyScratchUserScreen(viewModel = viewModel, onBack = onBack)
 }
 
 // Particle class for win confetti animation
@@ -869,7 +863,7 @@ object ScratchSoundPlayer {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit, onAdminClick: () -> Unit) {
+fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val wallet by viewModel.walletState.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val settings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
@@ -1017,34 +1011,22 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit, onAd
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header panel with Admin Console switch button
+            // Header panel (No Admin Console button)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.Start
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextWhite)
-                    }
-                    Text(
-                        text = "Premium Scratch Card",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
+                IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextWhite)
                 }
-
-                IconButton(
-                    onClick = onAdminClick,
-                    modifier = Modifier
-                        .testTag("admin_panel_button")
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(PrimaryDark.copy(alpha = 0.2f))
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = "Admin Console", tint = PrimaryDark)
-                }
+                Text(
+                    text = "Premium Scratch Card",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

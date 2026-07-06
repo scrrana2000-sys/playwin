@@ -3125,16 +3125,4 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
-
-    fun updateScratchCardSettings(settings: com.playwin.app.data.model.FirebaseScratchCardSettings, onComplete: (Boolean) -> Unit = {}) {
-        repository.updateScratchCardSettings(settings, onComplete)
-    }
-
-    fun saveScratchCardReward(reward: com.playwin.app.data.model.FirebaseScratchCardReward, onComplete: (Boolean) -> Unit = {}) {
-        repository.saveScratchCardReward(reward, onComplete)
-    }
-
-    fun deleteScratchCardReward(rewardId: String, onComplete: (Boolean) -> Unit = {}) {
-        repository.deleteScratchCardReward(rewardId, onComplete)
-    }
 }
