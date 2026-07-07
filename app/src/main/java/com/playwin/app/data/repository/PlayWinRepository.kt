@@ -17,6 +17,7 @@ class PlayWinRepository(private val dao: PlayWinDao) {
     val firebaseTasksFlow: Flow<List<FirebaseTask>> = firebaseDbManager.observeTasks()
     val firebaseCouponsFlow: Flow<List<FirebaseCoupon>> = firebaseDbManager.observeCoupons()
     val firebaseSpinRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = firebaseDbManager.observeSpinRewards()
+    val firebaseSpinWheelConfigFlow: Flow<com.playwin.app.data.model.FirebaseSpinWheelConfig> = firebaseDbManager.observeSpinWheelConfig()
     val firebaseScratchCardSettingsFlow: Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = firebaseDbManager.observeScratchCardSettings()
     val firebaseScratchCardRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = firebaseDbManager.observeScratchCardRewards()
 
@@ -91,6 +92,8 @@ class PlayWinRepository(private val dao: PlayWinDao) {
             lastSpinDate = wallet.lastSpinDate,
             freeSpinUsed = wallet.freeSpinUsed,
             rewardAdSpinUsed = wallet.rewardAdSpinUsed,
+            dailySpinCount = wallet.dailySpinCount,
+            rewardedSpinCount = wallet.rewardedSpinCount,
             lastCheckInDate = wallet.lastCheckInDate,
             totalCheckInRewards = wallet.totalCheckInRewards,
             lastRewardAdTime = wallet.lastRewardAdTime,

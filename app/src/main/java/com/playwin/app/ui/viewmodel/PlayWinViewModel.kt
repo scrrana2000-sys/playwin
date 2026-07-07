@@ -39,6 +39,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val tasksState: StateFlow<List<FirebaseTask>>
     val couponsState: StateFlow<List<FirebaseCoupon>>
     val spinRewardsState: StateFlow<List<com.playwin.app.data.model.FirebaseSpinReward>>
+    val spinWheelConfigState: StateFlow<com.playwin.app.data.model.FirebaseSpinWheelConfig>
     val scratchCardSettingsState: StateFlow<com.playwin.app.data.model.FirebaseScratchCardSettings>
     val scratchCardRewardsState: StateFlow<List<com.playwin.app.data.model.FirebaseScratchCardReward>>
 
@@ -51,6 +52,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var firebaseUserJob: kotlinx.coroutines.Job? = null
     private var firebaseTxJob: kotlinx.coroutines.Job? = null
     private var firebaseRedemptionJob: kotlinx.coroutines.Job? = null
+    private var firebaseUserDailyCheckInJob: kotlinx.coroutines.Job? = null
+    private var dailyQuizJob: kotlinx.coroutines.Job? = null
 
     val redemptionsState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseRedemption>>(emptyList())
     private val _isRedeeming = MutableStateFlow(false)
@@ -80,6 +83,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val weeklyQuizProgressState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>>(emptyMap())
     val referralHistoryState = MutableStateFlow<List<FirebaseReferralRecord>>(emptyList())
     val quizzesState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseQuiz>>(emptyList())
+    
+    val dailyCheckInSettingsState = MutableStateFlow<com.playwin.app.data.model.FirebaseDailyCheckInSettings?>(null)
+    val dailyCheckInLoadingState = MutableStateFlow(true)
+    val userDailyCheckInState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserDailyCheckIn?>(null)
+    val dailyQuizState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserDailyQuiz?>(null)
+    var serverTimeOffset = 0L
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
@@ -159,7 +168,21 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 initialValue = emptyList()
             )
 
-        spinRewardsState = repository.firebaseSpinRewardsFlow
+        spinWheelConfigState = repository.firebaseSpinWheelConfigFlow
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = com.playwin.app.data.model.FirebaseSpinWheelConfig()
+            )
+
+        spinRewardsState = spinWheelConfigState
+            .map { config ->
+                if (!config.enabled) {
+                    emptyList()
+                } else {
+                    config.segments.filter { it.active || it.enabled }.sortedBy { it.order }
+                }
+            }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -181,6 +204,51 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             )
 
         // Observe auth state changes to start/stop live Firebase sync
+        try {
+            val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+            val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+            db.getReference(".info/serverTimeOffset").addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                    val offset = snapshot.getValue(Long::class.java) ?: 0L
+                    serverTimeOffset = offset
+                    android.util.Log.d("PlayWinTime", "Synced Server Time Offset: $offset ms")
+                }
+                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+            })
+
+            val checkInSettingsRef = db.getReference("dailyCheckIn")
+            checkInSettingsRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
+                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                    if (snapshot.exists()) {
+                        val settings = snapshot.getValue(com.playwin.app.data.model.FirebaseDailyCheckInSettings::class.java)
+                        if (settings != null) {
+                            dailyCheckInSettingsState.value = settings
+                            val r = settings.rewards
+                            if (r != null && r.size >= 7) {
+                                android.util.Log.d("PlayWinCheckIn", "Loaded rewards:\nDay1=${r[0]}\nDay2=${r[1]}\nDay3=${r[2]}\nDay4=${r[3]}\nDay5=${r[4]}\nDay6=${r[5]}\nDay7=${r[6]}")
+                            } else {
+                                android.util.Log.w("PlayWinCheckIn", "Loaded rewards but list is missing or incomplete: $r")
+                            }
+                        }
+                    } else {
+                        val defaultSettings = com.playwin.app.data.model.FirebaseDailyCheckInSettings(
+                            enabled = true,
+                            rewards = listOf(20, 30, 40, 50, 60, 80, 120),
+                            maxRewardLimit = 500
+                        )
+                        checkInSettingsRef.setValue(defaultSettings)
+                        dailyCheckInSettingsState.value = defaultSettings
+                    }
+                    dailyCheckInLoadingState.value = false
+                }
+                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
+                    dailyCheckInLoadingState.value = false
+                }
+            })
+        } catch (e: Exception) {
+            android.util.Log.e("PlayWinTime", "Failed to register server time or settings listeners", e)
+        }
+
         viewModelScope.launch {
             authState.collect { state ->
                 when (state) {
@@ -241,6 +309,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                             lastSpinDate = dbUser.lastSpinDate,
                                             freeSpinUsed = dbUser.freeSpinUsed,
                                             rewardAdSpinUsed = dbUser.rewardAdSpinUsed,
+                                            dailySpinCount = dbUser.dailySpinCount,
+                                            rewardedSpinCount = dbUser.rewardedSpinCount,
                                             lastCheckInDate = dbUser.lastCheckInDate,
                                             totalCheckInRewards = dbUser.totalCheckInRewards,
                                             lastRewardAdTime = dbUser.lastRewardAdTime,
@@ -425,6 +495,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 lastSpinDate = existingUserObj.lastSpinDate,
                 freeSpinUsed = existingUserObj.freeSpinUsed,
                 rewardAdSpinUsed = existingUserObj.rewardAdSpinUsed,
+                dailySpinCount = existingUserObj.dailySpinCount,
+                rewardedSpinCount = existingUserObj.rewardedSpinCount,
                 lastCheckInDate = existingUserObj.lastCheckInDate,
                 totalCheckInRewards = existingUserObj.totalCheckInRewards,
                 lastRewardAdTime = existingUserObj.lastRewardAdTime
@@ -888,155 +960,15 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         extraUpdate: ((com.google.firebase.database.MutableData) -> Unit)? = null,
         onComplete: (Boolean, Int, Int, String?) -> Unit
     ) {
-        if (userId.isEmpty()) {
-            onComplete(false, 0, 0, "User not authenticated.")
-            return
-        }
-
-        viewModelScope.launch {
-            rewardMutex.withLock {
-                try {
-                    val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
-                    val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
-                    val userRef = db.getReference("users").child(userId)
-
-                    android.util.Log.d("PlayWinCoinSystem", "[START] Reward Transaction for user: $userId, amount: $amount, type: $type, source: $source")
-
-                    userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-                        var previousCoins = 0
-                        var newCoins = 0
-                        var errorMessage: String? = null
-
-                        override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                            if (mutableData.value == null) {
-                                errorMessage = "User node does not exist in Firebase."
-                                return com.google.firebase.database.Transaction.abort()
-                            }
-
-                            // Run extra validation/check if provided (to prevent duplicate writes)
-                            val checkError = extraCheck?.invoke(mutableData)
-                            if (checkError != null) {
-                                errorMessage = checkError
-                                return com.google.firebase.database.Transaction.abort()
-                            }
-
-                            // Read current coins
-                            previousCoins = mutableData.child("coins").getValue(Int::class.java) ?: 0
-                            newCoins = previousCoins + amount
-
-                            // Update user coins
-                            mutableData.child("coins").value = newCoins
-                            mutableData.child("lastActiveTime").value = System.currentTimeMillis()
-
-                            // Run extra updates if provided (like check-in times, spin usage, etc.)
-                            extraUpdate?.invoke(mutableData)
-
-                            return com.google.firebase.database.Transaction.success(mutableData)
-                        }
-
-                        override fun onComplete(
-                            error: com.google.firebase.database.DatabaseError?,
-                            committed: Boolean,
-                            currentData: com.google.firebase.database.DataSnapshot?
-                        ) {
-                            if (committed && error == null) {
-                                val displayedUiCoinsBefore = walletState.value.coins
-                                android.util.Log.d(
-                                    "PlayWinCoinSystem",
-                                    """
-                                    ================ COIN SYNC DEBUG REPORT ================
-                                    User ID: $userId
-                                    Source: $source (Type: $type)
-                                    Previous Coins: $previousCoins
-                                    Reward Amount: $amount
-                                    Transaction Result: SUCCESS
-                                    Firebase Coins: $newCoins
-                                    Displayed UI Coins (Before local save): $displayedUiCoinsBefore
-                                    ========================================================
-                                    """.trimIndent()
-                                )
-
-                                // Generate unique keys
-                                val txId = db.getReference("transactions/$userId").push().key ?: "tx_${System.currentTimeMillis()}"
-                                val historyId = db.getReference("rewardHistory/$userId").push().key ?: "hist_${System.currentTimeMillis()}"
-
-                                // Write transaction history
-                                val txMap = mapOf(
-                                    "id" to txId,
-                                    "userId" to userId,
-                                    "type" to type,
-                                    "title" to source,
-                                    "coins" to amount,
-                                    "status" to "Completed",
-                                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                                    "amount" to amount,
-                                    "source" to source,
-                                    "coinsBefore" to previousCoins,
-                                    "coinsAfter" to newCoins
-                                )
-                                db.getReference("transactions/$userId/$txId").setValue(txMap)
-
-                                // Write reward history
-                                val historyMap = mapOf(
-                                    "type" to type,
-                                    "reward" to amount,
-                                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                                    "coinsBefore" to previousCoins,
-                                    "coinsAfter" to newCoins
-                                )
-                                db.getReference("rewardHistory/$userId/$historyId").setValue(historyMap)
-
-                                // Update local Room state only after Firebase transaction succeeds
-                                val currentWallet = walletState.value
-                                if (currentWallet.userId == userId) {
-                                    val updatedWallet = currentWallet.copy(
-                                        coins = newCoins,
-                                        dailyStreak = currentData?.child("dailyStreak")?.getValue(Int::class.java) ?: currentWallet.dailyStreak,
-                                        lastCheckInTime = currentData?.child("lastCheckInTime")?.getValue(Long::class.java) ?: currentWallet.lastCheckInTime,
-                                        dailyAdsWatched = currentData?.child("dailyAdsWatched")?.getValue(Int::class.java) ?: currentWallet.dailyAdsWatched,
-                                        lastAdResetTime = currentData?.child("lastAdResetTime")?.getValue(Long::class.java) ?: currentWallet.lastAdResetTime,
-                                        lastRewardAdTime = currentData?.child("lastRewardAdTime")?.getValue(Long::class.java) ?: currentWallet.lastRewardAdTime,
-                                        remainingSpins = currentData?.child("remainingSpins")?.getValue(Int::class.java) ?: currentWallet.remainingSpins,
-                                        remainingScratchCards = currentData?.child("remainingScratchCards")?.getValue(Int::class.java) ?: currentWallet.remainingScratchCards,
-                                        lastScratchResetTime = currentData?.child("lastScratchResetTime")?.getValue(Long::class.java) ?: currentWallet.lastScratchResetTime,
-                                        totalSpinRewards = currentData?.child("totalSpinRewards")?.getValue(Int::class.java) ?: currentWallet.totalSpinRewards,
-                                        totalScratchRewards = currentData?.child("totalScratchRewards")?.getValue(Int::class.java) ?: currentWallet.totalScratchRewards,
-                                        lastSpinDate = currentData?.child("lastSpinDate")?.getValue(String::class.java) ?: currentWallet.lastSpinDate,
-                                        freeSpinUsed = currentData?.child("freeSpinUsed")?.getValue(Boolean::class.java) ?: currentWallet.freeSpinUsed,
-                                        rewardAdSpinUsed = currentData?.child("rewardAdSpinUsed")?.getValue(Boolean::class.java) ?: currentWallet.rewardAdSpinUsed
-                                    )
-                                    viewModelScope.launch {
-                                        repository.saveWalletLocally(updatedWallet)
-                                    }
-                                }
-
-                                onComplete(true, previousCoins, newCoins, null)
-                            } else {
-                                val finalError = errorMessage ?: error?.message ?: "Transaction aborted"
-                                android.util.Log.e(
-                                    "PlayWinCoinSystem",
-                                    """
-                                    ================ COIN SYNC DEBUG REPORT ================
-                                    User ID: $userId
-                                    Source: $source (Type: $type)
-                                    Previous Coins: $previousCoins
-                                    Reward Amount: $amount
-                                    Transaction Result: FAILURE ($finalError)
-                                    Firebase Coins: $previousCoins
-                                    Displayed UI Coins: ${walletState.value.coins}
-                                    ========================================================
-                                    """.trimIndent()
-                                )
-                                onComplete(false, 0, 0, finalError)
-                            }
-                        }
-                    })
-                } catch (e: Exception) {
-                    android.util.Log.e("PlayWinCoinSystem", "[EXCEPTION] Failed in reward transaction", e)
-                    onComplete(false, 0, 0, e.message ?: "Unknown exception occurred")
-                }
-            }
-        }
+        com.playwin.app.data.repository.WalletService.updateWallet(
+            userId = userId,
+            coinsDelta = amount,
+            source = source,
+            type = type,
+            extraCheck = extraCheck,
+            extraUpdate = extraUpdate,
+            onComplete = onComplete
+        )
     }
 
     fun addCoins(amount: Int, source: String) {
@@ -1103,7 +1035,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun getDayOfWeek(): Int {
-        val calendar = java.util.Calendar.getInstance()
+        val calendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        calendar.timeInMillis = getServerTimeMs()
         return when (calendar.get(java.util.Calendar.DAY_OF_WEEK)) {
             java.util.Calendar.MONDAY -> 1
             java.util.Calendar.TUESDAY -> 2
@@ -1116,15 +1049,20 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun getServerTimeMs(): Long {
+        return System.currentTimeMillis() + serverTimeOffset
+    }
+
     fun getLocalDateString(): String {
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-        return sdf.format(java.util.Date())
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return sdf.format(java.util.Date(getServerTimeMs()))
     }
 
     fun getTodayDayOfWeekName(): String {
-        val calendar = java.util.Calendar.getInstance()
-        val sdf = java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
-        return sdf.format(calendar.time)
+        val sdf = java.text.SimpleDateFormat("EEEE", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return sdf.format(java.util.Date(getServerTimeMs()))
     }
 
     fun getQuizSetStatus(setIndex: Int): String {
@@ -1197,9 +1135,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         val weeklyProgressRecord = weeklyQuizProgressState.value[quizDayOfWeek]
         val isAlreadyCompletedTodayWeekly = weeklyProgressRecord != null && weeklyProgressRecord.completed && weeklyProgressRecord.date == today
 
+        val dailyQuiz = dailyQuizState.value
+        val isAlreadyCompletedTodayQuizNode = dailyQuiz != null && dailyQuiz.completed && dailyQuiz.lastCompletedDate == today
+
         val isAlreadyCompletedToday = (completedQuizzesState.value[quizSetId]?.completed == true && completedQuizzesState.value[quizSetId]?.completedDate == today) ||
             (progress.completedQuizIds.contains(quizSetId) && progress.lastQuizDate == today) ||
-            isAlreadyCompletedTodayWeekly
+            isAlreadyCompletedTodayWeekly ||
+            isAlreadyCompletedTodayQuizNode
 
         val totalReward = if (isAlreadyCompletedToday) {
             0
@@ -1217,11 +1159,16 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 val completedQuizIds = progressNode.child("completedQuizIds").children.mapNotNull { it.getValue(String::class.java) }
                 val lastQuizDate = progressNode.child("lastQuizDate").getValue(String::class.java) ?: ""
                 
+                val dailyQuizNode = mutableData.child("dailyQuiz")
+                val dailyQuizCompleted = dailyQuizNode.child("completed").getValue(Boolean::class.java) ?: false
+                val dailyQuizLastCompletedDate = dailyQuizNode.child("lastCompletedDate").getValue(String::class.java) ?: ""
+                
                 val completedTodayFromProgress = completedQuizIds.contains(quizSetId) && lastQuizDate == today
                 val completedTodayFromCompletedQuizzes = mutableData.child("completedQuizzes").child(quizSetId).child("completedDate").getValue(String::class.java) == today
                 val completedTodayFromWeekly = mutableData.child("weeklyQuizProgress").child(quizDayOfWeek).child("date").getValue(String::class.java) == today
+                val completedTodayFromDailyNode = dailyQuizCompleted && dailyQuizLastCompletedDate == today
                 
-                if (completedTodayFromProgress || completedTodayFromCompletedQuizzes || completedTodayFromWeekly) {
+                if (completedTodayFromProgress || completedTodayFromCompletedQuizzes || completedTodayFromWeekly || completedTodayFromDailyNode) {
                     "Quiz already completed today."
                 } else {
                     null
@@ -1252,6 +1199,19 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 if (score > currentHistoryScore) {
                     catNode.value = score
                 }
+
+                // Daily Quiz database node updates
+                val dailyQuizNode = mutableData.child("dailyQuiz")
+                dailyQuizNode.child("lastCompletedDay").value = currentDayName
+                dailyQuizNode.child("lastCompletedDate").value = localDate
+                dailyQuizNode.child("lastQuizId").value = quizSetId
+                dailyQuizNode.child("completed").value = true
+                dailyQuizNode.child("rewardClaimed").value = true
+                
+                dailyQuizNode.child("currentServerDay").value = currentDayName
+                dailyQuizNode.child("lastPlayedQuiz").value = quizSetId
+                dailyQuizNode.child("completedQuizDate").value = localDate
+                dailyQuizNode.child("serverTimestamp").value = System.currentTimeMillis() + serverTimeOffset
 
                 // Save completion to weeklyQuizProgress/{dayOfWeek}
                 val weeklyProgressNode = mutableData.child("weeklyQuizProgress").child(quizDayOfWeek)
@@ -1291,173 +1251,106 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             },
             onComplete = { success, _, _, _ ->
                 if (success) {
-                    // Check if this user was referred and has a pending referral reward
                     val friendUid = currentUserId
                     viewModelScope.launch {
                         try {
-                            val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
-                            val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
-                            
-                            val friendRef = db.getReference("users/$friendUid")
-                            friendRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-                                var referredByUid = ""
-                                var friendName = ""
-                                var friendEmail = ""
-                                var friendCoinsBefore = 0
-                                var isAlreadyRewarded = false
+                            var referredByUid = ""
+                            var friendName = ""
+                            var friendEmail = ""
 
-                                override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                                    if (mutableData.value == null) {
-                                        return com.google.firebase.database.Transaction.success(mutableData)
-                                    }
-
-                                    referredByUid = mutableData.child("referredBy").getValue(String::class.java) ?: ""
+                            com.playwin.app.data.repository.WalletService.updateWallet(
+                                userId = friendUid,
+                                coinsDelta = 100,
+                                source = "Referral Reward (Completed First Quiz)",
+                                type = "referral_reward",
+                                extraCheck = { mutableData ->
+                                    val refBy = mutableData.child("referredBy").getValue(String::class.java) ?: ""
                                     val status = mutableData.child("referralStatus").getValue(String::class.java) ?: ""
+                                    if (refBy.isEmpty() || status == "Rewarded") {
+                                        "Not eligible or already rewarded."
+                                    } else {
+                                        null
+                                    }
+                                },
+                                extraUpdate = { mutableData ->
+                                    referredByUid = mutableData.child("referredBy").getValue(String::class.java) ?: ""
                                     friendName = mutableData.child("displayName").getValue(String::class.java) ?: "Friend"
                                     friendEmail = mutableData.child("email").getValue(String::class.java) ?: ""
-
-                                    if (referredByUid.isEmpty()) {
-                                        return com.google.firebase.database.Transaction.abort()
-                                    }
-
-                                    if (status == "Rewarded") {
-                                        isAlreadyRewarded = true
-                                        return com.google.firebase.database.Transaction.abort()
-                                    }
-
-                                    // Update status to Rewarded and award 100 coins
                                     mutableData.child("referralStatus").value = "Rewarded"
-                                    friendCoinsBefore = mutableData.child("coins").getValue(Int::class.java) ?: 0
-                                    mutableData.child("coins").value = friendCoinsBefore + 100
-                                    mutableData.child("lastActiveTime").value = System.currentTimeMillis()
-
-                                    return com.google.firebase.database.Transaction.success(mutableData)
-                                }
-
-                                override fun onComplete(
-                                    error: com.google.firebase.database.DatabaseError?,
-                                    committed: Boolean,
-                                    currentData: com.google.firebase.database.DataSnapshot?
-                                ) {
-                                    if (committed && error == null && referredByUid.isNotEmpty()) {
+                                },
+                                onComplete = { friendSuccess, _, _, friendError ->
+                                    if (friendSuccess && referredByUid.isNotEmpty()) {
                                         android.util.Log.d("PlayWinReferral", "Friend transaction succeeded. Now rewarding referrer $referredByUid")
                                         
-                                        // Update friend's local wallet and save local transaction record
+                                        // Update friend's local transaction record
                                         viewModelScope.launch {
-                                            val updatedWallet = walletState.value.copy(
-                                                coins = walletState.value.coins + 100
-                                            )
-                                            repository.saveWalletLocally(updatedWallet)
                                             repository.addTransaction(friendUid, 100, "Referral Reward (Completed First Quiz)")
                                         }
 
-                                        // Record friend transaction in Firebase
-                                        val friendTxId = db.getReference("transactions/$friendUid").push().key ?: "tx_${System.currentTimeMillis()}"
-                                        val friendTxMap = mapOf(
-                                            "id" to friendTxId,
-                                            "userId" to friendUid,
-                                            "type" to "referral_reward",
-                                            "title" to "Referral Reward (Completed First Quiz)",
-                                            "coins" to 100,
-                                            "status" to "Completed",
-                                            "timestamp" to System.currentTimeMillis(),
-                                            "amount" to 100,
-                                            "source" to "First Quiz Referral Reward",
-                                            "coinsBefore" to friendCoinsBefore,
-                                            "coinsAfter" to friendCoinsBefore + 100
-                                        )
-                                        db.getReference("transactions/$friendUid/$friendTxId").setValue(friendTxMap)
+                                        // Reward Referrer
+                                        viewModelScope.launch {
+                                            com.playwin.app.data.repository.WalletService.updateWallet(
+                                                userId = referredByUid,
+                                                coinsDelta = 500,
+                                                source = "Referral Bonus",
+                                                type = "referral_bonus",
+                                                extraCheck = { null },
+                                                extraUpdate = { mutableDataReferrer ->
+                                                    val currentPending = mutableDataReferrer.child("pendingRewards").getValue(Int::class.java) ?: 0
+                                                    val totalRefs = mutableDataReferrer.child("totalReferrals").getValue(Int::class.java) ?: 0
+                                                    val coinsEarned = mutableDataReferrer.child("referralsCoinsEarned").getValue(Int::class.java) ?: 0
 
-                                        // Now we perform the transaction on the referrer to add 500 coins and increment/decrement metrics
-                                        val referrerRef = db.getReference("users/$referredByUid")
-                                        referrerRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-                                            var referrerCoinsBefore = 0
+                                                    mutableDataReferrer.child("pendingRewards").value = if (currentPending > 0) currentPending - 1 else 0
+                                                    mutableDataReferrer.child("totalReferrals").value = totalRefs + 1
+                                                    mutableDataReferrer.child("referralsCoinsEarned").value = coinsEarned + 500
+                                                },
+                                                onComplete = { referrerSuccess, _, referrerCoinsAfter, referrerError ->
+                                                    if (referrerSuccess) {
+                                                        android.util.Log.d("PlayWinReferral", "Referrer transaction succeeded. Updating referral logs.")
+                                                        val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                                                        val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                                                        val now = System.currentTimeMillis()
 
-                                            override fun doTransaction(mutableDataReferrer: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                                                if (mutableDataReferrer.value == null) {
-                                                    return com.google.firebase.database.Transaction.success(mutableDataReferrer)
+                                                        // Update main referrals record
+                                                        val referralRefRecord = db.getReference("referrals/$referredByUid/$friendUid")
+                                                        val referralUpdate = mapOf(
+                                                            "status" to "Rewarded",
+                                                            "coinsEarned" to 500
+                                                        )
+                                                        referralRefRecord.updateChildren(referralUpdate)
+
+                                                        // Delete from pendingRewards node
+                                                        db.getReference("pendingRewards/$referredByUid/$friendUid").removeValue()
+
+                                                        // Write to referralHistory node
+                                                        val referralHistoryRef = db.getReference("referralHistory/$referredByUid/$friendUid")
+                                                        val referralHistoryMap = mapOf(
+                                                            "friendUid" to friendUid,
+                                                            "friendName" to friendName,
+                                                            "friendEmail" to friendEmail,
+                                                            "status" to "Rewarded",
+                                                            "coinsEarned" to 500,
+                                                            "timestamp" to now
+                                                        )
+                                                        referralHistoryRef.setValue(referralHistoryMap)
+                                                    } else {
+                                                        android.util.Log.e("PlayWinReferral", "Referrer transaction failed: $referrerError")
+                                                    }
                                                 }
-
-                                                referrerCoinsBefore = mutableDataReferrer.child("coins").getValue(Int::class.java) ?: 0
-                                                val currentPending = mutableDataReferrer.child("pendingRewards").getValue(Int::class.java) ?: 0
-                                                val totalRefs = mutableDataReferrer.child("totalReferrals").getValue(Int::class.java) ?: 0
-                                                val coinsEarned = mutableDataReferrer.child("referralsCoinsEarned").getValue(Int::class.java) ?: 0
-
-                                                mutableDataReferrer.child("coins").value = referrerCoinsBefore + 500
-                                                mutableDataReferrer.child("pendingRewards").value = if (currentPending > 0) currentPending - 1 else 0
-                                                mutableDataReferrer.child("totalReferrals").value = totalRefs + 1
-                                                mutableDataReferrer.child("referralsCoinsEarned").value = coinsEarned + 500
-                                                mutableDataReferrer.child("lastActiveTime").value = System.currentTimeMillis()
-
-                                                return com.google.firebase.database.Transaction.success(mutableDataReferrer)
-                                            }
-
-                                            override fun onComplete(
-                                                errReferrer: com.google.firebase.database.DatabaseError?,
-                                                committedReferrer: Boolean,
-                                                currentDataReferrer: com.google.firebase.database.DataSnapshot?
-                                            ) {
-                                                if (committedReferrer && errReferrer == null) {
-                                                    android.util.Log.d("PlayWinReferral", "Referrer transaction succeeded. Updating referral logs.")
-                                                    
-                                                    val now = System.currentTimeMillis()
-
-                                                    // Update main referrals record
-                                                    val referralRefRecord = db.getReference("referrals/$referredByUid/$friendUid")
-                                                    val referralUpdate = mapOf(
-                                                        "status" to "Rewarded",
-                                                        "coinsEarned" to 500
-                                                    )
-                                                    referralRefRecord.updateChildren(referralUpdate)
-
-                                                    // Delete from pendingRewards node
-                                                    db.getReference("pendingRewards/$referredByUid/$friendUid").removeValue()
-
-                                                    // Write to referralHistory node
-                                                    val referralHistoryRef = db.getReference("referralHistory/$referredByUid/$friendUid")
-                                                    val referralHistoryMap = mapOf(
-                                                        "friendUid" to friendUid,
-                                                        "friendName" to friendName,
-                                                        "friendEmail" to friendEmail,
-                                                        "status" to "Rewarded",
-                                                        "coinsEarned" to 500,
-                                                        "timestamp" to now
-                                                    )
-                                                    referralHistoryRef.setValue(referralHistoryMap)
-
-                                                    // Record referrer transaction logs in Firebase
-                                                    val referrerTxId = db.getReference("transactions/$referredByUid").push().key ?: "tx_${System.currentTimeMillis()}"
-                                                    val referrerTxMap = mapOf(
-                                                        "id" to referrerTxId,
-                                                        "userId" to referredByUid,
-                                                        "type" to "referral_bonus",
-                                                        "title" to "Referral Bonus: $friendName Completed Quiz",
-                                                        "coins" to 500,
-                                                        "status" to "Completed",
-                                                        "timestamp" to now,
-                                                        "amount" to 500,
-                                                        "source" to "Referral Bonus",
-                                                        "coinsBefore" to referrerCoinsBefore,
-                                                        "coinsAfter" to referrerCoinsBefore + 500
-                                                    )
-                                                    db.getReference("transactions/$referredByUid/$referrerTxId").setValue(referrerTxMap)
-                                                } else {
-                                                    android.util.Log.e("PlayWinReferral", "Referrer transaction failed", errReferrer?.toException())
-                                                }
-                                            }
-                                        })
+                                            )
+                                        }
                                     } else {
-                                        android.util.Log.e("PlayWinReferral", "Friend transaction failed or already rewarded: isAlreadyRewarded=$isAlreadyRewarded", error?.toException())
+                                        android.util.Log.e("PlayWinReferral", "Friend referral transaction failed or not needed: $friendError")
                                     }
                                 }
-                            })
+                            )
                         } catch (e: Exception) {
                             android.util.Log.e("PlayWinReferral", "Error in referral completion logic", e)
                         }
                     }
                 }
                 onComplete(if (success) totalReward else 0)
-             }
+            }
         )
     }
 
@@ -1512,178 +1405,201 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         return lastStr == yesterdayStr
     }
 
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        if (connectivityManager != null) {
+            val activeNetwork = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+            return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+        return false
+    }
+
+    fun refreshDailyCheckInSettings() {
+        dailyCheckInLoadingState.value = true
+        val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+        val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+        db.getReference("dailyCheckIn").get().addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val snapshot = task.result
+                if (snapshot != null && snapshot.exists()) {
+                    val settings = snapshot.getValue(com.playwin.app.data.model.FirebaseDailyCheckInSettings::class.java)
+                    dailyCheckInSettingsState.value = settings
+                    if (settings != null) {
+                        val r = settings.rewards
+                        if (r != null && r.size >= 7) {
+                            android.util.Log.d("PlayWinCheckIn", "Loaded rewards:\nDay1=${r[0]}\nDay2=${r[1]}\nDay3=${r[2]}\nDay4=${r[3]}\nDay5=${r[4]}\nDay6=${r[5]}\nDay7=${r[6]}")
+                        }
+                    }
+                } else {
+                    val defaultSettings = com.playwin.app.data.model.FirebaseDailyCheckInSettings(
+                        enabled = true,
+                        rewards = listOf(20, 30, 40, 50, 60, 80, 120),
+                        maxRewardLimit = 500
+                    )
+                    db.getReference("dailyCheckIn").setValue(defaultSettings)
+                    dailyCheckInSettingsState.value = defaultSettings
+                }
+            }
+            dailyCheckInLoadingState.value = false
+        }
+    }
+
     fun claimDailyReward(onResult: ((Boolean, String?) -> Unit)? = null): Boolean {
+        if (!isNetworkAvailable()) {
+            onResult?.invoke(false, "Connect to internet to claim today's reward.")
+            return false
+        }
+
         val currentWallet = walletState.value
-        val now = System.currentTimeMillis()
         val userId = currentWallet.userId
         if (userId.isEmpty()) {
             onResult?.invoke(false, "User not authenticated")
             return false
         }
 
-        val isTodayClaimed = currentWallet.lastCheckInTime != 0L && isSameDay(currentWallet.lastCheckInTime, now)
-        if (isTodayClaimed) {
-            onResult?.invoke(false, "Daily reward already claimed today.")
+        val settings = dailyCheckInSettingsState.value
+        if (settings == null) {
+            onResult?.invoke(false, "Configuration unavailable.")
+            return false
+        }
+        if (!settings.enabled) {
+            onResult?.invoke(false, "Daily Check-In is currently disabled.")
             return false
         }
 
-        viewModelScope.launch {
-            rewardMutex.withLock {
-                try {
-                    val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
-                    val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
-                    val userRef = db.getReference("users").child(userId)
-
-                    android.util.Log.d("PlayWinCoinSystem", "[START] Daily Check-in Transaction for user: $userId")
-
-                    userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-                        var previousCoins = 0
-                        var newCoins = 0
-                        var txRewardAmount = 0
-                        var txNewStreak = 0
-                        var errorMessage: String? = null
-
-                        override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                            if (mutableData.value == null) {
-                                errorMessage = "User node does not exist in Firebase."
-                                return com.google.firebase.database.Transaction.abort()
-                            }
-
-                            val lastCheckIn = mutableData.child("lastCheckInTime").getValue(Long::class.java) ?: 0L
-                            if (isSameDay(lastCheckIn, now)) {
-                                errorMessage = "Daily reward already claimed today."
-                                return com.google.firebase.database.Transaction.abort()
-                            }
-
-                            val currentStreak = mutableData.child("dailyStreak").getValue(Int::class.java)
-                                ?: mutableData.child("streak").getValue(Int::class.java)
-                                ?: 0
-
-                            txNewStreak = when {
-                                lastCheckIn == 0L -> 1
-                                isYesterday(lastCheckIn, now) -> {
-                                    if (currentStreak >= 7) 1 else currentStreak + 1
-                                }
-                                else -> 1
-                            }
-
-                            txRewardAmount = when (txNewStreak) {
-                                1 -> 20
-                                2 -> 30
-                                3 -> 40
-                                4 -> 50
-                                5 -> 60
-                                6 -> 80
-                                7 -> 120
-                                else -> 20
-                            }
-
-                            previousCoins = mutableData.child("coins").getValue(Int::class.java) ?: 0
-                            newCoins = previousCoins + txRewardAmount
-
-                            val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                            val checkInDateStr = sdfDate.format(java.util.Date(now))
-
-                            mutableData.child("coins").value = newCoins
-                            mutableData.child("lastActiveTime").value = now
-                            mutableData.child("lastCheckInTime").value = now
-                            mutableData.child("lastCheckInDate").value = checkInDateStr
-                            mutableData.child("dailyStreak").value = txNewStreak
-                            mutableData.child("streak").value = txNewStreak
-
-                            val prevTotalRewards = mutableData.child("totalCheckInRewards").getValue(Int::class.java) ?: 0
-                            mutableData.child("totalCheckInRewards").value = prevTotalRewards + txRewardAmount
-
-                            return com.google.firebase.database.Transaction.success(mutableData)
-                        }
-
-                        override fun onComplete(
-                            error: com.google.firebase.database.DatabaseError?,
-                            committed: Boolean,
-                            currentData: com.google.firebase.database.DataSnapshot?
-                        ) {
-                            if (committed && error == null) {
-                                val displayedUiCoinsBefore = walletState.value.coins
-                                android.util.Log.d(
-                                    "PlayWinCoinSystem",
-                                    """
-                                    ================ DAILY CHECKIN SYNC SUCCESS ================
-                                    User ID: $userId
-                                    New Streak: $txNewStreak
-                                    Reward Amount: $txRewardAmount
-                                    Previous Coins: $previousCoins
-                                    Firebase Coins: $newCoins
-                                    Displayed UI Coins (Before local save): $displayedUiCoinsBefore
-                                    ============================================================
-                                    """.trimIndent()
-                                )
-
-                                val txId = db.getReference("transactions/$userId").push().key ?: "tx_${System.currentTimeMillis()}"
-                                val historyId = db.getReference("rewardHistory/$userId").push().key ?: "hist_${System.currentTimeMillis()}"
-
-                                val txMap = mapOf(
-                                    "id" to txId,
-                                    "userId" to userId,
-                                    "type" to "daily_reward",
-                                    "title" to "Daily Check-in Reward",
-                                    "coins" to txRewardAmount,
-                                    "status" to "Completed",
-                                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                                    "amount" to txRewardAmount,
-                                    "source" to "Daily Check-in Reward",
-                                    "coinsBefore" to previousCoins,
-                                    "coinsAfter" to newCoins
-                                )
-                                db.getReference("transactions/$userId/$txId").setValue(txMap)
-
-                                val historyMap = mapOf(
-                                    "type" to "daily_reward",
-                                    "reward" to txRewardAmount,
-                                    "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                                    "coinsBefore" to previousCoins,
-                                    "coinsAfter" to newCoins
-                                )
-                                db.getReference("rewardHistory/$userId/$historyId").setValue(historyMap)
-
-                                val currentWallet = walletState.value
-                                if (currentWallet.userId == userId) {
-                                    val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                                    val checkInDateStr = sdfDate.format(java.util.Date(now))
-                                    val updatedWallet = currentWallet.copy(
-                                        coins = newCoins,
-                                        dailyStreak = txNewStreak,
-                                        lastCheckInTime = now,
-                                        lastCheckInDate = checkInDateStr,
-                                        totalCheckInRewards = (currentWallet.totalCheckInRewards + txRewardAmount)
-                                    )
-                                    viewModelScope.launch {
-                                        repository.saveWalletLocally(updatedWallet)
-                                    }
-                                }
-
-                                onResult?.invoke(true, null)
-                            } else {
-                                val finalError = errorMessage ?: error?.message ?: "Transaction aborted"
-                                android.util.Log.e(
-                                    "PlayWinCoinSystem",
-                                    """
-                                    ================ DAILY CHECKIN SYNC FAILURE ================
-                                    User ID: $userId
-                                    Reason: $finalError
-                                    ============================================================
-                                    """.trimIndent()
-                                )
-                                onResult?.invoke(false, finalError)
-                            }
-                        }
-                    })
-                } catch (e: Exception) {
-                    android.util.Log.e("PlayWinCoinSystem", "Daily Check-in failed with exception: ${e.message}", e)
-                    onResult?.invoke(false, e.message)
-                }
-            }
+        val rewardsList = settings.rewards
+        if (rewardsList == null || rewardsList.size < 7) {
+            onResult?.invoke(false, "Configuration unavailable.")
+            return false
         }
 
+        val serverTime = System.currentTimeMillis() + serverTimeOffset
+        val userCheckIn = userDailyCheckInState.value ?: com.playwin.app.data.model.FirebaseUserDailyCheckIn()
+        
+        val lastClaim = userCheckIn.lastClaimTimestamp
+        if (lastClaim > 0L && serverTime - lastClaim < 86400000L) {
+            val remainingMs = 86400000L - (serverTime - lastClaim)
+            val h = remainingMs / 3600000L
+            val m = (remainingMs % 3600000L) / 60000L
+            val s = (remainingMs % 60000L) / 1000L
+            onResult?.invoke(false, String.format(java.util.Locale.US, "%02dh %02dm %02ds remaining.", h, m, s))
+            return false
+        }
+
+        val isMissed = lastClaim > 0L && (serverTime - lastClaim >= 172800000L)
+        val currentStreak = userCheckIn.streak
+        val currentDayVal = userCheckIn.currentDay
+
+        val newStreak = if (isMissed || currentStreak == 0) 1 else currentStreak + 1
+        var newDay = if (isMissed || currentDayVal == 0) 1 else currentDayVal + 1
+        if (newDay > 7) {
+            newDay = 1
+        }
+
+        val rewardAmount = when (newDay) {
+            1 -> rewardsList[0]
+            2 -> rewardsList[1]
+            3 -> rewardsList[2]
+            4 -> rewardsList[3]
+            5 -> rewardsList[4]
+            6 -> rewardsList[5]
+            7 -> rewardsList[6]
+            else -> rewardsList[0]
+        }
+        val finalReward = if (rewardAmount > settings.maxRewardLimit) settings.maxRewardLimit else rewardAmount
+
+        executeRewardTransaction(
+            userId = userId,
+            amount = finalReward,
+            type = "daily_reward",
+            source = "Daily Check-In Day $newDay Reward",
+            extraCheck = { mutableData ->
+                val dbLastClaim = mutableData.child("dailyCheckIn").child("lastClaimTimestamp").getValue(Long::class.java) ?: 0L
+                if (dbLastClaim > 0L && serverTime - dbLastClaim < 86400000L) {
+                    "Daily reward already claimed today."
+                } else {
+                    val dbStreak = mutableData.child("dailyCheckIn").child("streak").getValue(Int::class.java) ?: 0
+                    val dbDay = mutableData.child("dailyCheckIn").child("currentDay").getValue(Int::class.java) ?: 0
+                    val dbIsMissed = dbLastClaim > 0L && (serverTime - dbLastClaim >= 172800000L)
+                    
+                    val expectedNewDay = if (dbIsMissed || dbDay == 0) 1 else {
+                        val temp = dbDay + 1
+                        if (temp > 7) 1 else temp
+                    }
+                    val dbRewards = settings.rewards
+                    if (dbRewards == null || dbRewards.size < 7) {
+                        "Configuration unavailable."
+                    } else {
+                        val expectedReward = when (expectedNewDay) {
+                            1 -> dbRewards[0]
+                            2 -> dbRewards[1]
+                            3 -> dbRewards[2]
+                            4 -> dbRewards[3]
+                            5 -> dbRewards[4]
+                            6 -> dbRewards[5]
+                            7 -> dbRewards[6]
+                            else -> dbRewards[0]
+                        }
+                        val expectedFinalReward = if (expectedReward > settings.maxRewardLimit) settings.maxRewardLimit else expectedReward
+                        
+                        if (finalReward != expectedFinalReward) {
+                            "Value tampering detected."
+                        } else {
+                            null
+                        }
+                    }
+                }
+            },
+            extraUpdate = { mutableData ->
+                val dbLastClaim = mutableData.child("dailyCheckIn").child("lastClaimTimestamp").getValue(Long::class.java) ?: 0L
+                val dbIsMissed = dbLastClaim > 0L && (serverTime - dbLastClaim >= 172800000L)
+                
+                val streakNode = mutableData.child("dailyCheckIn").child("streak")
+                val currentDayNode = mutableData.child("dailyCheckIn").child("currentDay")
+                val totalClaimsNode = mutableData.child("dailyCheckIn").child("totalClaims")
+
+                val dbStreak = streakNode.getValue(Int::class.java) ?: 0
+                val dbDay = currentDayNode.getValue(Int::class.java) ?: 0
+                val totalClaimsVal = totalClaimsNode.getValue(Int::class.java) ?: 0
+
+                val dbNewStreak = if (dbIsMissed || dbStreak == 0) 1 else dbStreak + 1
+                var dbNewDay = if (dbIsMissed || dbDay == 0) 1 else dbDay + 1
+                if (dbNewDay > 7) {
+                    dbNewDay = 1
+                }
+
+                mutableData.child("dailyCheckIn").child("lastClaimTimestamp").value = serverTime
+                mutableData.child("dailyCheckIn").child("nextEligibleTimestamp").value = serverTime + 86400000L
+                mutableData.child("dailyCheckIn").child("currentDay").value = dbNewDay
+                mutableData.child("dailyCheckIn").child("streak").value = dbNewStreak
+                mutableData.child("dailyCheckIn").child("totalClaims").value = totalClaimsVal + 1
+
+                // Sync backward compatibility fields
+                mutableData.child("dailyStreak").value = dbNewStreak
+                mutableData.child("lastCheckInTime").value = serverTime
+                mutableData.child("lastCheckInDate").value = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(serverTime))
+
+                val prevTotalCheckIn = mutableData.child("totalCheckInRewards").getValue(Int::class.java) ?: 0
+                mutableData.child("totalCheckInRewards").value = prevTotalCheckIn + finalReward
+            },
+            onComplete = { success, _, _, errorMsg ->
+                if (success) {
+                    viewModelScope.launch {
+                        val currentWallet = walletState.value
+                        val updatedWallet = currentWallet.copy(
+                            coins = currentWallet.coins + finalReward,
+                            dailyStreak = newStreak,
+                            lastCheckInTime = serverTime,
+                            lastCheckInDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(serverTime)),
+                            totalCheckInRewards = currentWallet.totalCheckInRewards + finalReward
+                        )
+                        repository.saveWalletLocally(updatedWallet)
+                    }
+                }
+                onResult?.invoke(success, errorMsg)
+            }
+        )
         return true
     }
 
@@ -1743,34 +1659,36 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch {
                 rewardMutex.withLock {
                     try {
-                        val userRef = db.getReference("users").child(userId)
-                        if (userRef == null) {
-                            onResult(false, "Database reference is null.")
-                            return@launch
-                        }
+                        var activeResetTime = 0L
+                        var dbAdsWatched = 0
+                        val rewardAmount = 50
 
-                        android.util.Log.d("PlayWinCoinSystem", "[START] Rewarded Ad Atomic Transaction for user: $userId, type: $type")
-
-                        val txId = db.getReference("transactions/$userId").push().key ?: "tx_${System.currentTimeMillis()}"
-                        val historyId = db.getReference("rewardHistory/$userId").push().key ?: "hist_${System.currentTimeMillis()}"
-
-                        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-                            var previousCoins = 0
-                            var newCoins = 0
-                            var dbAdsWatched = 0
-                            var activeResetTime = 0L
-                            val rewardAmount = 50
-                            var transactionError: String? = null
-
-                            override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                        com.playwin.app.data.repository.WalletService.updateWallet(
+                            userId = userId,
+                            coinsDelta = rewardAmount,
+                            source = "Watch Ads Reward",
+                            type = "video_ad",
+                            extraCheck = { mutableData ->
                                 val dbLastAdTime = mutableData.child("lastRewardAdTime").getValue(Long::class.java) ?: 0L
                                 val txNow = System.currentTimeMillis()
                                 val dbElapsed = txNow - dbLastAdTime
                                 if (dbLastAdTime != 0L && dbElapsed < 1 * 60 * 1000L) {
-                                    transactionError = "Ad reward cooldown is still active in database."
-                                    return com.google.firebase.database.Transaction.abort()
+                                    "Ad reward cooldown is still active in database."
+                                } else {
+                                    val dbResetTime = mutableData.child("lastAdResetTime").getValue(Long::class.java) ?: 0L
+                                    var adsWatched = mutableData.child("dailyAdsWatched").getValue(Int::class.java) ?: 0
+                                    if (!isSameDay(dbResetTime, txNow) || dbResetTime == 0L) {
+                                        adsWatched = 0
+                                    }
+                                    if (adsWatched >= 10) {
+                                        "Daily Reward Ad Limit Reached. Come Back Tomorrow."
+                                    } else {
+                                        null
+                                    }
                                 }
-
+                            },
+                            extraUpdate = { mutableData ->
+                                val txNow = System.currentTimeMillis()
                                 val dbResetTime = mutableData.child("lastAdResetTime").getValue(Long::class.java) ?: 0L
                                 dbAdsWatched = mutableData.child("dailyAdsWatched").getValue(Int::class.java) ?: 0
                                 activeResetTime = dbResetTime
@@ -1778,72 +1696,16 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                     activeResetTime = txNow
                                     dbAdsWatched = 0
                                 }
-
-                                if (dbAdsWatched >= 10) {
-                                    transactionError = "Daily Reward Ad Limit Reached. Come Back Tomorrow."
-                                    return com.google.firebase.database.Transaction.abort()
-                                }
-
-                                previousCoins = mutableData.child("coins").getValue(Int::class.java) ?: 0
-                                newCoins = previousCoins + rewardAmount
-
-                                mutableData.child("coins").value = newCoins
                                 mutableData.child("dailyAdsWatched").value = dbAdsWatched + 1
                                 mutableData.child("lastAdResetTime").value = activeResetTime
                                 mutableData.child("lastRewardAdTime").value = txNow
-                                mutableData.child("lastActiveTime").value = txNow
-
-                                return com.google.firebase.database.Transaction.success(mutableData)
-                            }
-
-                            override fun onComplete(
-                                error: com.google.firebase.database.DatabaseError?,
-                                committed: Boolean,
-                                currentData: com.google.firebase.database.DataSnapshot?
-                            ) {
-                                if (committed && error == null) {
+                            },
+                            onComplete = { success, coinsBefore, coinsAfter, error ->
+                                if (success) {
                                     val txNow = System.currentTimeMillis()
-                                    val displayedUiCoinsBefore = walletState.value.coins
-                                    android.util.Log.d(
-                                        "PlayWinCoinSystem",
-                                        """
-                                        ================ REWARDED AD SYNC SUCCESS ================
-                                        User ID: $userId
-                                        Reward Amount: $rewardAmount
-                                        Previous Coins: $previousCoins
-                                        Firebase Coins: $newCoins
-                                        Displayed UI Coins (Before local save): $displayedUiCoinsBefore
-                                        ==========================================================
-                                        """.trimIndent()
-                                    )
-
-                                    val txMap = mapOf(
-                                        "id" to txId,
-                                        "userId" to userId,
-                                        "type" to "video_ad",
-                                        "title" to "Watch Ads Reward",
-                                        "coins" to rewardAmount,
-                                        "status" to "Completed",
-                                        "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                                        "amount" to rewardAmount,
-                                        "source" to "Watch Ads Reward",
-                                        "coinsBefore" to previousCoins,
-                                        "coinsAfter" to newCoins
-                                    )
-                                    db.getReference("transactions/$userId/$txId").setValue(txMap)
-
-                                    val historyMap = mapOf(
-                                        "type" to "video_ad",
-                                        "reward" to rewardAmount,
-                                        "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                                        "coinsBefore" to previousCoins,
-                                        "coinsAfter" to newCoins
-                                    )
-                                    db.getReference("rewardHistory/$userId/$historyId").setValue(historyMap)
-
                                     val walletSummaryMap = mapOf(
                                         "userId" to userId,
-                                        "coins" to newCoins,
+                                        "coins" to coinsAfter,
                                         "dailyAdsWatched" to (dbAdsWatched + 1),
                                         "lastRewardAdTime" to txNow,
                                         "lastAdResetTime" to activeResetTime
@@ -1853,7 +1715,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                     val currentWallet = walletState.value
                                     if (currentWallet.userId == userId) {
                                         val updatedWallet = currentWallet.copy(
-                                            coins = newCoins,
+                                            coins = coinsAfter,
                                             dailyAdsWatched = dbAdsWatched + 1,
                                             lastRewardAdTime = txNow,
                                             lastAdResetTime = activeResetTime
@@ -1862,15 +1724,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                             repository.saveWalletLocally(updatedWallet)
                                         }
                                     }
-
                                     onResult(true, null)
                                 } else {
-                                    val reason = error?.message ?: transactionError ?: "Transaction aborted."
-                                    android.util.Log.e("PlayWinCoinSystem", "[FAILED] Rewarded Ad Transaction failed: $reason")
-                                    onResult(false, reason)
+                                    onResult(false, error ?: "Transaction aborted.")
                                 }
                             }
-                        })
+                        )
                     } catch (e: Exception) {
                         android.util.Log.e("PlayWinCoinSystem", "Unexpected error during Rewarded Ad Transaction", e)
                         onResult(false, e.message ?: "An unexpected error occurred.")
@@ -1919,20 +1778,27 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     var remainingSpinsToSync = dbUser.remainingSpins
                     var freeSpinUsedToSync = dbUser.freeSpinUsed
                     var rewardAdSpinUsedToSync = dbUser.rewardAdSpinUsed
+                    var dailySpinCountToSync = dbUser.dailySpinCount
+                    var rewardedSpinCountToSync = dbUser.rewardedSpinCount
 
+                    val maxDailySpins = spinWheelConfigState.value.dailyFreeSpins
                     if (lastSpinDateToSync != today) {
                         lastSpinDateToSync = today
-                        remainingSpinsToSync = 1
+                        remainingSpinsToSync = maxDailySpins
                         freeSpinUsedToSync = false
-                        rewardAdSpinUsedToSync = false
+                        rewardAdSpinUsedToSync = true
+                        dailySpinCountToSync = 0
+                        rewardedSpinCountToSync = 0
                         try {
                             val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
                             val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
                             val userRef = db.getReference("users/$userId")
                             userRef.child("lastSpinDate").setValue(today)
-                            userRef.child("remainingSpins").setValue(1)
+                            userRef.child("remainingSpins").setValue(maxDailySpins)
                             userRef.child("freeSpinUsed").setValue(false)
-                            userRef.child("rewardAdSpinUsed").setValue(false)
+                            userRef.child("rewardAdSpinUsed").setValue(true)
+                            userRef.child("dailySpinCount").setValue(0)
+                            userRef.child("rewardedSpinCount").setValue(0)
                         } catch (e: Exception) {
                             // ignore
                         }
@@ -1995,6 +1861,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                         lastSpinDate = lastSpinDateToSync,
                         freeSpinUsed = freeSpinUsedToSync,
                         rewardAdSpinUsed = rewardAdSpinUsedToSync,
+                        dailySpinCount = dailySpinCountToSync,
+                        rewardedSpinCount = rewardedSpinCountToSync,
                         lastScratchDate = lastScratchDateToSync,
                         freeScratchUsed = freeScratchUsedToSync,
                         rewardAdScratchUsed = rewardAdScratchUsedToSync,
@@ -2288,6 +2156,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             0
         }
 
+        val config = spinWheelConfigState.value
+        val dailyFreeSpins = config.dailyFreeSpins
+        val dailySpinLimit = config.dailySpinLimit
+        val maxRewardedAdSpinsPerDay = config.maxRewardedAdSpinsPerDay
+        val rewardedAdAfterFreeSpins = config.rewardedAdAfterFreeSpins
+        val requireRewardedAdBeforeEveryExtraSpin = config.requireRewardedAdBeforeEveryExtraSpin
+
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
 
         executeRewardTransaction(
@@ -2296,75 +2171,97 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             type = "spin_reward",
             source = "Spin Wheel Reward",
             extraCheck = { mutableData ->
-                val lastSpinDate = mutableData.child("lastSpinDate").getValue(String::class.java) ?: ""
+                var lastSpinDate = mutableData.child("lastSpinDate").getValue(String::class.java) ?: ""
+                var dailySpinCount = mutableData.child("dailySpinCount").getValue(Int::class.java) ?: 0
+                var rewardedSpinCount = mutableData.child("rewardedSpinCount").getValue(Int::class.java) ?: 0
                 var freeSpinUsed = mutableData.child("freeSpinUsed").getValue(Boolean::class.java) ?: false
                 var rewardAdSpinUsed = mutableData.child("rewardAdSpinUsed").getValue(Boolean::class.java) ?: false
-                var remainingSpins = mutableData.child("remainingSpins").getValue(Int::class.java) ?: 0
+                var remainingSpins = mutableData.child("remainingSpins").getValue(Int::class.java) ?: dailyFreeSpins
+                var isAdSpinUnlocked = mutableData.child("isAdSpinUnlocked").getValue(Boolean::class.java) ?: false
 
-                var checkLastSpinDate = lastSpinDate
-                var checkFreeSpinUsed = freeSpinUsed
-                var checkRewardAdSpinUsed = rewardAdSpinUsed
-                var checkRemainingSpins = remainingSpins
-
-                if (checkLastSpinDate != today) {
-                    checkLastSpinDate = today
-                    checkFreeSpinUsed = false
-                    checkRewardAdSpinUsed = false
-                    checkRemainingSpins = 1
+                if (lastSpinDate != today) {
+                    lastSpinDate = today
+                    dailySpinCount = 0
+                    rewardedSpinCount = 0
+                    freeSpinUsed = false
+                    rewardAdSpinUsed = true
+                    remainingSpins = dailyFreeSpins
+                    isAdSpinUnlocked = false
                 }
 
-                if (isAdSpin) {
-                    if (!checkFreeSpinUsed) {
-                        "Please use your free spin first."
-                    } else if (!checkRewardAdSpinUsed) {
-                        "Please watch a rewarded ad to unlock the extra spin."
-                    } else if (checkRemainingSpins <= 0) {
-                        "No extra spin available. Daily limit reached."
+                if (dailySpinCount >= dailySpinLimit) {
+                    "Daily Spin Limit Reached. Max limit is $dailySpinLimit."
+                } else if (dailySpinCount >= dailyFreeSpins) {
+                    if (rewardedSpinCount >= maxRewardedAdSpinsPerDay) {
+                        "Daily Rewarded Ad Spin Limit Reached."
+                    } else if (rewardedAdAfterFreeSpins || requireRewardedAdBeforeEveryExtraSpin) {
+                        if (!isAdSpinUnlocked) {
+                            "Please watch a rewarded ad to unlock the extra spin."
+                        } else {
+                            null
+                        }
                     } else {
                         null
                     }
                 } else {
-                    if (checkFreeSpinUsed) {
-                        "Free spin already used today."
-                    } else if (checkRemainingSpins <= 0) {
-                        "No free spin available."
-                    } else {
-                        null
-                    }
+                    null
                 }
             },
             extraUpdate = { mutableData ->
-                val lastSpinDate = mutableData.child("lastSpinDate").getValue(String::class.java) ?: ""
+                var lastSpinDate = mutableData.child("lastSpinDate").getValue(String::class.java) ?: ""
+                var dailySpinCount = mutableData.child("dailySpinCount").getValue(Int::class.java) ?: 0
+                var rewardedSpinCount = mutableData.child("rewardedSpinCount").getValue(Int::class.java) ?: 0
                 var freeSpinUsed = mutableData.child("freeSpinUsed").getValue(Boolean::class.java) ?: false
                 var rewardAdSpinUsed = mutableData.child("rewardAdSpinUsed").getValue(Boolean::class.java) ?: false
-                var remainingSpins = mutableData.child("remainingSpins").getValue(Int::class.java) ?: 0
+                var remainingSpins = mutableData.child("remainingSpins").getValue(Int::class.java) ?: dailyFreeSpins
+                var isAdSpinUnlocked = mutableData.child("isAdSpinUnlocked").getValue(Boolean::class.java) ?: false
 
                 if (lastSpinDate != today) {
+                    lastSpinDate = today
+                    dailySpinCount = 0
+                    rewardedSpinCount = 0
                     freeSpinUsed = false
-                    rewardAdSpinUsed = false
-                    remainingSpins = 1
+                    rewardAdSpinUsed = true
+                    remainingSpins = dailyFreeSpins
+                    isAdSpinUnlocked = false
                 }
 
-                val isRetry = selectedReward.type.trim().equals("Retry", ignoreCase = true)
+                val isRetry = selectedReward.type.trim().equals("Retry", ignoreCase = true) || 
+                              selectedReward.type.trim().equals("Spin Again", ignoreCase = true)
+
                 if (!isRetry) {
-                    if (isAdSpin) {
-                        remainingSpins = 0
+                    if (dailySpinCount < dailyFreeSpins) {
+                        dailySpinCount++
+                        remainingSpins = (dailyFreeSpins - dailySpinCount).coerceAtLeast(0)
+                        if (dailySpinCount >= dailyFreeSpins) {
+                            freeSpinUsed = true
+                            rewardAdSpinUsed = true
+                        }
                     } else {
-                        freeSpinUsed = true
-                        remainingSpins = 0
+                        dailySpinCount++
+                        rewardedSpinCount++
+                        isAdSpinUnlocked = false
+                        rewardAdSpinUsed = true
+                        remainingSpins = (dailySpinLimit - dailySpinCount).coerceAtLeast(0)
                     }
                 }
 
                 mutableData.child("lastSpinDate").value = today
-                mutableData.child("freeSpinUsed").value = freeSpinUsed
+                mutableData.child("dailySpinCount").value = dailySpinCount
+                mutableData.child("rewardedSpinCount").value = rewardedSpinCount
+                mutableData.child("freeSpinUsed").value = (dailySpinCount >= dailyFreeSpins)
                 mutableData.child("rewardAdSpinUsed").value = rewardAdSpinUsed
                 mutableData.child("remainingSpins").value = remainingSpins
+                mutableData.child("isAdSpinUnlocked").value = isAdSpinUnlocked
 
                 val totalRewards = mutableData.child("totalSpinRewards").getValue(Int::class.java) ?: 0
                 mutableData.child("totalSpinRewards").value = totalRewards + rewardAmount
             },
-            onComplete = { success, _, _, errorMsg ->
+            onComplete = { success, coinsBefore, coinsAfter, errorMsg ->
                 if (success) {
+                    android.util.Log.d("PlayWinDebug", "Reward granted: ${selectedReward.name} of type ${selectedReward.type} (value: ${selectedReward.value})")
+                    android.util.Log.d("PlayWinDebug", "Wallet updated: coinsBefore = $coinsBefore, coinsAfter = $coinsAfter")
+
                     viewModelScope.launch {
                         try {
                             val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -2425,6 +2322,11 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        val config = spinWheelConfigState.value
+        val dailyFreeSpins = config.dailyFreeSpins
+        val dailySpinLimit = config.dailySpinLimit
+        val maxRewardedAdSpinsPerDay = config.maxRewardedAdSpinsPerDay
+
         try {
             val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
             val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
@@ -2438,28 +2340,37 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     var lastSpinDate = mutableData.child("lastSpinDate").getValue(String::class.java) ?: ""
+                    var dailySpinCount = mutableData.child("dailySpinCount").getValue(Int::class.java) ?: 0
+                    var rewardedSpinCount = mutableData.child("rewardedSpinCount").getValue(Int::class.java) ?: 0
                     var freeSpinUsed = mutableData.child("freeSpinUsed").getValue(Boolean::class.java) ?: false
                     var rewardAdSpinUsed = mutableData.child("rewardAdSpinUsed").getValue(Boolean::class.java) ?: false
-                    var remainingSpins = mutableData.child("remainingSpins").getValue(Int::class.java) ?: 0
+                    var remainingSpins = mutableData.child("remainingSpins").getValue(Int::class.java) ?: dailyFreeSpins
+                    var isAdSpinUnlocked = mutableData.child("isAdSpinUnlocked").getValue(Boolean::class.java) ?: false
 
                     if (lastSpinDate != today) {
                         lastSpinDate = today
+                        dailySpinCount = 0
+                        rewardedSpinCount = 0
                         freeSpinUsed = false
-                        rewardAdSpinUsed = false
-                        remainingSpins = 1
+                        rewardAdSpinUsed = true
+                        remainingSpins = dailyFreeSpins
+                        isAdSpinUnlocked = false
                     }
 
-                    if (!freeSpinUsed || rewardAdSpinUsed) {
+                    if (dailySpinCount >= dailySpinLimit || rewardedSpinCount >= maxRewardedAdSpinsPerDay) {
                         return com.google.firebase.database.Transaction.abort()
                     }
 
+                    isAdSpinUnlocked = true
                     rewardAdSpinUsed = true
-                    remainingSpins = 1
 
                     mutableData.child("lastSpinDate").value = today
-                    mutableData.child("freeSpinUsed").value = freeSpinUsed
+                    mutableData.child("dailySpinCount").value = dailySpinCount
+                    mutableData.child("rewardedSpinCount").value = rewardedSpinCount
+                    mutableData.child("freeSpinUsed").value = (dailySpinCount >= dailyFreeSpins)
                     mutableData.child("rewardAdSpinUsed").value = rewardAdSpinUsed
-                    mutableData.child("remainingSpins").value = remainingSpins
+                    mutableData.child("remainingSpins").value = (dailySpinLimit - dailySpinCount).coerceAtLeast(1)
+                    mutableData.child("isAdSpinUnlocked").value = isAdSpinUnlocked
 
                     return com.google.firebase.database.Transaction.success(mutableData)
                 }
@@ -2469,7 +2380,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                         refreshUserData()
                         onResult(true, null)
                     } else {
-                        onResult(false, error?.message ?: "Unlock transaction failed.")
+                        onResult(false, error?.message ?: "Daily limit reached or transaction aborted.")
                     }
                 }
             })
@@ -2773,6 +2684,60 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
+        firebaseUserDailyCheckInJob = viewModelScope.launch {
+            try {
+                val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                val checkInRef = db.getReference("users/$userId/dailyCheckIn")
+                val listener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        if (snapshot.exists()) {
+                            val userCheckIn = snapshot.getValue(com.playwin.app.data.model.FirebaseUserDailyCheckIn::class.java)
+                            userDailyCheckInState.value = userCheckIn
+                        } else {
+                            userDailyCheckInState.value = com.playwin.app.data.model.FirebaseUserDailyCheckIn()
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                checkInRef.addValueEventListener(listener)
+                try {
+                    kotlinx.coroutines.awaitCancellation()
+                } finally {
+                    checkInRef.removeEventListener(listener)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PlayWinCheckIn", "Error listening to user daily check-in", e)
+            }
+        }
+
+        dailyQuizJob = viewModelScope.launch {
+            try {
+                val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                val dailyQuizRef = db.getReference("users/$userId/dailyQuiz")
+                val listener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        if (snapshot.exists()) {
+                            val userDailyQuiz = snapshot.getValue(com.playwin.app.data.model.FirebaseUserDailyQuiz::class.java)
+                            dailyQuizState.value = userDailyQuiz
+                        } else {
+                            dailyQuizState.value = com.playwin.app.data.model.FirebaseUserDailyQuiz()
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                dailyQuizRef.addValueEventListener(listener)
+                try {
+                    kotlinx.coroutines.awaitCancellation()
+                } finally {
+                    dailyQuizRef.removeEventListener(listener)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PlayWinDailyQuiz", "Error listening to user daily quiz state", e)
+            }
+        }
+
         couponRedemptionsJob = viewModelScope.launch {
             repository.getFirebaseCouponRedemptionsFlow(userId).collect { list ->
                 couponRedemptionsState.value = list
@@ -2856,6 +2821,11 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         firebaseTxJob = null
         firebaseRedemptionJob?.cancel()
         firebaseRedemptionJob = null
+        firebaseUserDailyCheckInJob?.cancel()
+        firebaseUserDailyCheckInJob = null
+        dailyQuizJob?.cancel()
+        dailyQuizJob = null
+        dailyQuizState.value = null
         withdrawRequestsJob?.cancel()
         withdrawRequestsJob = null
         allUsersJob?.cancel()
@@ -2877,6 +2847,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         weeklyQuizProgressState.value = emptyMap()
         referralHistoryState.value = emptyList()
         currentUserState.value = null
+        userDailyCheckInState.value = null
         currentUserBlockedState.value = false
     }
 
@@ -3070,30 +3041,62 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun rollScratchRewardFromFirebase(): com.playwin.app.data.model.FirebaseScratchCardReward {
+        android.util.Log.d("PlayWinScratchDebug", "--- [STEP 4 & 5 & 6] ROLLING SCRATCH REWARD FROM FIREBASE ---")
         val activeRewards = scratchCardRewardsState.value.filter { it.active }
-        if (activeRewards.isEmpty()) {
-            return com.playwin.app.data.model.FirebaseScratchCardReward(
-                id = "fallback",
-                name = "Better Luck Next Time",
-                type = "Better Luck Next Time",
+        android.util.Log.d("PlayWinScratchDebug", "Active rewards available for roll: ${activeRewards.size}")
+
+        // 10. Remove every fallback that automatically returns "Better Luck Next Time"
+        // 11. Show "Better Luck Next Time" ONLY if the selected Firebase reward type is exactly "Better Luck Next Time".
+        val selectedReward = if (activeRewards.isEmpty()) {
+            com.playwin.app.data.model.FirebaseScratchCardReward(
+                id = "empty_error",
+                name = "Error: No active rewards configured in database",
+                type = "Error",
                 value = "0",
-                icon = "😢",
-                color = "#90A4AE"
+                icon = "❌",
+                color = "#FF0000"
             )
-        }
-        val totalWeight = activeRewards.sumOf { it.probabilityWeight }
-        if (totalWeight <= 0) {
-            return activeRewards.random()
-        }
-        val randomVal = (0 until totalWeight).random()
-        var currentSum = 0
-        for (reward in activeRewards) {
-            currentSum += reward.probabilityWeight
-            if (randomVal < currentSum) {
-                return reward
+        } else {
+            val totalWeight = activeRewards.sumOf { it.probabilityWeight }
+            if (totalWeight <= 0) {
+                activeRewards.random()
+            } else {
+                val randomVal = (0 until totalWeight).random()
+                var currentSum = 0
+                var rolled: com.playwin.app.data.model.FirebaseScratchCardReward? = null
+                for (reward in activeRewards) {
+                    currentSum += reward.probabilityWeight
+                    if (randomVal < currentSum) {
+                        rolled = reward
+                        break
+                    }
+                }
+                rolled ?: activeRewards.last()
             }
         }
-        return activeRewards.last()
+
+        // 4. Print the selected reward ID, type, name and value.
+        android.util.Log.d("PlayWinScratchDebug", "[STEP 4] SELECTED REWARD: ID: ${selectedReward.id}, Type: ${selectedReward.type}, Name: ${selectedReward.name}, Value: ${selectedReward.value}")
+
+        // 5. Verify reward.value is parsed correctly as an integer.
+        val parsedValue = selectedReward.value.toIntOrNull()
+        if (selectedReward.type == "Coins" && parsedValue == null) {
+            android.util.Log.e("PlayWinScratchDebug", "PARSING FAILURE: Field 'value' with content '${selectedReward.value}' could not be parsed as an Integer for Coins reward ID '${selectedReward.id}'.")
+        } else if (parsedValue != null) {
+            android.util.Log.d("PlayWinScratchDebug", "[STEP 5] VERIFIED: reward.value (${selectedReward.value}) successfully parsed as integer: $parsedValue")
+        } else {
+            android.util.Log.d("PlayWinScratchDebug", "[STEP 5] reward.value (${selectedReward.value}) is not an integer, but reward type is ${selectedReward.type}")
+        }
+
+        // 6. Verify reward.type matches exactly.
+        val validTypes = listOf("Coins", "Coupon", "Retry", "Retry Scratch", "Better Luck Next Time")
+        if (selectedReward.type in validTypes) {
+            android.util.Log.d("PlayWinScratchDebug", "[STEP 6] VERIFIED: reward.type (${selectedReward.type}) matches exactly a valid type.")
+        } else {
+            android.util.Log.e("PlayWinScratchDebug", "[STEP 6] FAILURE: reward.type (${selectedReward.type}) is invalid or is an error/fallback state! Valid types: $validTypes")
+        }
+
+        return selectedReward
     }
 
     fun performScratchCardTransactionSecure(
@@ -3107,11 +3110,20 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        // 7. Verify the selected reward is passed into the wallet transaction.
+        android.util.Log.d("PlayWinScratchDebug", "[STEP 7] PASSING SELECTED REWARD TO WALLET TRANSACTION: ID: ${rolledReward.id}, Type: ${rolledReward.type}, Value: ${rolledReward.value}, txId: $transactionId")
+
         repository.performScratchCardDbTransaction(userId, rolledReward, transactionId) { success, error, _, coinsAfter ->
             if (success) {
                 viewModelScope.launch {
                     val currentWallet = walletState.value
-                    val rewardValueCoins = if (rolledReward.type == "Coins") rolledReward.value.toIntOrNull() ?: 0 else 0
+                    val typeSafe = rolledReward.type?.trim() ?: "Coins"
+                    val isCoins = typeSafe.equals("Coins", ignoreCase = true) || 
+                                  (!typeSafe.equals("Coupon", ignoreCase = true) && 
+                                   !typeSafe.contains("retry", ignoreCase = true) && 
+                                   !typeSafe.contains("luck", ignoreCase = true) && 
+                                   ((rolledReward.value ?: "0").toIntOrNull() ?: 0) > 0)
+                    val rewardValueCoins = if (isCoins) (rolledReward.value ?: "0").toIntOrNull() ?: 0 else 0
                     val updatedWallet = currentWallet.copy(
                         coins = coinsAfter,
                         totalScratchRewards = currentWallet.totalScratchRewards + rewardValueCoins
@@ -3122,6 +3134,59 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 }
             } else {
                 onResult(false, null, error ?: "Transaction aborted.")
+            }
+        }
+    }
+
+    fun adminModifyCoinsManually(targetUid: String, amount: Int, reason: String, onComplete: (Boolean) -> Unit) {
+        executeRewardTransaction(
+            userId = targetUid,
+            amount = amount,
+            type = "admin_adjustment",
+            source = reason,
+            onComplete = { success, _, _, _ ->
+                onComplete(success)
+            }
+        )
+    }
+
+    fun adminUpdateDailyCheckInSettings(settings: com.playwin.app.data.model.FirebaseDailyCheckInSettings, onComplete: (Boolean) -> Unit) {
+        val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+        val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+        db.getReference("dailyCheckIn").setValue(settings).addOnCompleteListener { task ->
+            onComplete(task.isSuccessful)
+        }
+    }
+
+    fun adminResetAllUsersDailyCheckIn(onComplete: (Boolean) -> Unit) {
+        val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+        val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+        val users = allUsersState.value
+        if (users.isEmpty()) {
+            onComplete(true)
+            return
+        }
+        var completedCount = 0
+        var success = true
+        for (user in users) {
+            val userCheckInRef = db.getReference("users").child(user.uid)
+            val updates = mapOf(
+                "dailyCheckIn/streak" to 0,
+                "dailyCheckIn/currentDay" to 0,
+                "dailyCheckIn/lastClaimTimestamp" to 0L,
+                "dailyCheckIn/nextEligibleTimestamp" to 0L,
+                "dailyStreak" to 0,
+                "lastCheckInTime" to 0L,
+                "lastCheckInDate" to ""
+            )
+            userCheckInRef.updateChildren(updates).addOnCompleteListener { task ->
+                if (!task.isSuccessful) {
+                    success = false
+                }
+                completedCount++
+                if (completedCount == users.size) {
+                    onComplete(success)
+                }
             }
         }
     }

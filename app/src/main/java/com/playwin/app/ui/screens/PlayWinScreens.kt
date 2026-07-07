@@ -1265,6 +1265,8 @@ fun QuizArenaScreen(
     val quizProgress by viewModel.quizProgressState.collectAsStateWithLifecycle()
     val completedQuizzes by viewModel.completedQuizzesState.collectAsStateWithLifecycle()
     val weeklyQuizProgress by viewModel.weeklyQuizProgressState.collectAsStateWithLifecycle()
+    val dailyQuiz by viewModel.dailyQuizState.collectAsStateWithLifecycle()
+    val currentDailyQuiz = dailyQuiz
     val context = androidx.compose.ui.platform.LocalContext.current
     val todayDate = viewModel.getLocalDateString()
 
@@ -1362,433 +1364,298 @@ fun QuizArenaScreen(
             }
         } else {
             activeQuizzes.forEach { quiz ->
-                val isWeeklyQuiz = quiz.dayOfWeek.isNotEmpty()
                 val todayDayName = viewModel.getTodayDayOfWeekName()
+                val isTodayQuiz = quiz.dayOfWeek.equals(todayDayName, ignoreCase = true)
+                val isCompletedToday = currentDailyQuiz != null && currentDailyQuiz.completed && currentDailyQuiz.lastCompletedDate == todayDate
 
-                if (isWeeklyQuiz) {
-                    val weekdays = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-                    val quizDayIndex = weekdays.indexOfFirst { it.equals(quiz.dayOfWeek, ignoreCase = true) }
-                    val todayDayIndex = weekdays.indexOfFirst { it.equals(todayDayName, ignoreCase = true) }
-                    
-                    val weeklyRecord = weeklyQuizProgress[quiz.dayOfWeek]
-                    val isWeeklyCompletedToday = weeklyRecord != null && weeklyRecord.completed && weeklyRecord.date == todayDate
-                    val isWeeklyCompletedPreviously = weeklyRecord != null && weeklyRecord.completed && weeklyRecord.date != todayDate
-                    
-                    val isTodayQuiz = quiz.dayOfWeek.equals(todayDayName, ignoreCase = true)
-                    
-                    val cardStatus = when {
-                        isTodayQuiz && !isWeeklyCompletedToday -> "AVAILABLE"
-                        isTodayQuiz && isWeeklyCompletedToday -> "COMPLETED_TODAY"
-                        quizDayIndex > todayDayIndex -> "FUTURE"
-                        else -> {
-                            if (isWeeklyCompletedPreviously || (weeklyRecord != null && weeklyRecord.completed)) "COMPLETED" else "LOCKED"
+                val cardStatus = when {
+                    isTodayQuiz && !isCompletedToday -> "AVAILABLE"
+                    isTodayQuiz && isCompletedToday -> "COMPLETED_TODAY"
+                    else -> {
+                        val isPreviouslyCompleted = currentDailyQuiz != null && currentDailyQuiz.completed && currentDailyQuiz.lastCompletedDay.equals(quiz.dayOfWeek, ignoreCase = true)
+                        if (isPreviouslyCompleted) "COMPLETED" else "LOCKED"
+                    }
+                }
+
+                val color = when (cardStatus) {
+                    "AVAILABLE" -> Color(0xFF9C27B0)
+                    "COMPLETED_TODAY" -> Color(0xFF4CAF50)
+                    "COMPLETED" -> Color(0xFF2196F3)
+                    else -> Color.Gray
+                }
+
+                val isClickable = cardStatus == "AVAILABLE"
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                        .testTag("quiz_card_${quiz.id}")
+                        .then(
+                            if (isClickable) {
+                                Modifier.clickable {
+                                    onNavigateToGame(AppScreen.TriviaGame(quiz.categoryId.ifEmpty { quiz.category }, quiz.id))
+                                }
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(
+                        1.dp,
+                        when (cardStatus) {
+                            "AVAILABLE" -> Color(0xFF7C4DFF).copy(alpha = 0.6f)
+                            "COMPLETED_TODAY" -> Color(0xFF4CAF50).copy(alpha = 0.4f)
+                            else -> Color.Gray.copy(alpha = 0.3f)
                         }
-                    }
-
-                    val color = when (cardStatus) {
-                        "AVAILABLE" -> Color(0xFF9C27B0)
-                        "COMPLETED_TODAY" -> Color(0xFF4CAF50)
-                        "FUTURE" -> Color.Gray
-                        "COMPLETED" -> Color(0xFF2196F3)
-                        else -> Color.Gray
-                    }
-
-                    val isClickable = cardStatus == "AVAILABLE"
-
-                    Card(
+                    )
+                ) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .then(
-                                if (isClickable) {
-                                    Modifier.clickable {
-                                        onNavigateToGame(AppScreen.TriviaGame(quiz.categoryId.ifEmpty { quiz.category }, quiz.id))
-                                    }
-                                } else {
-                                    Modifier
-                                }
-                            ),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            when (cardStatus) {
-                                "AVAILABLE" -> Color(0xFF7C4DFF).copy(alpha = 0.6f)
-                                "COMPLETED_TODAY" -> Color(0xFF4CAF50).copy(alpha = 0.4f)
-                                else -> Color.Gray.copy(alpha = 0.3f)
-                            }
-                        )
+                            .padding(16.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
+                        // Top row: Icon, Title & Badge, Action Button
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
+                            // Icon container
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(
+                                        color.copy(alpha = 0.15f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        color.copy(alpha = 0.5f),
+                                        RoundedCornerShape(12.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(50.dp)
-                                        .background(
-                                            color.copy(alpha = 0.15f),
-                                            RoundedCornerShape(12.dp)
-                                        )
-                                        .border(
-                                            1.dp,
-                                            color.copy(alpha = 0.5f),
-                                            RoundedCornerShape(12.dp)
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "📅",
-                                        fontSize = 24.sp
-                                    )
+                                val categoryText = quiz.categoryId.ifEmpty { quiz.category }
+                                val emoji = when (categoryText.lowercase()) {
+                                    "gk" -> "🧠"
+                                    "sports" -> "⚽"
+                                    "movies", "cinema" -> "🎬"
+                                    "science" -> "🧪"
+                                    "history" -> "🏛️"
+                                    "tech", "technology" -> "💻"
+                                    else -> "🌟"
                                 }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "${quiz.title} (${quiz.dayOfWeek})",
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        
-                                        // Badge
-                                        when (cardStatus) {
-                                            "AVAILABLE" -> {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(Color(0xFF9C27B0).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
-                                                        .border(0.5.dp, Color(0xFF9C27B0), RoundedCornerShape(100.dp))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Available", color = Color(0xFF9C27B0), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            "COMPLETED_TODAY" -> {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(Color(0xFF2E7D32).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
-                                                        .border(0.5.dp, Color(0xFF4CAF50), RoundedCornerShape(100.dp))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Completed Today", color = Color(0xFF4CAF50), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            "FUTURE" -> {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(100.dp))
-                                                        .border(0.5.dp, Color.Gray, RoundedCornerShape(100.dp))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Locked", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            "COMPLETED" -> {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(Color(0xFF2196F3).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
-                                                        .border(0.5.dp, Color(0xFF2196F3), RoundedCornerShape(100.dp))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Completed", color = Color(0xFF2196F3), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            "LOCKED" -> {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(100.dp))
-                                                        .border(0.5.dp, Color.Gray, RoundedCornerShape(100.dp))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Locked", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "WEEKLY CHALLENGE • ${quiz.difficulty}",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "⏱️ ${quiz.timerSeconds}s limit",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .background(
-                                            if (cardStatus == "AVAILABLE") Color(0xFF9C27B0).copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f),
-                                            CircleShape
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (cardStatus == "AVAILABLE") Icons.Default.PlayArrow else Icons.Default.Lock,
-                                        contentDescription = if (cardStatus == "AVAILABLE") "Play" else "Locked",
-                                        tint = if (cardStatus == "AVAILABLE") Color(0xFF9C27B0) else Color.Gray,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = quiz.description,
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 12.sp
-                            )
-
-                            if (cardStatus == "COMPLETED_TODAY") {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFF2E7D32).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                        .border(0.5.dp, Color(0xFF4CAF50).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
-                                ) {
-                                    Text(
-                                        text = "Come back tomorrow for the next quiz.",
-                                        color = Color(0xFF4CAF50),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
                                 Text(
-                                    text = "🏆 ${if (quiz.rewardPerQuestion > 0) quiz.rewardPerQuestion else quiz.rewardCoins} Coins / Correct Answer • Perfect Bonus +${if (quiz.passBonus > 0) quiz.passBonus else quiz.completionBonus}",
-                                    color = if (cardStatus == "AVAILABLE") color else Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "${quiz.questions.size} Questions",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    text = if (quiz.icon.isNotEmpty() && !quiz.icon.startsWith("http")) quiz.icon else emoji,
+                                    fontSize = 22.sp
                                 )
                             }
-                        }
-                    }
-                } else {
-                    val completedRecord = completedQuizzes[quiz.id]
-                    val isCompletedToday = (completedRecord != null && completedRecord.completed && completedRecord.completedDate == todayDate) ||
-                        (quizProgress?.completedQuizIds?.contains(quiz.id) == true && quizProgress?.lastQuizDate == todayDate)
-
-                    val categoryText = quiz.categoryName.ifEmpty { quiz.category }
-                    val emoji = when (categoryText.lowercase()) {
-                        "gk" -> "🧠"
-                        "sports" -> "⚽"
-                        "movies", "cinema" -> "🎬"
-                        "science" -> "🧪"
-                        "history" -> "🏛️"
-                        "tech", "technology" -> "💻"
-                        else -> "🌟"
-                    }
-
-                    val color = when (categoryText.lowercase()) {
-                        "gk" -> Color(0xFF9C27B0)
-                        "sports" -> Color(0xFF2196F3)
-                        "movies", "cinema" -> Color(0xFFE91E63)
-                        "science" -> Color(0xFF4CAF50)
-                        "history" -> Color(0xFFFF9800)
-                        "tech", "technology" -> Color(0xFF00E5FF)
-                        else -> Color(0xFFFFD700)
-                    }
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .then(
-                                if (isCompletedToday) {
-                                    Modifier
-                                } else {
-                                    Modifier.clickable {
-                                        onNavigateToGame(AppScreen.TriviaGame(quiz.categoryId.ifEmpty { quiz.category }, quiz.id))
-                                    }
-                                }
-                            ),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isCompletedToday) Color(0xFF4CAF50).copy(alpha = 0.4f)
-                            else color.copy(alpha = 0.6f)
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
+                            
+                            Spacer(modifier = Modifier.width(12.dp))
+                            
+                            // Title & Badge Column
+                            Column(
+                                modifier = Modifier.weight(1f)
                             ) {
+                                Text(
+                                    text = "${quiz.title} (${quiz.dayOfWeek})",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                
+                                Spacer(modifier = Modifier.height(4.dp))
+                                
+                                // Status Badge
                                 Box(
                                     modifier = Modifier
-                                        .size(50.dp)
                                         .background(
-                                            color.copy(alpha = 0.15f),
-                                            RoundedCornerShape(12.dp)
+                                            when (cardStatus) {
+                                                "AVAILABLE" -> Color(0xFF9C27B0).copy(alpha = 0.15f)
+                                                "COMPLETED_TODAY" -> Color(0xFF2E7D32).copy(alpha = 0.15f)
+                                                "COMPLETED" -> Color(0xFF2196F3).copy(alpha = 0.15f)
+                                                else -> Color.Gray.copy(alpha = 0.15f)
+                                            },
+                                            RoundedCornerShape(100.dp)
                                         )
                                         .border(
-                                            1.dp,
-                                            color.copy(alpha = 0.5f),
-                                            RoundedCornerShape(12.dp)
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (quiz.icon.startsWith("http")) {
-                                        val painter = coil.compose.rememberAsyncImagePainter(quiz.icon)
-                                        androidx.compose.foundation.Image(
-                                            painter = painter,
-                                            contentDescription = "Quiz Icon",
-                                            modifier = Modifier.size(36.dp),
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                            0.5.dp,
+                                            when (cardStatus) {
+                                                "AVAILABLE" -> Color(0xFF9C27B0)
+                                                "COMPLETED_TODAY" -> Color(0xFF4CAF50)
+                                                "COMPLETED" -> Color(0xFF2196F3)
+                                                else -> Color.Gray
+                                            },
+                                            RoundedCornerShape(100.dp)
                                         )
-                                    } else {
-                                        Text(
-                                            text = if (quiz.icon.isNotEmpty()) quiz.icon else emoji,
-                                            fontSize = 24.sp
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = quiz.title,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        if (isCompletedToday) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .background(Color(0xFF2E7D32).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
-                                                    .border(0.5.dp, Color(0xFF4CAF50), RoundedCornerShape(100.dp))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Completed Today", color = Color(0xFF4CAF50), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .background(Color(0xFF9C27B0).copy(alpha = 0.2f), RoundedCornerShape(100.dp))
-                                                    .border(0.5.dp, Color(0xFF9C27B0), RoundedCornerShape(100.dp))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Available", color = Color(0xFF9C27B0), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "${categoryText.uppercase()} • ${quiz.difficulty}",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "⏱️ ${quiz.timerSeconds}s limit",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .background(
-                                            if (isCompletedToday) Color.Gray.copy(alpha = 0.2f) else Color(0xFF9C27B0).copy(alpha = 0.2f),
-                                            CircleShape
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (isCompletedToday) Icons.Default.Lock else Icons.Default.PlayArrow,
-                                        contentDescription = if (isCompletedToday) "Locked" else "Play",
-                                        tint = if (isCompletedToday) Color.Gray else Color(0xFF9C27B0),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = quiz.description,
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 12.sp
-                            )
-
-                            if (isCompletedToday) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFF2E7D32).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                        .border(0.5.dp, Color(0xFF4CAF50).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = "Come back tomorrow for a new quiz.",
-                                        color = Color(0xFF4CAF50),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
+                                        text = when (cardStatus) {
+                                            "AVAILABLE" -> "Available"
+                                            "COMPLETED_TODAY" -> "Completed Today ✔"
+                                            "COMPLETED" -> "Completed ✔"
+                                            else -> "Locked"
+                                        },
+                                        color = when (cardStatus) {
+                                            "AVAILABLE" -> Color(0xFFAB47BC)
+                                            "COMPLETED_TODAY" -> Color(0xFF66BB6A)
+                                            "COMPLETED" -> Color(0xFF42A5F5)
+                                            else -> Color.Gray
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
                                     )
                                 }
                             }
                             
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            // Play Button on the Right
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(
+                                        if (cardStatus == "AVAILABLE") Color(0xFF9C27B0).copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.15f),
+                                        CircleShape
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (cardStatus == "AVAILABLE") Color(0xFF9C27B0).copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.3f),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "🏆 ${if (quiz.rewardPerQuestion > 0) quiz.rewardPerQuestion else quiz.rewardCoins} Coins / Correct Answer • Perfect Bonus +${if (quiz.passBonus > 0) quiz.passBonus else quiz.completionBonus}",
-                                    color = if (isCompletedToday) Color.Gray else color,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "${quiz.questions.size} Questions",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                Icon(
+                                    imageVector = if (cardStatus == "AVAILABLE") Icons.Default.PlayArrow else Icons.Default.Lock,
+                                    contentDescription = if (cardStatus == "AVAILABLE") "Play" else "Locked",
+                                    tint = if (cardStatus == "AVAILABLE") Color(0xFFAB47BC) else Color.Gray,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Description
+                        if (quiz.description.isNotEmpty()) {
+                            Text(
+                                text = quiz.description,
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                        
+                        // Metadata: Category, Timer, Difficulty
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Category badge
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF221F33), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "Category: ${quiz.categoryId.ifEmpty { quiz.category }.uppercase()}",
+                                    color = Color.Gray,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                            
+                            // Difficulty badge
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF221F33), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = quiz.difficulty.uppercase(),
+                                    color = Color.Gray,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                            
+                            // Timer badge
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF221F33), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "⏱️ ${quiz.timerSeconds}s",
+                                    color = Color.Gray,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        
+                        if (cardStatus == "COMPLETED_TODAY") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF2E7D32).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                    .border(0.5.dp, Color(0xFF4CAF50).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = "Come back tomorrow for the next quiz.",
+                                    color = Color(0xFF4CAF50),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
+                        HorizontalDivider(color = Color.Gray.copy(alpha = 0.15f), thickness = 1.dp)
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Reward section and Question count
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Reward section
+                            Text(
+                                text = "🏆 ${if (quiz.rewardPerQuestion > 0) quiz.rewardPerQuestion else quiz.rewardCoins} Coins/Correct • Perfect +${if (quiz.passBonus > 0) quiz.passBonus else quiz.completionBonus}",
+                                color = if (cardStatus == "AVAILABLE") Color(0xFFAB47BC) else Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            // Question count
+                            Text(
+                                text = "${quiz.questions.size} Questions",
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
                         }
                     }
                 }
@@ -2095,6 +1962,9 @@ fun HomeScreen(
     onTabSelected: (AppTab) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.refreshDailyCheckInSettings()
+    }
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val scratchSettings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
     
@@ -2444,6 +2314,36 @@ fun HomeScreen(
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val isWide = maxWidth >= 600.dp
             
+            val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
+            val checkInSettings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
+            val serverTimeOffset = viewModel.serverTimeOffset
+            
+            var countdownText by remember { mutableStateOf("") }
+            var isEligibleToClaim by remember { mutableStateOf(false) }
+
+            LaunchedEffect(userCheckIn?.lastClaimTimestamp) {
+                while (true) {
+                    val nowServer = System.currentTimeMillis() + serverTimeOffset
+                    val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+                    if (lastClaim == 0L || nowServer - lastClaim >= 86400000L) {
+                        countdownText = ""
+                        isEligibleToClaim = true
+                    } else {
+                        val remainingMs = 86400000L - (nowServer - lastClaim)
+                        val h = remainingMs / 3600000L
+                        val m = (remainingMs % 3600000L) / 60000L
+                        val s = (remainingMs % 60000L) / 1000L
+                        countdownText = String.format(java.util.Locale.US, "%02dh %02dm %02ds remaining.", h, m, s)
+                        isEligibleToClaim = false
+                    }
+                    kotlinx.coroutines.delay(1000L)
+                }
+            }
+
+            val checkInLoading by viewModel.dailyCheckInLoadingState.collectAsStateWithLifecycle()
+            val rewardsList = checkInSettings?.rewards
+            val isConfigAvailable = checkInSettings != null && rewardsList != null && rewardsList.size >= 7
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2462,6 +2362,43 @@ fun HomeScreen(
                     )
                 )
             ) {
+                if (checkInLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF7C4DFF))
+                    }
+                } else if (!isConfigAvailable) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Configuration unavailable",
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Configuration unavailable",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    val dayRewards = rewardsList!!
                 if (isWide) {
                     Row(
                         modifier = Modifier
@@ -2484,17 +2421,16 @@ fun HomeScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Claim your daily reward!",
-                                color = Color.White.copy(alpha = 0.7f),
+                                text = if (isEligibleToClaim) "Claim your daily reward!" else countdownText,
+                                color = if (isEligibleToClaim) Color.White.copy(alpha = 0.7f) else Color(0xFFFFEA3D),
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
+                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Clip
                             )
                             Spacer(modifier = Modifier.height(20.dp))
                             
-                            val isTodayClaimed = lastCheckInTime != 0L && isSameDay(lastCheckInTime, System.currentTimeMillis())
-                            val buttonBrush = if (isTodayClaimed) {
+                            val buttonBrush = if (!isEligibleToClaim) {
                                 Brush.verticalGradient(
                                     colors = listOf(Color(0xFF4B5563), Color(0xFF1F2937))
                                 )
@@ -2506,16 +2442,17 @@ fun HomeScreen(
 
                             Button(
                                 onClick = {
-                                    val success = viewModel.claimDailyReward()
-                                    coroutineScope.launch {
-                                        if (success) {
-                                            snackbarHostState.showSnackbar("Daily check-in successful! Reward claimed.")
-                                        } else {
-                                            snackbarHostState.showSnackbar("You've already checked-in today!")
+                                    viewModel.claimDailyReward { success, errorMsg ->
+                                        coroutineScope.launch {
+                                            if (success) {
+                                                snackbarHostState.showSnackbar("Daily check-in successful! Reward claimed.")
+                                            } else {
+                                                snackbarHostState.showSnackbar(errorMsg ?: "Failed to claim reward.")
+                                            }
                                         }
                                     }
                                 },
-                                enabled = !isTodayClaimed,
+                                enabled = isEligibleToClaim,
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
                                 shape = RoundedCornerShape(12.dp),
                                 contentPadding = PaddingValues(),
@@ -2528,8 +2465,8 @@ fun HomeScreen(
                                     )
                             ) {
                                 Text(
-                                    text = if (isTodayClaimed) "CHECKED IN" else "CHECK IN NOW",
-                                    color = if (isTodayClaimed) Color.White.copy(alpha = 0.6f) else Color.Black,
+                                    text = if (!isEligibleToClaim) "CHECKED IN" else "CHECK IN NOW",
+                                    color = if (!isEligibleToClaim) Color.White.copy(alpha = 0.6f) else Color.Black,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 13.sp,
                                     maxLines = 1,
@@ -2547,17 +2484,20 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val days = listOf(
-                                "Day 1" to 20,
-                                "Day 2" to 30,
-                                "Day 3" to 40,
-                                "Day 4" to 50,
-                                "Day 5" to 60,
-                                "Day 6" to 80,
-                                "Day 7" to 120
+                                "Day 1" to dayRewards[0],
+                                "Day 2" to dayRewards[1],
+                                "Day 3" to dayRewards[2],
+                                "Day 4" to dayRewards[3],
+                                "Day 5" to dayRewards[4],
+                                "Day 6" to dayRewards[5],
+                                "Day 7" to dayRewards[6]
                             )
                             days.forEachIndexed { index, (dayName, reward) ->
                                 val dayNum = index + 1
-                                val status = getCheckInDayStatus(dayNum, dailyStreak, lastCheckInTime)
+                                val currentDay = userCheckIn?.currentDay ?: 0
+                                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+                                val serverTime = System.currentTimeMillis() + serverTimeOffset
+                                val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, serverTime)
                                 DailyRewardBox(
                                     day = dayName,
                                     rewardCoins = reward,
@@ -2568,15 +2508,14 @@ fun HomeScreen(
                         }
                     }
                 } else {
-                    // STACKED RESPONSIVE LAYOUT FOR PHONES (ensures no truncation, no clipping, all 7 visible)
+                    // STACKED RESPONSIVE LAYOUT FOR PHONES
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        val isTodayClaimed = lastCheckInTime != 0L && isSameDay(lastCheckInTime, System.currentTimeMillis())
-                        val buttonBrush = if (isTodayClaimed) {
+                        val buttonBrush = if (!isEligibleToClaim) {
                             Brush.verticalGradient(
                                 colors = listOf(Color(0xFF4B5563), Color(0xFF1F2937))
                             )
@@ -2602,10 +2541,10 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Claim your daily reward!",
-                                    color = Color.White.copy(alpha = 0.7f),
+                                    text = if (isEligibleToClaim) "Claim your daily reward!" else countdownText,
+                                    color = if (isEligibleToClaim) Color.White.copy(alpha = 0.7f) else Color(0xFFFFEA3D),
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Clip
                                 )
@@ -2615,16 +2554,17 @@ fun HomeScreen(
                             
                             Button(
                                 onClick = {
-                                    val success = viewModel.claimDailyReward()
-                                    coroutineScope.launch {
-                                        if (success) {
-                                            snackbarHostState.showSnackbar("Daily check-in successful! Reward claimed.")
-                                        } else {
-                                            snackbarHostState.showSnackbar("You've already checked-in today!")
+                                    viewModel.claimDailyReward { success, errorMsg ->
+                                        coroutineScope.launch {
+                                            if (success) {
+                                                snackbarHostState.showSnackbar("Daily check-in successful! Reward claimed.")
+                                            } else {
+                                                snackbarHostState.showSnackbar(errorMsg ?: "Failed to claim reward.")
+                                            }
                                         }
                                     }
                                 },
-                                enabled = !isTodayClaimed,
+                                enabled = isEligibleToClaim,
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 14.dp),
@@ -2636,8 +2576,8 @@ fun HomeScreen(
                                     )
                             ) {
                                 Text(
-                                    text = if (isTodayClaimed) "CHECKED IN" else "CHECK IN NOW",
-                                    color = if (isTodayClaimed) Color.White.copy(alpha = 0.6f) else Color.Black,
+                                    text = if (!isEligibleToClaim) "CHECKED IN" else "CHECK IN NOW",
+                                    color = if (!isEligibleToClaim) Color.White.copy(alpha = 0.6f) else Color.Black,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 11.sp,
                                     maxLines = 1,
@@ -2652,17 +2592,20 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val days = listOf(
-                                "Day 1" to 20,
-                                "Day 2" to 30,
-                                "Day 3" to 40,
-                                "Day 4" to 50,
-                                "Day 5" to 60,
-                                "Day 6" to 80,
-                                "Day 7" to 120
+                                "Day 1" to dayRewards[0],
+                                "Day 2" to dayRewards[1],
+                                "Day 3" to dayRewards[2],
+                                "Day 4" to dayRewards[3],
+                                "Day 5" to dayRewards[4],
+                                "Day 6" to dayRewards[5],
+                                "Day 7" to dayRewards[6]
                             )
                             days.forEachIndexed { index, (dayName, reward) ->
                                 val dayNum = index + 1
-                                val status = getCheckInDayStatus(dayNum, dailyStreak, lastCheckInTime)
+                                val currentDay = userCheckIn?.currentDay ?: 0
+                                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+                                val serverTime = System.currentTimeMillis() + serverTimeOffset
+                                val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, serverTime)
                                 DailyRewardBox(
                                     day = dayName,
                                     rewardCoins = reward,
@@ -2672,6 +2615,7 @@ fun HomeScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }
@@ -3464,6 +3408,37 @@ private fun getCheckInDayStatus(d: Int, dailyStreak: Int, lastCheckInTime: Long)
         when {
             d < activeDay -> CheckInDayStatus.COMPLETED
             d == activeDay -> CheckInDayStatus.ACTIVE
+            else -> CheckInDayStatus.LOCKED
+        }
+    }
+}
+
+private fun getNewCheckInDayStatus(
+    dayNum: Int,
+    currentDay: Int,
+    lastClaimTimestamp: Long,
+    serverTime: Long
+): CheckInDayStatus {
+    val isEligible = lastClaimTimestamp == 0L || (serverTime - lastClaimTimestamp >= 86400000L)
+    val isStreakReset = lastClaimTimestamp > 0L && (serverTime - lastClaimTimestamp >= 172800000L)
+
+    if (isStreakReset) {
+        return when (dayNum) {
+            1 -> CheckInDayStatus.ACTIVE
+            else -> CheckInDayStatus.LOCKED
+        }
+    }
+
+    if (isEligible) {
+        val nextActiveDay = if (currentDay == 7 || currentDay == 0) 1 else currentDay + 1
+        return when {
+            dayNum == nextActiveDay -> CheckInDayStatus.ACTIVE
+            dayNum < nextActiveDay -> CheckInDayStatus.COMPLETED
+            else -> CheckInDayStatus.LOCKED
+        }
+    } else {
+        return when {
+            dayNum <= currentDay -> CheckInDayStatus.COMPLETED
             else -> CheckInDayStatus.LOCKED
         }
     }
@@ -5807,7 +5782,7 @@ fun AdminTabContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            val sections = listOf("Coupons", "Claims", "Withdraws", "Users")
+            val sections = listOf("Coupons", "Claims", "Withdraws", "Users", "Daily Check-In")
             items(sections) { sec ->
                 Button(
                     onClick = { adminSubSection = sec },
@@ -5821,7 +5796,8 @@ fun AdminTabContent(
                             "Coupons" -> "Coupons"
                             "Claims" -> "Claims"
                             "Withdraws" -> "UPI Requests"
-                            else -> "Users Control"
+                            "Users" -> "Users Control"
+                            else -> "Daily Check-In"
                         },
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -5833,6 +5809,9 @@ fun AdminTabContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         when (adminSubSection) {
+            "Daily Check-In" -> {
+                AdminDailyCheckInSection(viewModel = viewModel)
+            }
             "Coupons" -> {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -8600,5 +8579,338 @@ fun UPIWithdrawScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun AdminDailyCheckInSection(
+    viewModel: com.playwin.app.ui.viewmodel.PlayWinViewModel,
+    modifier: Modifier = Modifier
+) {
+    val settings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
+    val allUsers by viewModel.allUsersState.collectAsStateWithLifecycle()
+    val serverTimeOffset = viewModel.serverTimeOffset
+
+    var localEnabled by remember { mutableStateOf(settings?.enabled ?: true) }
+    var localDay1 by remember { mutableStateOf((settings?.rewards?.getOrNull(0) ?: 20).toString()) }
+    var localDay2 by remember { mutableStateOf((settings?.rewards?.getOrNull(1) ?: 30).toString()) }
+    var localDay3 by remember { mutableStateOf((settings?.rewards?.getOrNull(2) ?: 40).toString()) }
+    var localDay4 by remember { mutableStateOf((settings?.rewards?.getOrNull(3) ?: 50).toString()) }
+    var localDay5 by remember { mutableStateOf((settings?.rewards?.getOrNull(4) ?: 60).toString()) }
+    var localDay6 by remember { mutableStateOf((settings?.rewards?.getOrNull(5) ?: 80).toString()) }
+    var localDay7 by remember { mutableStateOf((settings?.rewards?.getOrNull(6) ?: 120).toString()) }
+    var localMaxLimit by remember { mutableStateOf((settings?.maxRewardLimit ?: 500).toString()) }
+
+    var showResetConfirmation by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Sync from database if it changes
+    LaunchedEffect(settings) {
+        settings?.let { s ->
+            localEnabled = s.enabled
+            val r = s.rewards ?: listOf(20, 30, 40, 50, 60, 80, 120)
+            localDay1 = (r.getOrNull(0) ?: 20).toString()
+            localDay2 = (r.getOrNull(1) ?: 30).toString()
+            localDay3 = (r.getOrNull(2) ?: 40).toString()
+            localDay4 = (r.getOrNull(3) ?: 50).toString()
+            localDay5 = (r.getOrNull(4) ?: 60).toString()
+            localDay6 = (r.getOrNull(5) ?: 80).toString()
+            localDay7 = (r.getOrNull(6) ?: 120).toString()
+            localMaxLimit = s.maxRewardLimit.toString()
+        }
+    }
+
+    // Calculations for Stats
+    val now = System.currentTimeMillis() + serverTimeOffset
+    val totalClaimsCount = allUsers.sumOf { it.dailyCheckIn?.totalClaims ?: 0 }
+    val todayClaimsCount = allUsers.count { (it.dailyCheckIn?.lastClaimTimestamp ?: 0L) >= now - 86400000L }
+    val completionCount = allUsers.count { (it.dailyCheckIn?.streak ?: 0) >= 7 }
+    val activeCount = allUsers.count { it.lastActiveTime >= now - 7 * 86400000L }
+    val inactiveCount = allUsers.size - activeCount
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- STATISTICS CARD ---
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF130E26)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "DAILY CHECK-IN STATS",
+                        color = Color(0xFFE212D1),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Total Claims", color = Color.Gray, fontSize = 11.sp)
+                            Text("$totalClaimsCount", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Today's Claims", color = Color.Gray, fontSize = 11.sp)
+                            Text("$todayClaimsCount", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("7-Day Comps", color = Color.Gray, fontSize = 11.sp)
+                            Text("$completionCount", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Active (7 Days)", color = Color.Gray, fontSize = 11.sp)
+                            Text("$activeCount Users", color = Color(0xFF22C55E), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Inactive Users", color = Color.Gray, fontSize = 11.sp)
+                            Text("$inactiveCount Users", color = Color(0xFFEF4444), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- ENABLE/DISABLE SWITCH ---
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF130E26), RoundedCornerShape(12.dp))
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Daily Check-In System", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("Turn on/off check-in globally", color = Color.Gray, fontSize = 11.sp)
+                }
+                Switch(
+                    checked = localEnabled,
+                    onCheckedChange = { localEnabled = it },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF7C4DFF))
+                )
+            }
+        }
+
+        // --- REWARD VALUE FIELDS ---
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF130E26)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "REWARD CONFIGURATION (COINS)",
+                        color = Color(0xFFE212D1),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val dayFields = listOf(
+                        "Day 1" to localDay1,
+                        "Day 2" to localDay2,
+                        "Day 3" to localDay3,
+                        "Day 4" to localDay4,
+                        "Day 5" to localDay5,
+                        "Day 6" to localDay6,
+                        "Day 7" to localDay7
+                    )
+
+                    dayFields.forEachIndexed { index, (label, value) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { newVal ->
+                                    val sanitized = newVal.filter { it.isDigit() }
+                                    when (index) {
+                                        0 -> localDay1 = sanitized
+                                        1 -> localDay2 = sanitized
+                                        2 -> localDay3 = sanitized
+                                        3 -> localDay4 = sanitized
+                                        4 -> localDay5 = sanitized
+                                        5 -> localDay6 = sanitized
+                                        6 -> localDay7 = sanitized
+                                    }
+                                },
+                                singleLine = true,
+                                textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+                                modifier = Modifier.width(100.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Max Limit (Cap)", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = localMaxLimit,
+                            onValueChange = { localMaxLimit = it.filter { c -> c.isDigit() } },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+                            modifier = Modifier.width(100.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // --- PREVIEW SECTION ---
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF090616)),
+                border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "LIVE USER PREVIEW",
+                        color = Color(0xFFFFEA3D),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val previewRewards = listOf(
+                            localDay1.toIntOrNull() ?: 0,
+                            localDay2.toIntOrNull() ?: 0,
+                            localDay3.toIntOrNull() ?: 0,
+                            localDay4.toIntOrNull() ?: 0,
+                            localDay5.toIntOrNull() ?: 0,
+                            localDay6.toIntOrNull() ?: 0,
+                            localDay7.toIntOrNull() ?: 0
+                        )
+                        previewRewards.forEachIndexed { index, coins ->
+                            DailyRewardBox(
+                                day = "Day ${index + 1}",
+                                rewardCoins = coins,
+                                status = if (index == 2) CheckInDayStatus.ACTIVE else if (index < 2) CheckInDayStatus.COMPLETED else CheckInDayStatus.LOCKED,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- SAVE / ACTION BUTTONS ---
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = {
+                        val finalSettings = com.playwin.app.data.model.FirebaseDailyCheckInSettings(
+                            enabled = localEnabled,
+                            rewards = listOf(
+                                localDay1.toIntOrNull() ?: 20,
+                                localDay2.toIntOrNull() ?: 30,
+                                localDay3.toIntOrNull() ?: 40,
+                                localDay4.toIntOrNull() ?: 50,
+                                localDay5.toIntOrNull() ?: 60,
+                                localDay6.toIntOrNull() ?: 80,
+                                localDay7.toIntOrNull() ?: 120
+                            ),
+                            maxRewardLimit = localMaxLimit.toIntOrNull() ?: 500
+                        )
+                        viewModel.adminUpdateDailyCheckInSettings(finalSettings) { success ->
+                            statusMessage = if (success) "Settings Saved Successfully!" else "Failed to save settings."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("SAVE SETTINGS", fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = { showResetConfirmation = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("RESET ALL USERS' STREAKS", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        statusMessage?.let { msg ->
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1B0F33), RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(msg, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    // --- RESET CONFIRMATION DIALOG ---
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text("Reset All Streaks?", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to reset all users' streaks back to Day 1? This action is irreversible.", color = Color.LightGray) },
+            containerColor = Color(0xFF130E26),
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmation = false
+                        viewModel.adminResetAllUsersDailyCheckIn { success ->
+                            statusMessage = if (success) "All users' streaks have been reset!" else "Failed to reset streaks."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("YES, RESET", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) {
+                    Text("CANCEL", color = Color.Gray)
+                }
+            }
+        )
     }
 }

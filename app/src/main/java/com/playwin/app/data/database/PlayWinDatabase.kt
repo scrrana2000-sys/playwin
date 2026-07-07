@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import com.playwin.app.data.model.RewardTransaction
 import com.playwin.app.data.model.UserWallet
 
-@Database(entities = [UserWallet::class, RewardTransaction::class], version = 8, exportSchema = false)
+@Database(entities = [UserWallet::class, RewardTransaction::class], version = 9, exportSchema = false)
 abstract class PlayWinDatabase : RoomDatabase() {
     abstract fun playWinDao(): PlayWinDao
 

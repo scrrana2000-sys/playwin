@@ -20,6 +20,8 @@ data class UserWallet(
     val lastSpinDate: String = "",
     val freeSpinUsed: Boolean = false,
     val rewardAdSpinUsed: Boolean = false,
+    val dailySpinCount: Int = 0,
+    val rewardedSpinCount: Int = 0,
     val remainingScratchCards: Int = 1,
     val lastScratchResetTime: Long = 0L,
     val totalScratchRewards: Int = 0,

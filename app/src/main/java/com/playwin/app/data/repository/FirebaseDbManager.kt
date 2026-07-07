@@ -17,20 +17,32 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlin.coroutines.resume
 
 class FirebaseDbManager {
-    private val database = FirebaseDatabase.getInstance("https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app")
-    private val tasksRef = database.getReference("tasks")
-    private val couponsRef = database.getReference("coupons")
-    private val usersRef = database.getReference("users")
-    private val transactionsRef = database.getReference("transactions")
-    private val referralsRef = database.getReference("referrals")
+    private val database: FirebaseDatabase by lazy {
+        try {
+            val db = FirebaseDatabase.getInstance("https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app")
+            try {
+                db.setPersistenceEnabled(true)
+            } catch (e: Exception) {
+                // ignore
+            }
+            db
+        } catch (e: Exception) {
+            android.util.Log.e("FirebaseDbManager", "Failed to initialize FirebaseDatabase: ${e.message}", e)
+            throw e
+        }
+    }
+    private val tasksRef by lazy { database.getReference("tasks") }
+    private val couponsRef by lazy { database.getReference("coupons") }
+    private val usersRef by lazy { database.getReference("users") }
+    private val transactionsRef by lazy { database.getReference("transactions") }
+    private val referralsRef by lazy { database.getReference("referrals") }
 
     init {
         try {
-            database.setPersistenceEnabled(true)
+            seedInitialDataIfNeeded()
         } catch (e: Exception) {
-            // persistence already enabled or initialization issue
+            android.util.Log.e("FirebaseDbManager", "Error in init seeding: ${e.message}", e)
         }
-        seedInitialDataIfNeeded()
     }
 
     private fun seedInitialDataIfNeeded() {
@@ -327,6 +339,8 @@ class FirebaseDbManager {
         lastSpinDate: String = "",
         freeSpinUsed: Boolean = false,
         rewardAdSpinUsed: Boolean = false,
+        dailySpinCount: Int = 0,
+        rewardedSpinCount: Int = 0,
         lastCheckInDate: String = "",
         totalCheckInRewards: Int = 0,
         lastRewardAdTime: Long = 0L,
@@ -350,6 +364,8 @@ class FirebaseDbManager {
             "lastSpinDate" to lastSpinDate,
             "freeSpinUsed" to freeSpinUsed,
             "rewardAdSpinUsed" to rewardAdSpinUsed,
+            "dailySpinCount" to dailySpinCount,
+            "rewardedSpinCount" to rewardedSpinCount,
             "lastRewardAdTime" to lastRewardAdTime,
             "freeScratchUsed" to freeScratchUsed,
             "rewardAdScratchUsed" to rewardAdScratchUsed,
@@ -363,68 +379,26 @@ class FirebaseDbManager {
             onComplete(false, 0, 0)
             return
         }
-        val userRef = database.getReference("users").child(userId)
-        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-            var coinsBefore = 0
-            var coinsAfter = 0
-
-            override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                val currentCoins = mutableData.child("coins").getValue(Int::class.java) ?: 0
-                coinsBefore = currentCoins
-                coinsAfter = currentCoins + amount
-                
-                mutableData.child("coins").value = coinsAfter
-                return com.google.firebase.database.Transaction.success(mutableData)
+        val type = when {
+            source.contains("Daily", ignoreCase = true) -> "daily_reward"
+            source.contains("Video", ignoreCase = true) || source.contains("Ad", ignoreCase = true) -> "video_ad"
+            source.contains("Referral", ignoreCase = true) -> "referral"
+            source.contains("Spin", ignoreCase = true) -> "spin_reward"
+            source.contains("Scratch", ignoreCase = true) -> "scratch_reward"
+            source.contains("Coupon", ignoreCase = true) || source.contains("Redeem", ignoreCase = true) || amount < 0 -> "coupon_redeemed"
+            else -> "reward"
+        }
+        WalletService.updateWallet(
+            userId = userId,
+            coinsDelta = amount,
+            source = source,
+            type = type,
+            extraCheck = { null },
+            extraUpdate = { null },
+            onComplete = { success, coinsBefore, coinsAfter, _ ->
+                onComplete(success, coinsBefore, coinsAfter)
             }
-
-            override fun onComplete(
-                error: DatabaseError?,
-                committed: Boolean,
-                currentData: DataSnapshot?
-            ) {
-                if (committed && error == null) {
-                    val type = when {
-                        source.contains("Daily", ignoreCase = true) -> "daily_reward"
-                        source.contains("Video", ignoreCase = true) || source.contains("Ad", ignoreCase = true) -> "video_ad"
-                        source.contains("Referral", ignoreCase = true) -> "referral"
-                        source.contains("Spin", ignoreCase = true) -> "spin_reward"
-                        source.contains("Scratch", ignoreCase = true) -> "scratch_reward"
-                        source.contains("Coupon", ignoreCase = true) || source.contains("Redeem", ignoreCase = true) || amount < 0 -> "coupon_redeemed"
-                        else -> "reward"
-                    }
-
-                    val txRef = database.getReference("transactions").child(userId).push()
-                    val tx = FirebaseTransaction(
-                        id = txRef.key ?: "",
-                        userId = userId,
-                        type = type,
-                        title = source,
-                        coins = amount,
-                        status = "Completed",
-                        timestamp = System.currentTimeMillis(),
-                        amount = amount,
-                        source = source,
-                        coinsBefore = coinsBefore,
-                        coinsAfter = coinsAfter
-                    )
-                    txRef.setValue(tx)
-
-                    val historyRef = database.getReference("rewardHistory").child(userId).push()
-                    val historyMap = mapOf(
-                        "type" to type,
-                        "reward" to amount,
-                        "timestamp" to com.google.firebase.database.ServerValue.TIMESTAMP,
-                        "coinsBefore" to coinsBefore,
-                        "coinsAfter" to coinsAfter
-                    )
-                    historyRef.setValue(historyMap)
-
-                    onComplete(true, coinsBefore, coinsAfter)
-                } else {
-                    onComplete(false, 0, 0)
-                }
-            }
-        })
+        )
     }
 
     fun saveNewUserInFirebase(user: FirebaseUser) {
@@ -735,91 +709,260 @@ class FirebaseDbManager {
     }
 
     fun observeSpinRewards(): Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = callbackFlow {
-        val spinRef = database.getReference("spinWheelRewards")
+        val spinWheelRef = database.getReference("spinWheel")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
-                    trySend(emptyList())
-                    return
-                }
-                
-                var isMalformed = false
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseSpinReward>()
-                
-                for (child in snapshot.children) {
-                    if (!child.hasChildren()) {
-                        isMalformed = true
-                        break
-                    }
-                    try {
-                        val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
-                        val name = child.child("name").getValue(String::class.java) ?: ""
-                        val type = child.child("type").getValue(String::class.java) ?: "Coins"
-                        
-                        val rawValue = child.child("value").value
-                        val value = when (rawValue) {
-                            is String -> rawValue
-                            is Number -> rawValue.toLong().toString()
-                            null -> ""
-                            else -> rawValue.toString()
-                        }
-                        
-                        val displayOrder = when (val orderVal = child.child("displayOrder").value ?: child.child("order").value) {
-                            is Number -> orderVal.toInt()
-                            is String -> orderVal.toIntOrNull() ?: 0
-                            else -> 0
-                        }
-                        
-                        val probabilityWeight = when (val weightVal = child.child("probabilityWeight").value ?: child.child("weight").value) {
-                            is Number -> weightVal.toInt()
-                            is String -> weightVal.toIntOrNull() ?: 1
-                            else -> 1
-                        }
-                        
-                        val activeVal = child.child("active").value ?: child.child("isActive").value
-                        val active = when (activeVal) {
-                            is Boolean -> activeVal
-                            is String -> activeVal.equals("true", ignoreCase = true) || activeVal.equals("active", ignoreCase = true)
-                            is Number -> activeVal.toInt() != 0
-                            else -> true
-                        }
-                        
-                        list.add(com.playwin.app.data.model.FirebaseSpinReward(id, name, type, value, displayOrder, probabilityWeight, active))
-                    } catch (e: Exception) {
-                        android.util.Log.e("FirebaseDbManager", "Error parsing spin reward: ${e.message}")
-                    }
-                }
-                
-                if (isMalformed) {
-                    android.util.Log.w("FirebaseDbManager", "observeSpinRewards: Detected malformed/flat structure under spinWheelRewards. Resetting to initial rewards.")
-                    val initialSpinRewards = listOf(
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, probabilityWeight = 35, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, probabilityWeight = 25, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, probabilityWeight = 20, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, probabilityWeight = 10, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, probabilityWeight = 7, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, probabilityWeight = 2, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, probabilityWeight = 1, active = true)
-                    )
-                    spinRef.removeValue().addOnCompleteListener { task ->
-                        if (task.isSuccessful) {
-                            for (reward in initialSpinRewards) {
-                                spinRef.child(reward.id).setValue(reward)
+                    val fallbackRef = database.getReference("spinWheelRewards")
+                    fallbackRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                        override fun onDataChange(fallbackSnapshot: DataSnapshot) {
+                            if (!fallbackSnapshot.exists()) {
+                                trySend(getInitialSpinRewards())
+                            } else {
+                                val segments = parseSegmentsFromSnapshot(fallbackSnapshot)
+                                trySend(segments.filter { it.active && it.enabled })
                             }
                         }
+                        override fun onCancelled(error: DatabaseError) {
+                            trySend(getInitialSpinRewards())
+                        }
+                    })
+                    return
+                }
+
+                try {
+                    val segmentsSnapshot = snapshot.child("segments")
+                    val segments = if (segmentsSnapshot.exists()) {
+                        parseSegmentsFromSnapshot(segmentsSnapshot)
+                    } else {
+                        parseSegmentsFromSnapshot(snapshot)
                     }
-                    trySend(initialSpinRewards)
-                } else {
-                    trySend(list)
+                    trySend(segments.filter { it.active && it.enabled })
+                } catch (e: Exception) {
+                    trySend(getInitialSpinRewards())
                 }
             }
 
             override fun onCancelled(error: DatabaseError) {
-                trySend(emptyList())
+                trySend(getInitialSpinRewards())
             }
         }
-        spinRef.addValueEventListener(listener)
-        awaitClose { spinRef.removeEventListener(listener) }
+        spinWheelRef.addValueEventListener(listener)
+        awaitClose { spinWheelRef.removeEventListener(listener) }
+    }
+
+    fun observeSpinWheelConfig(): Flow<com.playwin.app.data.model.FirebaseSpinWheelConfig> = callbackFlow {
+        val spinWheelRef = database.getReference("spinWheel")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    val fallbackRef = database.getReference("spinWheelRewards")
+                    fallbackRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                        override fun onDataChange(fallbackSnapshot: DataSnapshot) {
+                            if (!fallbackSnapshot.exists()) {
+                                val defaultConfig = com.playwin.app.data.model.FirebaseSpinWheelConfig(
+                                    enabled = true,
+                                    dailySpins = 2,
+                                    title = "Lucky Spin & Win",
+                                    segments = getInitialSpinRewards()
+                                )
+                                trySend(defaultConfig)
+                            } else {
+                                val segments = parseSegmentsFromSnapshot(fallbackSnapshot)
+                                val fallbackConfig = com.playwin.app.data.model.FirebaseSpinWheelConfig(
+                                    enabled = true,
+                                    dailySpins = 2,
+                                    title = "Lucky Spin & Win",
+                                    segments = segments
+                                )
+                                trySend(fallbackConfig)
+                            }
+                        }
+                        override fun onCancelled(error: DatabaseError) {
+                            trySend(com.playwin.app.data.model.FirebaseSpinWheelConfig(segments = getInitialSpinRewards()))
+                        }
+                    })
+                    return
+                }
+
+                try {
+                    val enabledVal = snapshot.child("enabled").value ?: snapshot.child("active").value ?: true
+                    val enabled = when (enabledVal) {
+                        is Boolean -> enabledVal
+                        is String -> enabledVal.equals("true", ignoreCase = true)
+                        is Number -> enabledVal.toInt() != 0
+                        else -> true
+                    }
+
+                    val dailySpinsVal = snapshot.child("dailySpins").value ?: snapshot.child("spinsCount").value ?: 2
+                    val dailySpins = when (dailySpinsVal) {
+                        is Number -> dailySpinsVal.toInt()
+                        is String -> dailySpinsVal.toIntOrNull() ?: 2
+                        else -> 2
+                    }
+
+                    val title = snapshot.child("title").getValue(String::class.java) ?: "Lucky Spin & Win"
+
+                    val dailySpinLimit = when (val v = snapshot.child("dailySpinLimit").value) {
+                        is Number -> v.toInt()
+                        is String -> v.toIntOrNull() ?: 10
+                        else -> 10
+                    }
+
+                    val dailyFreeSpins = when (val v = snapshot.child("dailyFreeSpins").value ?: snapshot.child("dailySpins").value ?: snapshot.child("spinsCount").value) {
+                        is Number -> v.toInt()
+                        is String -> v.toIntOrNull() ?: 2
+                        else -> 2
+                    }
+
+                    val rewardedAdAfterFreeSpins = when (val v = snapshot.child("rewardedAdAfterFreeSpins").value) {
+                        is Boolean -> v
+                        is String -> v.equals("true", ignoreCase = true)
+                        is Number -> v.toInt() != 0
+                        else -> true
+                    }
+
+                    val requireRewardedAdBeforeEveryExtraSpin = when (val v = snapshot.child("requireRewardedAdBeforeEveryExtraSpin").value) {
+                        is Boolean -> v
+                        is String -> v.equals("true", ignoreCase = true)
+                        is Number -> v.toInt() != 0
+                        else -> true
+                    }
+
+                    val maxRewardedAdSpinsPerDay = when (val v = snapshot.child("maxRewardedAdSpinsPerDay").value) {
+                        is Number -> v.toInt()
+                        is String -> v.toIntOrNull() ?: 10
+                        else -> 10
+                    }
+
+                    val segmentsSnapshot = snapshot.child("segments")
+                    val segments = if (segmentsSnapshot.exists()) {
+                        parseSegmentsFromSnapshot(segmentsSnapshot)
+                    } else {
+                        parseSegmentsFromSnapshot(snapshot)
+                    }
+
+                    android.util.Log.d("PlayWinDebug", "Firebase Connected: Spin Wheel Database Available")
+                    android.util.Log.d("PlayWinDebug", "Config Loaded: title=$title, enabled=$enabled, dailyFreeSpins=$dailyFreeSpins, dailySpinLimit=$dailySpinLimit, maxRewardedAdSpinsPerDay=$maxRewardedAdSpinsPerDay")
+                    android.util.Log.d("PlayWinDebug", "Segments Loaded: count=${segments.size}")
+                    android.util.Log.d("PlayWinDebug", "Realtime Config Updated: title=$title, enabled=$enabled")
+
+                    val config = com.playwin.app.data.model.FirebaseSpinWheelConfig(
+                        enabled = enabled,
+                        dailySpins = dailySpins,
+                        title = title,
+                        dailySpinLimit = dailySpinLimit,
+                        dailyFreeSpins = dailyFreeSpins,
+                        rewardedAdAfterFreeSpins = rewardedAdAfterFreeSpins,
+                        requireRewardedAdBeforeEveryExtraSpin = requireRewardedAdBeforeEveryExtraSpin,
+                        maxRewardedAdSpinsPerDay = maxRewardedAdSpinsPerDay,
+                        segments = segments
+                    )
+                    trySend(config)
+                } catch (e: Exception) {
+                    android.util.Log.e("FirebaseDbManager", "Error parsing spin wheel config: ${e.message}", e)
+                    trySend(com.playwin.app.data.model.FirebaseSpinWheelConfig(segments = getInitialSpinRewards()))
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                val errorMsg = when (error.code) {
+                    DatabaseError.PERMISSION_DENIED -> "Firebase permission denied. Access is restricted."
+                    DatabaseError.NETWORK_ERROR, DatabaseError.DISCONNECTED -> "No internet connection detected."
+                    else -> "Firebase error: ${error.message}"
+                }
+                android.util.Log.e("FirebaseDbManager", "observeSpinWheelConfig cancelled. Code: ${error.code}. Msg: $errorMsg", error.toException())
+                trySend(com.playwin.app.data.model.FirebaseSpinWheelConfig(segments = getInitialSpinRewards()))
+            }
+        }
+        spinWheelRef.addValueEventListener(listener)
+        awaitClose { spinWheelRef.removeEventListener(listener) }
+    }
+
+    private fun parseSegmentsFromSnapshot(snapshot: DataSnapshot): List<com.playwin.app.data.model.FirebaseSpinReward> {
+        val list = mutableListOf<com.playwin.app.data.model.FirebaseSpinReward>()
+        for (child in snapshot.children) {
+            if (!child.hasChildren()) continue
+            try {
+                val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
+                
+                val title = child.child("title").getValue(String::class.java)
+                    ?: child.child("name").getValue(String::class.java)
+                    ?: ""
+                
+                val type = child.child("rewardType").getValue(String::class.java)
+                    ?: child.child("type").getValue(String::class.java)
+                    ?: "Coins"
+                
+                val rawValue = child.child("reward").value ?: child.child("value").value
+                val value = when (rawValue) {
+                    is String -> rawValue
+                    is Number -> rawValue.toLong().toString()
+                    null -> ""
+                    else -> rawValue.toString()
+                }
+                
+                val order = when (val orderVal = child.child("order").value ?: child.child("displayOrder").value) {
+                    is Number -> orderVal.toInt()
+                    is String -> orderVal.toIntOrNull() ?: 0
+                    else -> 0
+                }
+                
+                val probability = when (val weightVal = child.child("probability").value ?: child.child("probabilityWeight").value ?: child.child("weight").value) {
+                    is Number -> weightVal.toInt()
+                    is String -> weightVal.toIntOrNull() ?: 1
+                    else -> 1
+                }
+                
+                val activeVal = child.child("active").value ?: child.child("isActive").value ?: child.child("enabled").value
+                val active = when (activeVal) {
+                    is Boolean -> activeVal
+                    is String -> activeVal.equals("true", ignoreCase = true) || activeVal.equals("active", ignoreCase = true)
+                    is Number -> activeVal.toInt() != 0
+                    else -> true
+                }
+
+                val icon = child.child("icon").getValue(String::class.java) ?: ""
+                val color = child.child("color").getValue(String::class.java) ?: ""
+                val description = child.child("description").getValue(String::class.java) ?: ""
+                
+                list.add(
+                    com.playwin.app.data.model.FirebaseSpinReward(
+                        id = id,
+                        name = title,
+                        title = title,
+                        type = type,
+                        rewardType = type,
+                        value = value,
+                        reward = value,
+                        displayOrder = order,
+                        order = order,
+                        probabilityWeight = probability,
+                        probability = probability,
+                        active = active,
+                        enabled = active,
+                        icon = icon,
+                        color = color,
+                        description = description
+                    )
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("FirebaseDbManager", "Error parsing segment child: ${e.message}")
+            }
+        }
+        return list
+    }
+
+    private fun getInitialSpinRewards(): List<com.playwin.app.data.model.FirebaseSpinReward> {
+        return listOf(
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", title = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, order = 1, probabilityWeight = 35, probability = 35, active = true, enabled = true),
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", title = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, order = 2, probabilityWeight = 25, probability = 25, active = true, enabled = true),
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", title = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, order = 3, probabilityWeight = 20, probability = 20, active = true, enabled = true),
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", title = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, order = 4, probabilityWeight = 10, probability = 10, active = true, enabled = true),
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", title = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, order = 5, probabilityWeight = 7, probability = 7, active = true, enabled = true),
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", title = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, order = 6, probabilityWeight = 2, probability = 2, active = true, enabled = true),
+            com.playwin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", title = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, order = 7, probabilityWeight = 1, probability = 1, active = true, enabled = true)
+        )
     }
 
     fun observeFirebaseUser(userId: String): Flow<FirebaseUser?> = callbackFlow {
@@ -2012,11 +2155,36 @@ class FirebaseDbManager {
                     return
                 }
                 try {
-                    val enabled = snapshot.child("enabled").getValue(Boolean::class.java) ?: true
-                    val dailyLimit = snapshot.child("dailyLimit").getValue(Int::class.java) ?: 5
-                    val cooldownMinutes = snapshot.child("cooldownMinutes").getValue(Int::class.java) ?: 15
-                    val rewardAdRequired = snapshot.child("rewardAdRequired").getValue(Boolean::class.java) ?: false
-                    val minimumLevel = snapshot.child("minimumLevel").getValue(Int::class.java) ?: 1
+                    val enabledVal = snapshot.child("enabled").value
+                    val enabled = when (enabledVal) {
+                        is Boolean -> enabledVal
+                        is String -> enabledVal.toBoolean()
+                        else -> true
+                    }
+                    val dailyLimitVal = snapshot.child("dailyLimit").value
+                    val dailyLimit = when (dailyLimitVal) {
+                        is Number -> dailyLimitVal.toInt()
+                        is String -> dailyLimitVal.toIntOrNull() ?: 5
+                        else -> 5
+                    }
+                    val cooldownMinutesVal = snapshot.child("cooldownMinutes").value
+                    val cooldownMinutes = when (cooldownMinutesVal) {
+                        is Number -> cooldownMinutesVal.toInt()
+                        is String -> cooldownMinutesVal.toIntOrNull() ?: 15
+                        else -> 15
+                    }
+                    val rewardAdRequiredVal = snapshot.child("rewardAdRequired").value
+                    val rewardAdRequired = when (rewardAdRequiredVal) {
+                        is Boolean -> rewardAdRequiredVal
+                        is String -> rewardAdRequiredVal.toBoolean()
+                        else -> false
+                    }
+                    val minimumLevelVal = snapshot.child("minimumLevel").value
+                    val minimumLevel = when (minimumLevelVal) {
+                        is Number -> minimumLevelVal.toInt()
+                        is String -> minimumLevelVal.toIntOrNull() ?: 1
+                        else -> 1
+                    }
                     trySend(com.playwin.app.data.model.FirebaseScratchCardSettings(enabled, dailyLimit, cooldownMinutes, rewardAdRequired, minimumLevel))
                 } catch (e: Exception) {
                     trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
@@ -2038,27 +2206,27 @@ class FirebaseDbManager {
                     val initialRewards = listOf(
                         com.playwin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_1", name = "+10 Coins", type = "Coins", value = "10",
-                            probabilityWeight = 40, displayOrder = 1, active = true, icon = "🪙", color = "#FFD700"
+                            probabilityWeight = 40, status = "Active", displayOrder = 1, active = true, icon = "🪙", color = "#FFD700"
                         ),
                         com.playwin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_2", name = "+50 Coins", type = "Coins", value = "50",
-                            probabilityWeight = 20, displayOrder = 2, active = true, icon = "💎", color = "#00E5FF"
+                            probabilityWeight = 20, status = "Active", displayOrder = 2, active = true, icon = "💎", color = "#00E5FF"
                         ),
                         com.playwin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_3", name = "+100 Coins", type = "Coins", value = "100",
-                            probabilityWeight = 10, displayOrder = 3, active = true, icon = "🎁", color = "#E040FB"
+                            probabilityWeight = 10, status = "Active", displayOrder = 3, active = true, icon = "🎁", color = "#E040FB"
                         ),
                         com.playwin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_4", name = "Retry Scratch", type = "Retry Scratch", value = "0",
-                            probabilityWeight = 15, displayOrder = 4, active = true, icon = "🔄", color = "#00E676"
+                            probabilityWeight = 15, status = "Active", displayOrder = 4, active = true, icon = "🔄", color = "#00E676"
                         ),
                         com.playwin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_5", name = "Amazon Coupon", type = "Coupon", value = "AMZ-PW-100",
-                            probabilityWeight = 5, displayOrder = 5, active = true, icon = "🛍️", color = "#FF9100"
+                            probabilityWeight = 5, status = "Active", displayOrder = 5, active = true, icon = "🛍️", color = "#FF9100"
                         ),
                         com.playwin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_6", name = "Better Luck Next Time", type = "Better Luck Next Time", value = "0",
-                            probabilityWeight = 10, displayOrder = 6, active = true, icon = "😢", color = "#90A4AE"
+                            probabilityWeight = 10, status = "Active", displayOrder = 6, active = true, icon = "😢", color = "#90A4AE"
                         )
                     )
                     for (reward in initialRewards) {
@@ -2069,27 +2237,91 @@ class FirebaseDbManager {
                 }
 
                 val list = mutableListOf<com.playwin.app.data.model.FirebaseScratchCardReward>()
+                android.util.Log.d("PlayWinScratchDebug", "--- [STEP 1] LOADING REWARDS FROM FIREBASE ---")
                 for (child in snapshot.children) {
                     try {
-                        val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
-                        val name = child.child("name").getValue(String::class.java) ?: ""
-                        val type = child.child("type").getValue(String::class.java) ?: "Coins"
+                        val id = child.child("id").value?.toString() ?: child.key ?: ""
+                        val name = child.child("name").value?.toString() ?: ""
+                        val type = child.child("type").value?.toString() ?: "Coins"
                         val value = (child.child("value").value ?: "0").toString()
-                        val probabilityWeight = child.child("probabilityWeight").getValue(Int::class.java) ?: 10
-                        val displayOrder = child.child("displayOrder").getValue(Int::class.java) ?: 0
-                        val active = child.child("active").getValue(Boolean::class.java) ?: true
-                        val icon = child.child("icon").getValue(String::class.java) ?: "🎁"
-                        val color = child.child("color").getValue(String::class.java) ?: "#7C4DFF"
-                        val createdAt = child.child("createdAt").getValue(Long::class.java) ?: System.currentTimeMillis()
-                        val updatedAt = child.child("updatedAt").getValue(Long::class.java) ?: System.currentTimeMillis()
 
-                        list.add(com.playwin.app.data.model.FirebaseScratchCardReward(
-                            id, name, type, value, probabilityWeight, displayOrder, active, icon, color, createdAt, updatedAt
-                        ))
+                        val weightVal = child.child("probabilityWeight").value
+                        val probabilityWeight = when (weightVal) {
+                            is Number -> weightVal.toInt()
+                            is String -> weightVal.toIntOrNull() ?: 10
+                            else -> 10
+                        }
+
+                        val orderVal = child.child("displayOrder").value
+                        val displayOrder = when (orderVal) {
+                            is Number -> orderVal.toInt()
+                            is String -> orderVal.toIntOrNull() ?: 0
+                            else -> 0
+                        }
+
+                        val status = child.child("status").value?.toString() ?: "Active"
+                        val isStatusActive = !status.equals("inactive", ignoreCase = true) && 
+                                             !status.equals("disabled", ignoreCase = true) &&
+                                             !status.equals("false", ignoreCase = true)
+
+                        val activeVal = child.child("active").value
+                        val active = when (activeVal) {
+                            is Boolean -> activeVal && isStatusActive
+                            is String -> activeVal.toBoolean() && isStatusActive
+                            else -> isStatusActive
+                        }
+
+                        val icon = child.child("icon").value?.toString() ?: "🎁"
+                        val color = child.child("color").value?.toString() ?: "#7C4DFF"
+
+                        val createdAtVal = child.child("createdAt").value
+                        val createdAt = when (createdAtVal) {
+                            is Number -> createdAtVal.toLong()
+                            is String -> createdAtVal.toLongOrNull() ?: System.currentTimeMillis()
+                            else -> System.currentTimeMillis()
+                        }
+
+                        val updatedAtVal = child.child("updatedAt").value
+                        val updatedAt = when (updatedAtVal) {
+                            is Number -> updatedAtVal.toLong()
+                            is String -> updatedAtVal.toLongOrNull() ?: System.currentTimeMillis()
+                            else -> System.currentTimeMillis()
+                        }
+
+                        val reward = com.playwin.app.data.model.FirebaseScratchCardReward(
+                            id = id,
+                            name = name,
+                            type = type,
+                            value = value,
+                            probabilityWeight = probabilityWeight,
+                            status = status,
+                            displayOrder = displayOrder,
+                            active = active,
+                            icon = icon,
+                            color = color,
+                            createdAt = createdAt,
+                            updatedAt = updatedAt
+                        )
+                        android.util.Log.d("PlayWinScratchDebug", "Deserialized reward: $reward")
+                        list.add(reward)
                     } catch (e: Exception) {
-                        // skip
+                        android.util.Log.e("PlayWinScratchDebug", "Error parsing individual reward child: ${child.key}", e)
                     }
                 }
+
+                // Print all rewards loaded
+                android.util.Log.d("PlayWinScratchDebug", "[STEP 2] ALL REWARDS LOADED (${list.size}):")
+                list.forEach { r ->
+                    android.util.Log.d("PlayWinScratchDebug", "  - ID: ${r.id}, Name: ${r.name}, Type: ${r.type}, Value: ${r.value}, Active: ${r.active}, Weight: ${r.probabilityWeight}")
+                }
+
+                // Print only active rewards
+                val activeList = list.filter { it.active }
+                android.util.Log.d("PlayWinScratchDebug", "[STEP 3] ACTIVE REWARDS ONLY (${activeList.size}):")
+                activeList.forEach { r ->
+                    android.util.Log.d("PlayWinScratchDebug", "  - ID: ${r.id}, Name: ${r.name}, Type: ${r.type}, Value: ${r.value}, Weight: ${r.probabilityWeight}")
+                }
+
                 list.sortBy { it.displayOrder }
                 trySend(list)
             }
@@ -2108,64 +2340,63 @@ class FirebaseDbManager {
         transactionId: String,
         onComplete: (Boolean, String?, Int, Int) -> Unit
     ) {
-        if (userId.isEmpty()) {
-            onComplete(false, "User not authenticated.", 0, 0)
+        val typeSafe = reward.type?.trim() ?: "Coins"
+        val isCoins = typeSafe.equals("Coins", ignoreCase = true) || 
+                      (!typeSafe.equals("Coupon", ignoreCase = true) && 
+                       !typeSafe.contains("retry", ignoreCase = true) && 
+                       !typeSafe.contains("luck", ignoreCase = true) && 
+                       ((reward.value ?: "0").toIntOrNull() ?: 0) > 0)
+
+        val coinIncrement = if (isCoins) {
+            val parsed = (reward.value ?: "0").toIntOrNull()
+            if (parsed == null) {
+                android.util.Log.e("PlayWinScratchDebug", "PARSING FAILURE: Field 'value' with content '${reward.value}' could not be parsed as an Integer for Coins reward ID '${reward.id}'.")
+            }
+            parsed ?: 0
+        } else {
+            0
+        }
+        
+        // 12. If reward.type == Coins and reward.value > 0:
+        if (isCoins && coinIncrement <= 0) {
+            val errorMsg = "Coins reward value is $coinIncrement (must be > 0 or valid integer)"
+            android.util.Log.e("PlayWinScratchDebug", "Transaction failure: $errorMsg")
+            onComplete(false, errorMsg, 0, 0)
             return
         }
-        val userRef = database.getReference("users").child(userId)
-        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
-            var coinsBefore = 0
-            var coinsAfter = 0
 
-            override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
-                if (mutableData.value == null) {
-                    return com.google.firebase.database.Transaction.success(mutableData)
-                }
+        android.util.Log.d("PlayWinScratchDebug", "[STEP 8] RUNNING FIREBASE TRANSACTION ON users/$userId/coins. increment: $coinIncrement, reward: ${reward.name}, txId: $transactionId")
 
-                // Duplicate protection: Check if transactionId already processed
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+
+        WalletService.updateWallet(
+            userId = userId,
+            coinsDelta = coinIncrement,
+            source = "Scratch Card: ${reward.name}",
+            type = "scratch_reward",
+            extraCheck = { mutableData ->
                 if (mutableData.child("processedScratchTx").child(transactionId).value != null) {
-                    return com.google.firebase.database.Transaction.abort()
+                    "Transaction already processed."
+                } else {
+                    null
                 }
-
-                val currentCoins = mutableData.child("wallet").child("balance").getValue(Int::class.java)
-                    ?: mutableData.child("coins").getValue(Int::class.java)
-                    ?: 0
-                coinsBefore = currentCoins
-                
-                var coinIncrement = 0
-                if (reward.type == "Coins") {
-                    coinIncrement = reward.value.toIntOrNull() ?: 0
-                }
-                coinsAfter = currentCoins + coinIncrement
-                
-                // Update coins directly on user node
-                mutableData.child("coins").value = coinsAfter
-
-                // Update wallet balance path atomically inside the transaction
-                mutableData.child("wallet").child("balance").value = coinsAfter
-                mutableData.child("wallet").child("coins").value = coinsAfter
-                
-                // Update totalScratchCoins in stats atomically inside the transaction
+            },
+            extraUpdate = { mutableData ->
                 val currentTotalScratchCoins = mutableData.child("stats").child("totalScratchCoins").getValue(Int::class.java) ?: 0
                 mutableData.child("stats").child("totalScratchCoins").value = currentTotalScratchCoins + coinIncrement
                 
-                // Mark transactionId as processed
                 mutableData.child("processedScratchTx").child(transactionId).value = true
                 
-                // Update scratchesToday and lastScratchDate
                 val lastScratchDate = mutableData.child("lastScratchDate").getValue(String::class.java) ?: ""
                 var scratchesToday = mutableData.child("scratchesToday").getValue(Int::class.java) ?: 0
-                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
                 if (lastScratchDate != today) {
                     scratchesToday = 0
                 }
                 scratchesToday += 1
                 mutableData.child("scratchesToday").value = scratchesToday
                 
-                // Decrement cards count or check limits
                 val remainingScratchCards = mutableData.child("remainingScratchCards").getValue(Int::class.java) ?: 0
                 if (reward.type == "Retry Scratch") {
-                    // Won a retry, don't decrement the cards count
                     mutableData.child("remainingScratchCards").value = remainingScratchCards
                 } else if (remainingScratchCards > 0) {
                     mutableData.child("remainingScratchCards").value = remainingScratchCards - 1
@@ -2176,70 +2407,42 @@ class FirebaseDbManager {
                 
                 mutableData.child("lastScratchDate").value = today
                 mutableData.child("lastScratchResetTime").value = System.currentTimeMillis()
-                
-                return com.google.firebase.database.Transaction.success(mutableData)
-            }
-
-            override fun onComplete(
-                error: DatabaseError?,
-                committed: Boolean,
-                currentData: DataSnapshot?
-            ) {
-                val isSuccess = committed && error == null
-                val statusStr = if (isSuccess) "Completed" else "Failed"
-                val errorMsg = error?.message ?: (if (!committed) "Transaction aborted/not committed" else "None")
-
-                // REQUIRED LOGGING
-                android.util.Log.d(
-                    "PlayWinScratchDebug",
-                    """
-                    ================ SCRATCH REWARD TRANSACTION REPORT ================
-                    User UID: $userId
-                    Reward ID: ${reward.id}
-                    Reward Type: ${reward.type}
-                    Reward Value: ${reward.value}
-                    Wallet Before: $coinsBefore
-                    Wallet After: $coinsAfter
-                    Transaction Status: $statusStr
-                    Firebase Write Success: $isSuccess
-                    Firebase Error Message: $errorMsg
-                    ===================================================================
-                    """.trimIndent()
-                )
-
-                if (isSuccess) {
+            },
+            onComplete = { success, coinsBefore, coinsAfter, errorMsg ->
+                if (success) {
+                    android.util.Log.d("PlayWinScratchDebug", "[STEP 9] TRANSACTION SUCCESS: Wallet balance BEFORE: $coinsBefore, AFTER: $coinsAfter")
                     val timestamp = System.currentTimeMillis()
-                    val txId = transactionId
-                    
                     val tx = FirebaseTransaction(
-                        id = txId,
+                        id = transactionId,
                         userId = userId,
                         type = "scratch_reward",
                         title = "Scratch Card: ${reward.name}",
-                        coins = if (reward.type == "Coins") reward.value.toIntOrNull() ?: 0 else 0,
+                        coins = coinIncrement,
                         status = "Completed",
                         timestamp = timestamp,
-                        amount = if (reward.type == "Coins") reward.value.toIntOrNull() ?: 0 else 0,
+                        amount = coinIncrement,
                         source = "Scratch Card: ${reward.name}",
                         coinsBefore = coinsBefore,
                         coinsAfter = coinsAfter
                     )
-                    database.getReference("transactions").child(userId).child(txId).setValue(tx)
+                    database.getReference("users").child(userId).child("transactions").child(transactionId).setValue(tx)
+                    database.getReference("users").child(userId).child("wallet").child("history").child(transactionId).setValue(tx)
                     
-                    // Duplicate transaction in users/uid/transactions
-                    database.getReference("users").child(userId).child("transactions").child(txId).setValue(tx)
-
-                    // Write transaction to users/uid/wallet/history (CRITICAL FIX)
-                    database.getReference("users").child(userId).child("wallet").child("history").child(txId).setValue(tx)
-                    
-                    // Set users/uid/wallet subkeys individually (CRITICAL FIX: Do not overwrite the entire wallet node, preserving the history)
                     val walletRef = database.getReference("users").child(userId).child("wallet")
                     walletRef.child("coins").setValue(coinsAfter)
                     walletRef.child("balance").setValue(coinsAfter)
+                    walletRef.child("currentCoins").setValue(coinsAfter)
                     walletRef.child("lastScratchTime").setValue(timestamp)
                     walletRef.child("updatedAt").setValue(timestamp)
                     
-                    // users/uid/scratchHistory
+                    walletRef.addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+                        override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                            val currentTotal = snapshot.child("totalCoinsEarned").getValue(Int::class.java) ?: 0
+                            walletRef.child("totalCoinsEarned").setValue(currentTotal + coinIncrement)
+                        }
+                        override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                    })
+                    
                     val historyId = database.getReference("users").child(userId).child("scratchHistory").push().key ?: "sc_$timestamp"
                     val deviceTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                     val history = com.playwin.app.data.model.FirebaseScratchHistory(
@@ -2254,34 +2457,15 @@ class FirebaseDbManager {
                         status = "Completed",
                         deviceTime = deviceTime,
                         serverTime = timestamp,
-                        transactionId = txId
+                        transactionId = transactionId
                     )
                     database.getReference("users").child(userId).child("scratchHistory").child(historyId).setValue(history)
-                    
-                    // Create rewardHistory entry
-                    val rewardHistoryId = database.getReference("rewardHistory").child(userId).push().key ?: "hist_$timestamp"
-                    val rewardHistoryMap = mapOf(
-                        "type" to "scratch_reward",
-                        "reward" to (if (reward.type == "Coins") reward.value.toIntOrNull() ?: 0 else 0),
-                        "timestamp" to timestamp,
-                        "coinsBefore" to coinsBefore,
-                        "coinsAfter" to coinsAfter
-                    )
-                    database.getReference("rewardHistory").child(userId).child(rewardHistoryId).setValue(rewardHistoryMap)
-
-                    // Update walletSummary
-                    val walletSummaryMap = mapOf(
-                        "totalCoins" to coinsAfter,
-                        "lastUpdated" to timestamp
-                    )
-                    database.getReference("walletSummary").child(userId).setValue(walletSummaryMap)
-                    
-                    onComplete(true, null, coinsBefore, coinsAfter)
                 } else {
-                    onComplete(false, errorMsg, 0, 0)
+                    android.util.Log.e("PlayWinScratchDebug", "[STEP 9] TRANSACTION FAILURE: error: $errorMsg")
                 }
+                onComplete(success, errorMsg, coinsBefore, coinsAfter)
             }
-        })
+        )
     }
 }
 

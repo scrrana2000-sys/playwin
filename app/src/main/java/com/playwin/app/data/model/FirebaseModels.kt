@@ -56,11 +56,33 @@ data class FirebaseRedemption(
 data class FirebaseSpinReward(
     val id: String = "",
     val name: String = "",
+    val title: String = "", // Admin App compatibility
     val type: String = "", // "Coins", "Coupon", "Retry", "Better Luck Next Time"
+    val rewardType: String = "", // Admin App compatibility
     val value: String = "", // amount of coins or coupon code/id, empty for retry / better luck
+    val reward: String = "", // Admin App compatibility
     val displayOrder: Int = 0,
+    val order: Int = 0, // Admin App compatibility
     val probabilityWeight: Int = 1,
-    val active: Boolean = true
+    val probability: Int = 0, // Admin App compatibility
+    val active: Boolean = true,
+    val enabled: Boolean = true, // Admin App compatibility
+    val icon: String = "",
+    val color: String = "",
+    val description: String = ""
+)
+
+@IgnoreExtraProperties
+data class FirebaseSpinWheelConfig(
+    val enabled: Boolean = true,
+    val dailySpins: Int = 2,
+    val title: String = "Lucky Spin & Win",
+    val dailySpinLimit: Int = 10,
+    val dailyFreeSpins: Int = 2,
+    val rewardedAdAfterFreeSpins: Boolean = true,
+    val requireRewardedAdBeforeEveryExtraSpin: Boolean = true,
+    val maxRewardedAdSpinsPerDay: Int = 10,
+    val segments: List<FirebaseSpinReward> = emptyList()
 )
 
 @IgnoreExtraProperties
@@ -118,6 +140,8 @@ data class FirebaseUser(
     val lastSpinDate: String = "",
     val freeSpinUsed: Boolean = false,
     val rewardAdSpinUsed: Boolean = false,
+    val dailySpinCount: Int = 0,
+    val rewardedSpinCount: Int = 0,
 
     // Scratch Card fields
     val remainingScratchCards: Int = 1,
@@ -142,7 +166,8 @@ data class FirebaseUser(
     val referralsCoinsEarned: Int = 0,
     val deviceId: String = "",
     val referralCode: String = "",
-    val stats: Map<String, Int> = emptyMap()
+    val stats: Map<String, Int> = emptyMap(),
+    val dailyCheckIn: FirebaseUserDailyCheckIn? = null
 )
 
 @IgnoreExtraProperties
@@ -273,6 +298,7 @@ data class FirebaseScratchCardReward(
     val type: String = "Coins", // "Coins", "Coupon", "Retry Scratch", "Better Luck Next Time"
     val value: String = "0",
     val probabilityWeight: Int = 10,
+    val status: String = "Active",
     val displayOrder: Int = 0,
     val active: Boolean = true,
     val icon: String = "🎁",
@@ -296,6 +322,32 @@ data class FirebaseScratchHistory(
     val serverTime: Long = 0L,
     val transactionId: String = ""
 )
+
+@IgnoreExtraProperties
+data class FirebaseDailyCheckInSettings(
+    val enabled: Boolean = true,
+    val rewards: List<Int>? = null,
+    val maxRewardLimit: Int = 500
+)
+
+@IgnoreExtraProperties
+data class FirebaseUserDailyCheckIn(
+    val lastClaimTimestamp: Long = 0L,
+    val nextEligibleTimestamp: Long = 0L,
+    val currentDay: Int = 0,
+    val streak: Int = 0,
+    val totalClaims: Int = 0
+)
+
+@IgnoreExtraProperties
+data class FirebaseUserDailyQuiz(
+    val lastCompletedDay: String = "",
+    val lastCompletedDate: String = "",
+    val lastQuizId: String = "",
+    val completed: Boolean = false,
+    val rewardClaimed: Boolean = false
+)
+
 
 
 
