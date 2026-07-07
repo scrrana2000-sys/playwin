@@ -709,17 +709,36 @@ class FirebaseDbManager {
     }
 
     fun observeSpinRewards(): Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = callbackFlow {
-        val spinWheelRef = database.getReference("spinWheel")
+        val spinWheelRef = database.getReference("configs/spinWheel")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
-                    val fallbackRef = database.getReference("spinWheelRewards")
-                    fallbackRef.addListenerForSingleValueEvent(object : ValueEventListener {
-                        override fun onDataChange(fallbackSnapshot: DataSnapshot) {
-                            if (!fallbackSnapshot.exists()) {
-                                trySend(getInitialSpinRewards())
+                    val oldSpinWheelRef = database.getReference("spinWheel")
+                    oldSpinWheelRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                        override fun onDataChange(oldSnapshot: DataSnapshot) {
+                            if (!oldSnapshot.exists()) {
+                                val fallbackRef = database.getReference("spinWheelRewards")
+                                fallbackRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                                    override fun onDataChange(fallbackSnapshot: DataSnapshot) {
+                                        if (!fallbackSnapshot.exists()) {
+                                            trySend(getInitialSpinRewards())
+                                        } else {
+                                            val segments = parseSegmentsFromSnapshot(fallbackSnapshot)
+                                            trySend(segments.filter { it.active && it.enabled })
+                                        }
+                                    }
+                                    override fun onCancelled(error: DatabaseError) {
+                                        trySend(getInitialSpinRewards())
+                                    }
+                                })
                             } else {
-                                val segments = parseSegmentsFromSnapshot(fallbackSnapshot)
+                                val segmentsSnapshot = oldSnapshot.child("wheelRewards").takeIf { it.exists() }
+                                    ?: oldSnapshot.child("segments")
+                                val segments = if (segmentsSnapshot.exists()) {
+                                    parseSegmentsFromSnapshot(segmentsSnapshot)
+                                } else {
+                                    parseSegmentsFromSnapshot(oldSnapshot)
+                                }
                                 trySend(segments.filter { it.active && it.enabled })
                             }
                         }
@@ -731,7 +750,8 @@ class FirebaseDbManager {
                 }
 
                 try {
-                    val segmentsSnapshot = snapshot.child("segments")
+                    val segmentsSnapshot = snapshot.child("wheelRewards").takeIf { it.exists() }
+                        ?: snapshot.child("segments")
                     val segments = if (segmentsSnapshot.exists()) {
                         parseSegmentsFromSnapshot(segmentsSnapshot)
                     } else {
@@ -752,7 +772,7 @@ class FirebaseDbManager {
     }
 
     fun observeSpinWheelConfig(): Flow<com.playwin.app.data.model.FirebaseSpinWheelConfig> = callbackFlow {
-        val spinWheelRef = database.getReference("spinWheel")
+        val spinWheelRef = database.getReference("configs/spinWheel")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
@@ -764,7 +784,8 @@ class FirebaseDbManager {
                                     enabled = true,
                                     dailySpins = 2,
                                     title = "Lucky Spin & Win",
-                                    segments = getInitialSpinRewards()
+                                    segments = getInitialSpinRewards(),
+                                    lastUpdated = 0L
                                 )
                                 trySend(defaultConfig)
                             } else {
@@ -773,7 +794,8 @@ class FirebaseDbManager {
                                     enabled = true,
                                     dailySpins = 2,
                                     title = "Lucky Spin & Win",
-                                    segments = segments
+                                    segments = segments,
+                                    lastUpdated = 0L
                                 )
                                 trySend(fallbackConfig)
                             }
@@ -803,7 +825,7 @@ class FirebaseDbManager {
 
                     val title = snapshot.child("title").getValue(String::class.java) ?: "Lucky Spin & Win"
 
-                    val dailySpinLimit = when (val v = snapshot.child("dailySpinLimit").value) {
+                    val dailySpinLimit = when (val v = snapshot.child("dailySpinLimit").value ?: snapshot.child("dailyLimit").value) {
                         is Number -> v.toInt()
                         is String -> v.toIntOrNull() ?: 10
                         else -> 10
@@ -835,7 +857,15 @@ class FirebaseDbManager {
                         else -> 10
                     }
 
-                    val segmentsSnapshot = snapshot.child("segments")
+                    val lastUpdatedVal = snapshot.child("lastUpdated").value
+                    val lastUpdated = when (lastUpdatedVal) {
+                        is Number -> lastUpdatedVal.toLong()
+                        is String -> lastUpdatedVal.toLongOrNull() ?: 0L
+                        else -> 0L
+                    }
+
+                    val segmentsSnapshot = snapshot.child("wheelRewards").takeIf { it.exists() }
+                        ?: snapshot.child("segments")
                     val segments = if (segmentsSnapshot.exists()) {
                         parseSegmentsFromSnapshot(segmentsSnapshot)
                     } else {
@@ -843,7 +873,7 @@ class FirebaseDbManager {
                     }
 
                     android.util.Log.d("PlayWinDebug", "Firebase Connected: Spin Wheel Database Available")
-                    android.util.Log.d("PlayWinDebug", "Config Loaded: title=$title, enabled=$enabled, dailyFreeSpins=$dailyFreeSpins, dailySpinLimit=$dailySpinLimit, maxRewardedAdSpinsPerDay=$maxRewardedAdSpinsPerDay")
+                    android.util.Log.d("PlayWinDebug", "Config Loaded: title=$title, enabled=$enabled, dailyFreeSpins=$dailyFreeSpins, dailySpinLimit=$dailySpinLimit, maxRewardedAdSpinsPerDay=$maxRewardedAdSpinsPerDay, lastUpdated=$lastUpdated")
                     android.util.Log.d("PlayWinDebug", "Segments Loaded: count=${segments.size}")
                     android.util.Log.d("PlayWinDebug", "Realtime Config Updated: title=$title, enabled=$enabled")
 
@@ -856,7 +886,8 @@ class FirebaseDbManager {
                         rewardedAdAfterFreeSpins = rewardedAdAfterFreeSpins,
                         requireRewardedAdBeforeEveryExtraSpin = requireRewardedAdBeforeEveryExtraSpin,
                         maxRewardedAdSpinsPerDay = maxRewardedAdSpinsPerDay,
-                        segments = segments
+                        segments = segments,
+                        lastUpdated = lastUpdated
                     )
                     trySend(config)
                 } catch (e: Exception) {
@@ -882,7 +913,6 @@ class FirebaseDbManager {
     private fun parseSegmentsFromSnapshot(snapshot: DataSnapshot): List<com.playwin.app.data.model.FirebaseSpinReward> {
         val list = mutableListOf<com.playwin.app.data.model.FirebaseSpinReward>()
         for (child in snapshot.children) {
-            if (!child.hasChildren()) continue
             try {
                 val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
                 
@@ -914,12 +944,17 @@ class FirebaseDbManager {
                     else -> 1
                 }
                 
+                val statusVal = child.child("status").getValue(String::class.java)
                 val activeVal = child.child("active").value ?: child.child("isActive").value ?: child.child("enabled").value
-                val active = when (activeVal) {
-                    is Boolean -> activeVal
-                    is String -> activeVal.equals("true", ignoreCase = true) || activeVal.equals("active", ignoreCase = true)
-                    is Number -> activeVal.toInt() != 0
-                    else -> true
+                val active = if (statusVal != null) {
+                    statusVal.trim().equals("Active", ignoreCase = true)
+                } else {
+                    when (activeVal) {
+                        is Boolean -> activeVal
+                        is String -> activeVal.equals("true", ignoreCase = true) || activeVal.equals("active", ignoreCase = true)
+                        is Number -> activeVal.toInt() != 0
+                        else -> true
+                    }
                 }
 
                 val icon = child.child("icon").getValue(String::class.java) ?: ""

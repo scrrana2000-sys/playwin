@@ -82,7 +82,8 @@ data class FirebaseSpinWheelConfig(
     val rewardedAdAfterFreeSpins: Boolean = true,
     val requireRewardedAdBeforeEveryExtraSpin: Boolean = true,
     val maxRewardedAdSpinsPerDay: Int = 10,
-    val segments: List<FirebaseSpinReward> = emptyList()
+    val segments: List<FirebaseSpinReward> = emptyList(),
+    val lastUpdated: Long = 0L
 )
 
 @IgnoreExtraProperties
