@@ -1967,27 +1967,24 @@ fun HomeScreen(
     }
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val scratchSettings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
+    val scratchState by viewModel.userScratchCardStateState.collectAsStateWithLifecycle()
+    val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
     
     // Dynamic Scratch card variables
-    val scratchesToday = currentUser?.scratchesToday ?: 0
-    val scratchDailyLimit = scratchSettings.dailyLimit
+    val scratchesToday = scratchState.scratchesToday
+    val scratchDailyLimit = scratchSettings.dailyScratchLimit
     val remainingScratches = maxOf(0, scratchDailyLimit - scratchesToday)
     val scratchEnabled = scratchSettings.enabled
     
     // Cooldown
-    val lastScratchTime = currentUser?.lastScratchResetTime ?: 0L
-    val cooldownDurationMs = scratchSettings.cooldownMinutes * 60 * 1000L
-    val timeElapsed = System.currentTimeMillis() - lastScratchTime
-    val isCooldownActive = lastScratchTime > 0L && timeElapsed < cooldownDurationMs
+    val lastScratchTime = scratchState.lastScratchTimestamp
+    val cooldownDurationMs = scratchSettings.rewardCooldownMinutes * 60 * 1000L
+    val isCooldownActive = lastScratchTime > 0L && currentServerTime < (lastScratchTime + cooldownDurationMs)
     
-    var cooldownSecondsLeft by remember { mutableStateOf(0L) }
-    LaunchedEffect(lastScratchTime, scratchSettings.cooldownMinutes) {
-        while (true) {
-            val elapsed = System.currentTimeMillis() - lastScratchTime
-            val remaining = cooldownDurationMs - elapsed
-            cooldownSecondsLeft = if (remaining > 0L) remaining / 1000L else 0L
-            delay(1000L)
-        }
+    val cooldownSecondsLeft = if (isCooldownActive) {
+        maxOf(0L, (lastScratchTime + cooldownDurationMs - currentServerTime) / 1000L)
+    } else {
+        0L
     }
 
     val scratchDesc = when {
@@ -2316,29 +2313,16 @@ fun HomeScreen(
             
             val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
             val checkInSettings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
-            val serverTimeOffset = viewModel.serverTimeOffset
             
-            var countdownText by remember { mutableStateOf("") }
-            var isEligibleToClaim by remember { mutableStateOf(false) }
+            val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+            val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
 
-            LaunchedEffect(userCheckIn?.lastClaimTimestamp) {
-                while (true) {
-                    val nowServer = System.currentTimeMillis() + serverTimeOffset
-                    val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                    if (lastClaim == 0L || nowServer - lastClaim >= 86400000L) {
-                        countdownText = ""
-                        isEligibleToClaim = true
-                    } else {
-                        val remainingMs = 86400000L - (nowServer - lastClaim)
-                        val h = remainingMs / 3600000L
-                        val m = (remainingMs % 3600000L) / 60000L
-                        val s = (remainingMs % 60000L) / 1000L
-                        countdownText = String.format(java.util.Locale.US, "%02dh %02dm %02ds remaining.", h, m, s)
-                        isEligibleToClaim = false
-                    }
-                    kotlinx.coroutines.delay(1000L)
-                }
+            val isEligibleToClaim = remember(userCheckIn?.lastClaimTimestamp, currentServerTime) {
+                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+                val startOfToday = com.playwin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
+                lastClaim < startOfToday
             }
+            val countdownText = if (isEligibleToClaim) "" else "$remainingTime remaining."
 
             val checkInLoading by viewModel.dailyCheckInLoadingState.collectAsStateWithLifecycle()
             val rewardsList = checkInSettings?.rewards
@@ -2496,7 +2480,7 @@ fun HomeScreen(
                                 val dayNum = index + 1
                                 val currentDay = userCheckIn?.currentDay ?: 0
                                 val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                                val serverTime = System.currentTimeMillis() + serverTimeOffset
+                                val serverTime = currentServerTime
                                 val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, serverTime)
                                 DailyRewardBox(
                                     day = dayName,
@@ -2604,7 +2588,7 @@ fun HomeScreen(
                                 val dayNum = index + 1
                                 val currentDay = userCheckIn?.currentDay ?: 0
                                 val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                                val serverTime = System.currentTimeMillis() + serverTimeOffset
+                                val serverTime = currentServerTime
                                 val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, serverTime)
                                 DailyRewardBox(
                                     day = dayName,
@@ -4797,16 +4781,17 @@ fun TasksScreen(
 
         // Easy Instant Tasks list
         val tasks by viewModel.tasksState.collectAsStateWithLifecycle()
-        var tasksActiveTimeMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-        LaunchedEffect(wallet.lastCheckInTime) {
-            while (true) {
-                tasksActiveTimeMillis = System.currentTimeMillis()
-                kotlinx.coroutines.delay(1000L)
-            }
+        val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
+        val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+        val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
+
+        val startOfToday = remember(currentServerTime) {
+            com.playwin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
         }
-        val tasksActiveNextClaim = wallet.lastCheckInTime + 24 * 60 * 60 * 1000L
-        val tasksActiveRemaining = tasksActiveNextClaim - tasksActiveTimeMillis
-        val isTasksCheckInClaimed = wallet.lastCheckInTime != 0L && tasksActiveRemaining > 0
+        val isTasksCheckInClaimed = remember(userCheckIn?.lastClaimTimestamp, startOfToday) {
+            val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+            lastClaim >= startOfToday
+        }
 
         if (tasks.isEmpty()) {
             ActiveTaskRowItem(
@@ -4836,10 +4821,7 @@ fun TasksScreen(
             ActiveTaskRowItem(
                 title = "Claim Today's Daily Check-In",
                 progress = if (isTasksCheckInClaimed) {
-                    val hours = tasksActiveRemaining / (1000 * 60 * 60)
-                    val minutes = (tasksActiveRemaining % (1000 * 60 * 60)) / (1000 * 60)
-                    val seconds = (tasksActiveRemaining % (1000 * 60)) / 1000
-                    String.format("Claimed! Next in %02dh %02dm %02ds", hours, minutes, seconds)
+                    "Claimed! Next in $remainingTime"
                 } else {
                     "Available once per day"
                 },
@@ -4854,10 +4836,7 @@ fun TasksScreen(
                     title = task.title,
                     progress = when (task.type) {
                         "daily" -> if (isDailyClaimed) {
-                            val hours = tasksActiveRemaining / (1000 * 60 * 60)
-                            val minutes = (tasksActiveRemaining % (1000 * 60 * 60)) / (1000 * 60)
-                            val seconds = (tasksActiveRemaining % (1000 * 60)) / 1000
-                            String.format("Claimed! Next in %02dh %02dm %02ds", hours, minutes, seconds)
+                            "Claimed! Next in $remainingTime"
                         } else {
                             "0/1 check-in claimed"
                         }

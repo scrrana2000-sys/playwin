@@ -133,14 +133,14 @@ data class FirebaseUser(
 
     // Referral fields
     val referredBy: String = "",
-    val hasUsedReferralCode: Boolean = false,
+    val hasUsedReferralCode: Any? = false,
 
     // Spin Wheel fields
     val remainingSpins: Int = 1,
     val totalSpinRewards: Int = 0,
     val lastSpinDate: String = "",
-    val freeSpinUsed: Boolean = false,
-    val rewardAdSpinUsed: Boolean = false,
+    val freeSpinUsed: Any? = false,
+    val rewardAdSpinUsed: Any? = false,
     val dailySpinCount: Int = 0,
     val rewardedSpinCount: Int = 0,
 
@@ -148,14 +148,14 @@ data class FirebaseUser(
     val remainingScratchCards: Int = 1,
     val lastScratchResetTime: Long = 0L,
     val totalScratchRewards: Int = 0,
-    val freeScratchUsed: Boolean = false,
-    val rewardAdScratchUsed: Boolean = false,
+    val freeScratchUsed: Any? = false,
+    val rewardAdScratchUsed: Any? = false,
     val lastScratchDate: String = "",
     val lastRewardAdTime: Long = 0L,
     val scratchesToday: Int = 0,
     
     // Block status
-    val isBlocked: Boolean = false,
+    val isBlocked: Any? = false,
 
     // Quiz Timer tracking fields
     val totalTimeOuts: Int = 0,
@@ -214,7 +214,7 @@ data class FirebaseQuizProgress(
     val completedQuizIds: List<String> = emptyList(),
     val completedQuestionIds: List<String> = emptyList(),
     val lastQuizDate: String = "",
-    val dailyQuizCompleted: Boolean = false,
+    val dailyQuizCompleted: Any? = false,
     val categoryHistory: Map<String, Int> = emptyMap()
 )
 
@@ -286,10 +286,13 @@ data class FirebaseQuiz(
 @IgnoreExtraProperties
 data class FirebaseScratchCardSettings(
     val enabled: Boolean = true,
-    val dailyLimit: Int = 5,
-    val cooldownMinutes: Int = 15,
-    val rewardAdRequired: Boolean = false,
-    val minimumLevel: Int = 1
+    val dailyScratchLimit: Int = 5,
+    val dailyFreeScratch: Int = 1,
+    val rewardedScratchEnabled: Boolean = true,
+    val requireAdForEveryExtraScratch: Boolean = true,
+    val maxRewardedScratchPerDay: Int = 5,
+    val rewardCooldownMinutes: Int = 0,
+    val minimumUserLevel: Int = 1
 )
 
 @IgnoreExtraProperties
@@ -348,6 +351,210 @@ data class FirebaseUserDailyQuiz(
     val completed: Boolean = false,
     val rewardClaimed: Boolean = false
 )
+
+@IgnoreExtraProperties
+data class FirebaseUserScratchCardState(
+    val lastScratchTimestamp: Long = 0L,
+    val nextResetTimestamp: Long = 0L,
+    val lastRewardedAdTimestamp: Long = 0L,
+    val freeScratchUsed: Int = 0,
+    val rewardedScratchUsed: Int = 0,
+    val scratchesToday: Int = 0
+)
+
+val FirebaseUser.hasUsedReferralCodeBool: Boolean
+    get() = when (val v = hasUsedReferralCode) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val FirebaseUser.freeSpinUsedBool: Boolean
+    get() = when (val v = freeSpinUsed) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val FirebaseUser.rewardAdSpinUsedBool: Boolean
+    get() = when (val v = rewardAdSpinUsed) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val FirebaseUser.freeScratchUsedBool: Boolean
+    get() = when (val v = freeScratchUsed) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val FirebaseUser.rewardAdScratchUsedBool: Boolean
+    get() = when (val v = rewardAdScratchUsed) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val FirebaseUser.isBlockedBool: Boolean
+    get() = when (val v = isBlocked) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val FirebaseQuizProgress.dailyQuizCompletedBool: Boolean
+    get() = when (val v = dailyQuizCompleted) {
+        is Boolean -> v
+        is Number -> v.toLong() != 0L
+        is String -> v.lowercase() == "true" || v == "1"
+        else -> false
+    }
+
+val KNOWN_BOOLEAN_FIELDS = setOf(
+    "enabled", "featured", "active", "completed", "published", "allowReview",
+    "rewardAdAfterFreeSpins", "requireRewardedAdBeforeEveryExtraSpin", "rewardAdRequired",
+    "rewardClaimed", "hasUsedReferralCode", "freeSpinUsed", "rewardAdSpinUsed",
+    "freeScratchUsed", "rewardAdScratchUsed", "isBlocked", "dailyQuizCompleted"
+)
+
+fun verifyAndLogBooleans(snapshot: com.google.firebase.database.DataSnapshot) {
+    try {
+        val key = snapshot.key ?: ""
+        val value = snapshot.value
+        if (value != null && KNOWN_BOOLEAN_FIELDS.contains(key)) {
+            val actualType = value::class.java.simpleName
+            if (value is Number) {
+                val path = try { snapshot.ref.path.toString() } catch (e: Exception) { key }
+                android.util.Log.e("FirebaseTypeCheck", """
+                    Field Name: $key
+                    Expected Type: Boolean
+                    Actual Type: $actualType
+                    Firebase Path: $path
+                """.trimIndent())
+            }
+        }
+        if (snapshot.hasChildren()) {
+            for (child in snapshot.children) {
+                verifyAndLogBooleans(child)
+            }
+        }
+    } catch (e: Exception) {
+        // Safe fallback
+    }
+}
+
+fun verifyAndLogBooleans(mutableData: com.google.firebase.database.MutableData) {
+    try {
+        val key = mutableData.key ?: ""
+        val value = mutableData.value
+        if (value != null && KNOWN_BOOLEAN_FIELDS.contains(key)) {
+            val actualType = value::class.java.simpleName
+            if (value is Number) {
+                android.util.Log.e("FirebaseTypeCheck", """
+                    Field Name: $key
+                    Expected Type: Boolean
+                    Actual Type: $actualType
+                    Firebase Path: $key
+                """.trimIndent())
+            }
+        }
+        if (mutableData.hasChildren()) {
+            for (child in mutableData.children) {
+                verifyAndLogBooleans(child)
+            }
+        }
+    } catch (e: Exception) {
+        // Safe fallback
+    }
+}
+
+fun com.google.firebase.database.DataSnapshot.getSafeBoolean(fieldName: String, defaultValue: Boolean = false): Boolean {
+    val child = this.child(fieldName)
+    val rawValue = child.value
+    if (rawValue != null) {
+        val actualType = rawValue::class.java.simpleName
+        if (rawValue is Boolean) {
+            return rawValue
+        }
+        val path = try { child.ref.path.toString() } catch (e: Exception) { fieldName }
+        if (rawValue is Number) {
+            val boolVal = rawValue.toLong() != 0L
+            android.util.Log.e("FirebaseTypeCheck", """
+                Field Name: $fieldName
+                Expected Type: Boolean
+                Actual Type: $actualType
+                Firebase Path: $path
+            """.trimIndent())
+            return boolVal
+        }
+        if (rawValue is String) {
+            val boolVal = rawValue.lowercase() == "true" || rawValue == "1"
+            android.util.Log.e("FirebaseTypeCheck", """
+                Field Name: $fieldName
+                Expected Type: Boolean
+                Actual Type: $actualType
+                Firebase Path: $path
+            """.trimIndent())
+            return boolVal
+        }
+        android.util.Log.e("FirebaseTypeCheck", """
+            Field Name: $fieldName
+            Expected Type: Boolean
+            Actual Type: $actualType
+            Firebase Path: $path
+        """.trimIndent())
+    }
+    return defaultValue
+}
+
+fun com.google.firebase.database.MutableData.getSafeBoolean(fieldName: String, defaultValue: Boolean = false): Boolean {
+    val child = this.child(fieldName)
+    val rawValue = child.value
+    if (rawValue != null) {
+        val actualType = rawValue::class.java.simpleName
+        if (rawValue is Boolean) {
+            return rawValue
+        }
+        val path = child.key ?: fieldName
+        if (rawValue is Number) {
+            val boolVal = rawValue.toLong() != 0L
+            android.util.Log.e("FirebaseTypeCheck", """
+                Field Name: $fieldName
+                Expected Type: Boolean
+                Actual Type: $actualType
+                Firebase Path: $path
+            """.trimIndent())
+            return boolVal
+        }
+        if (rawValue is String) {
+            val boolVal = rawValue.lowercase() == "true" || rawValue == "1"
+            android.util.Log.e("FirebaseTypeCheck", """
+                Field Name: $fieldName
+                Expected Type: Boolean
+                Actual Type: $actualType
+                Firebase Path: $path
+            """.trimIndent())
+            return boolVal
+        }
+        android.util.Log.e("FirebaseTypeCheck", """
+            Field Name: $fieldName
+            Expected Type: Boolean
+            Actual Type: $actualType
+            Firebase Path: $path
+        """.trimIndent())
+    }
+    return defaultValue
+}
+
+
 
 
 

@@ -53,6 +53,7 @@ import kotlin.random.Random
 @Composable
 fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val wallet by viewModel.walletState.collectAsStateWithLifecycle()
+    val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
     var rotationAngle by remember { mutableStateOf(0f) }
     var isSpinning by remember { mutableStateOf(false) }
     var needleBounceAngle by remember { mutableStateOf(0f) }
@@ -78,11 +79,6 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     var isSoundEnabled by remember { mutableStateOf(prefs.getBoolean("sound_enabled", true)) }
     var isVibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
 
-    val freeSpinUsed = wallet.freeSpinUsed
-    val rewardAdSpinUsed = wallet.rewardAdSpinUsed
-
-    val spinsLeft = wallet.remainingSpins
-
     val spinWheelConfig by viewModel.spinWheelConfigState.collectAsStateWithLifecycle()
     val pageTitle = remember(spinWheelConfig) { spinWheelConfig.title.ifEmpty { "Lucky Spin" } }
 
@@ -90,7 +86,119 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val activeRewards = remember(spinRewards) {
         spinRewards.filter { it.active }.sortedBy { it.displayOrder }
     }
-    
+
+    val spinsLeft = remember(spinWheelConfig, wallet.dailySpinCount) {
+        (spinWheelConfig.dailySpinLimit - wallet.dailySpinCount).coerceAtLeast(0)
+    }
+
+    var rewardedAd by remember { mutableStateOf<com.google.android.gms.ads.rewarded.RewardedAd?>(null) }
+    var isLoadingAd by remember { mutableStateOf(false) }
+    var adWatchedCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    LaunchedEffect(wallet.dailySpinCount, wallet.remainingSpins, isSpinning, rewardedAd, showResultPopup) {
+        val currentSpinsLeft = (spinWheelConfig.dailySpinLimit - wallet.dailySpinCount).coerceAtLeast(0)
+        val isAdRequired = wallet.dailySpinCount >= spinWheelConfig.dailyFreeSpins
+        val btnState = if (isSpinning) "SPINNING" else if (currentSpinsLeft == 0) "TODAYS_SPINS_COMPLETED" else if (isAdRequired) "WATCH_AD" else "SPIN_NOW"
+        
+        android.util.Log.d("PlayWinDebug", "STATE_REFRESHED")
+        android.util.Log.d("PlayWinDebug", "SPINS_LEFT=$currentSpinsLeft")
+        android.util.Log.d("PlayWinDebug", "BUTTON_STATE=$btnState")
+        android.util.Log.d("PlayWinDebug", "AD_READY=${rewardedAd != null}")
+    }
+
+    val adController = remember(activity, isLoadingAd, rewardedAd, adWatchedCallback) {
+        object {
+            fun loadAd() {
+                val act = activity ?: return
+                if (isLoadingAd || rewardedAd != null) {
+                    if (rewardedAd != null) {
+                        android.util.Log.d("PlayWinDebug", "RewardedAd is already available (not null)")
+                    }
+                    return
+                }
+                isLoadingAd = true
+                android.util.Log.d("PlayWinDebug", "MobileAds initialized: verified on MainActivity onCreate. Initiating load.")
+                val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
+                val adUnitId = "ca-app-pub-3940256099942544/5224354917"
+
+                com.google.android.gms.ads.rewarded.RewardedAd.load(
+                    act,
+                    adUnitId,
+                    adRequest,
+                    object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
+                        override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
+                            android.util.Log.d("PlayWinDebug", "RewardedAd loaded successfully")
+                            isLoadingAd = false
+                            rewardedAd = ad
+                            android.util.Log.d("PlayWinDebug", "RewardedAd available: true")
+                            if (showAdLoadingDialog) {
+                                showAdLoadingDialog = false
+                                val callback = adWatchedCallback
+                                if (callback != null) {
+                                    adWatchedCallback = null
+                                    showAndPlayAd(callback)
+                                }
+                            }
+                        }
+
+                        override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
+                            android.util.Log.e("PlayWinDebug", "Rewarded Ad Failed to load. Complete LoadAdError: $loadAdError, code: ${loadAdError.code}, domain: ${loadAdError.domain}, message: ${loadAdError.message}")
+                            isLoadingAd = false
+                            rewardedAd = null
+                            if (showAdLoadingDialog) {
+                                showAdLoadingDialog = false
+                                errorMessage = "Failed to load ad. Please try again."
+                            }
+                            android.util.Log.d("PlayWinDebug", "Reload next RewardedAd scheduled in 5 seconds")
+                            coroutineScope.launch {
+                                delay(5000)
+                                loadAd()
+                            }
+                        }
+                    }
+                )
+            }
+
+            fun showAndPlayAd(onAdWatched: () -> Unit) {
+                val act = activity ?: return
+                adWatchedCallback = onAdWatched
+                val currentAd = rewardedAd
+                if (currentAd != null) {
+                    android.util.Log.d("PlayWinDebug", "RewardedAd available: true")
+                    android.util.Log.d("PlayWinDebug", "RewardedAd.show() called")
+                    showAdLoadingDialog = false
+                    currentAd.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {
+                            android.util.Log.d("PlayWinDebug", "onAdDismissed() called")
+                            rewardedAd = null
+                            android.util.Log.d("PlayWinDebug", "Reload next RewardedAd")
+                            loadAd()
+                        }
+
+                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
+                            android.util.Log.e("PlayWinDebug", "RewardedAd failed to show: ${error.message}")
+                            rewardedAd = null
+                            showAdLoadingDialog = false
+                            errorMessage = "Ad failed to show. Preloading another..."
+                            android.util.Log.d("PlayWinDebug", "Reload next RewardedAd")
+                            loadAd()
+                        }
+                    }
+
+                    currentAd.show(act, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
+                        android.util.Log.d("PlayWinDebug", "onUserEarnedReward() triggered")
+                        viewModel.grantAdSpinRewardLocally()
+                        onAdWatched()
+                    })
+                } else {
+                    android.util.Log.e("PlayWinDebug", "RewardedAd is NULL")
+                    showAdLoadingDialog = true
+                    loadAd()
+                }
+            }
+        }
+    }
+
     // Premium theme color palette
     val customPalette = listOf(
         Color(0xFF6A1B9A), // Royal Deep Purple
@@ -116,9 +224,15 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         viewModel.refreshUserData()
     }
 
+    LaunchedEffect(activity) {
+        if (activity != null) {
+            adController.loadAd()
+        }
+    }
+
     if (showAdLoadingDialog) {
         AlertDialog(
-            onDismissRequest = { /* Cannot dismiss while loading */ },
+            onDismissRequest = { showAdLoadingDialog = false },
             confirmButton = {},
             title = {
                 Text(
@@ -196,9 +310,9 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
             }
             showAdOverlay = false
             
-            viewModel.unlockAdSpin { success, errorMsg ->
+            viewModel.performSpinWheelTransaction(viewModel.rollSpinRewardDynamic(), isAdSpin = true) { success, errorMsg ->
                 if (!success) {
-                    errorMessage = errorMsg ?: "Failed to unlock extra spin."
+                    errorMessage = errorMsg ?: "Failed to complete extra spin."
                 }
             }
         }
@@ -511,95 +625,109 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(28.dp))
 
                 // SPIN NOW Button configuration
-                val buttonEnabled = !isSpinning && (
-                    !freeSpinUsed || (freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins > 0)
-                )
+                val buttonEnabled = !isSpinning && spinsLeft > 0
+                val isAdRequired = wallet.dailySpinCount >= spinWheelConfig.dailyFreeSpins
+
+                fun startSpin(isAdSpin: Boolean) {
+                    if (isSpinning) return
+                    android.util.Log.d("PlayWinDebug", "SPIN_STARTED")
+                    val isAdReq = wallet.dailySpinCount >= spinWheelConfig.dailyFreeSpins
+                    android.util.Log.d("PlayWinDebug", "BUTTON_STATE=${if (isAdReq) "WATCH_AD" else "SPIN_NOW"}")
+                    val targetSector = viewModel.rollSpinRewardDynamic()
+                    if (targetSector != -1) {
+                        isSpinning = true
+                        if (isSoundEnabled) {
+                            SpinSynthPlayer.playSwipeChirp()
+                        }
+                        coroutineScope.launch {
+                            val sectorAngle = 360f / sectors.size
+                            val targetAngle = 360f - (targetSector * sectorAngle + sectorAngle / 2f)
+                            val extraTurns = 5 * 360f
+                            val finalRotationTarget = rotationAngle - (rotationAngle % 360f) + extraTurns + targetAngle
+
+                            var lastTickSegment = -1
+                            animate(
+                                initialValue = rotationAngle,
+                                targetValue = finalRotationTarget,
+                                animationSpec = tween(
+                                    durationMillis = 4000,
+                                    easing = FastOutSlowInEasing
+                                )
+                            ) { value, _ ->
+                                rotationAngle = value
+                                val currentSegment = (value / sectorAngle).toInt()
+                                if (currentSegment != lastTickSegment) {
+                                    lastTickSegment = currentSegment
+                                    if (isSoundEnabled) {
+                                        SpinSynthPlayer.playTone(1000.0, 15, 0.4f)
+                                    }
+                                    if (isVibrationEnabled) {
+                                        SpinVibrator.vibrate(context, 10L)
+                                    }
+                                    // Trigger needle bounce
+                                    coroutineScope.launch {
+                                        animate(0f, -12f, animationSpec = tween(40, easing = LinearEasing)) { v, _ -> needleBounceAngle = v }
+                                        animate(-12f, 0f, animationSpec = tween(80, easing = LinearEasing)) { v, _ -> needleBounceAngle = v }
+                                    }
+                                }
+                            }
+
+                            viewModel.performSpinWheelTransaction(targetSector, isAdSpin = isAdSpin) { success, errorMsg ->
+                                isSpinning = false
+                                if (success) {
+                                    android.util.Log.d("PlayWinDebug", "FIREBASE_UPDATED")
+                                    android.util.Log.d("PlayWinDebug", "SPIN_COMPLETED")
+                                    val selectedReward = activeRewards[targetSector]
+                                    wonRewardName = selectedReward.name
+                                    wonRewardType = selectedReward.type
+                                    wonRewardValue = selectedReward.value
+
+                                    // Play Stopped & Reward Sounds
+                                    if (isSoundEnabled) {
+                                        when {
+                                            selectedReward.type.trim().equals("Retry", ignoreCase = true) -> {
+                                                SpinSynthPlayer.playRetryChord()
+                                            }
+                                            selectedReward.type.trim().equals("Fail", ignoreCase = true) || selectedReward.name.contains("Luck", ignoreCase = true) -> {
+                                                SpinSynthPlayer.playFailChord()
+                                            }
+                                            else -> {
+                                                SpinSynthPlayer.playWinChord()
+                                                coroutineScope.launch {
+                                                    delay(600)
+                                                    SpinSynthPlayer.playCoinChime()
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    showResultTitle = if (selectedReward.type.trim().equals("Fail", ignoreCase = true) || selectedReward.name.contains("Luck", ignoreCase = true)) {
+                                        "Better Luck Next Time"
+                                    } else {
+                                        "🎉 Congratulations!"
+                                    }
+                                    showResultMessage = "You won $wonRewardName"
+                                    showResultPopup = true
+                                } else {
+                                    errorMessage = errorMsg ?: "Transaction failed."
+                                }
+                            }
+                        }
+                    } else {
+                        isSpinning = false
+                        errorMessage = "No active rewards available to spin."
+                    }
+                }
 
                 Button(
                     onClick = {
                         if (!isSpinning) {
-                            val targetSector = viewModel.rollSpinRewardDynamic()
-                            if (targetSector != -1) {
-                                isSpinning = true
-                                if (isSoundEnabled) {
-                                    SpinSynthPlayer.playSwipeChirp()
-                                }
-                                coroutineScope.launch {
-                                    val sectorAngle = 360f / sectors.size
-                                    val targetAngle = 360f - (targetSector * sectorAngle + sectorAngle / 2f)
-                                    val extraTurns = 5 * 360f
-                                    val finalRotationTarget = rotationAngle - (rotationAngle % 360f) + extraTurns + targetAngle
-
-                                    var lastTickSegment = -1
-                                    animate(
-                                        initialValue = rotationAngle,
-                                        targetValue = finalRotationTarget,
-                                        animationSpec = tween(
-                                            durationMillis = 4000,
-                                            easing = FastOutSlowInEasing
-                                        )
-                                    ) { value, _ ->
-                                        rotationAngle = value
-                                        val currentSegment = (value / sectorAngle).toInt()
-                                        if (currentSegment != lastTickSegment) {
-                                            lastTickSegment = currentSegment
-                                            if (isSoundEnabled) {
-                                                SpinSynthPlayer.playTone(1000.0, 15, 0.4f)
-                                            }
-                                            if (isVibrationEnabled) {
-                                                SpinVibrator.vibrate(context, 10L)
-                                            }
-                                            // Trigger needle bounce
-                                            coroutineScope.launch {
-                                                animate(0f, -12f, animationSpec = tween(40, easing = LinearEasing)) { v, _ -> needleBounceAngle = v }
-                                                animate(-12f, 0f, animationSpec = tween(80, easing = LinearEasing)) { v, _ -> needleBounceAngle = v }
-                                            }
-                                        }
-                                    }
-
-                                    val isAdFlow = freeSpinUsed
-                                    viewModel.performSpinWheelTransaction(targetSector, isAdSpin = isAdFlow) { success, errorMsg ->
-                                        isSpinning = false
-                                        if (success) {
-                                            val selectedReward = activeRewards[targetSector]
-                                            wonRewardName = selectedReward.name
-                                            wonRewardType = selectedReward.type
-                                            wonRewardValue = selectedReward.value
-
-                                            // Play Stopped & Reward Sounds
-                                            if (isSoundEnabled) {
-                                                when {
-                                                    selectedReward.type.trim().equals("Retry", ignoreCase = true) -> {
-                                                        SpinSynthPlayer.playRetryChord()
-                                                    }
-                                                    selectedReward.type.trim().equals("Fail", ignoreCase = true) || selectedReward.name.contains("Luck", ignoreCase = true) -> {
-                                                        SpinSynthPlayer.playFailChord()
-                                                    }
-                                                    else -> {
-                                                        SpinSynthPlayer.playWinChord()
-                                                        coroutineScope.launch {
-                                                            delay(600)
-                                                            SpinSynthPlayer.playCoinChime()
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            showResultTitle = if (selectedReward.type.trim().equals("Fail", ignoreCase = true) || selectedReward.name.contains("Luck", ignoreCase = true)) {
-                                                "Better Luck Next Time"
-                                            } else {
-                                                "🎉 Congratulations!"
-                                            }
-                                            showResultMessage = "You won $wonRewardName"
-                                            showResultPopup = true
-                                        } else {
-                                            errorMessage = errorMsg ?: "Transaction failed."
-                                        }
-                                    }
+                            if (isAdRequired) {
+                                adController.showAndPlayAd {
+                                    startSpin(isAdSpin = true)
                                 }
                             } else {
-                                isSpinning = false
-                                errorMessage = "No active rewards available to spin."
+                                startSpin(isAdSpin = false)
                             }
                         }
                     },
@@ -636,7 +764,7 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            if (!buttonEnabled && wallet.remainingSpins == 0) {
+                            if (!buttonEnabled && spinsLeft == 0) {
                                 Icon(
                                     imageVector = Icons.Default.Lock,
                                     contentDescription = "Locked",
@@ -645,101 +773,20 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Today's Spins Completed",
-                                    color = Color.White.copy(alpha = 0.4f),
+                                    text = "Spins Reset in $remainingTime",
+                                    color = Color.White.copy(alpha = 0.6f),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
+                                    fontSize = 15.sp
                                 )
                             } else {
                                 Text(
-                                    text = if (isSpinning) "🌀 SPINNING..." else "🎡 SPIN NOW",
+                                    text = if (isSpinning) "🌀 SPINNING..." else if (isAdRequired) "🎬 WATCH AD & SPIN" else "🎡 SPIN NOW",
                                     color = Color(0xFF130F26),
                                     fontWeight = FontWeight.Black,
                                     fontSize = 18.sp,
                                     letterSpacing = 1.sp
                                 )
                             }
-                        }
-                    }
-                }
-
-                // Reward Ad option
-                if (freeSpinUsed && rewardAdSpinUsed && wallet.remainingSpins > 0 && !isSpinning) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            if (activity != null) {
-                                showAdLoadingDialog = true
-                                val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                                val adUnitId = "ca-app-pub-3940256099942544/5224354917"
-                                
-                                com.google.android.gms.ads.rewarded.RewardedAd.load(
-                                    activity,
-                                    adUnitId,
-                                    adRequest,
-                                    object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                                        override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
-                                            showAdLoadingDialog = false
-                                            var earnedReward = false
-                                            
-                                            ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                                                override fun onAdDismissedFullScreenContent() {
-                                                    if (earnedReward) {
-                                                        viewModel.unlockAdSpin { success, errorMsg ->
-                                                            if (!success) {
-                                                                errorMessage = errorMsg ?: "Failed to unlock extra spin."
-                                                            }
-                                                        }
-                                                    } else {
-                                                        errorMessage = "Ad skipped or closed early. No spin unlocked."
-                                                    }
-                                                }
-                                                
-                                                override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                                                    adSecondsLeft = 3
-                                                    showAdOverlay = true
-                                                }
-                                            }
-                                            
-                                            ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
-                                                earnedReward = true
-                                            })
-                                        }
-
-                                        override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                                            showAdLoadingDialog = false
-                                            adSecondsLeft = 3
-                                            showAdOverlay = true
-                                        }
-                                    }
-                                )
-                            } else {
-                                adSecondsLeft = 3
-                                showAdOverlay = true
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .height(50.dp)
-                            .shadow(4.dp, RoundedCornerShape(25.dp))
-                            .testTag("watch_reward_ad_spin_button"),
-                        shape = RoundedCornerShape(25.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFD32F2F)
-                        )
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(Icons.Default.PlayCircleFilled, contentDescription = "Play Ad", tint = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "🎬 Watch Reward Ad to Unlock 1 Extra Spin",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
                         }
                     }
                 }
@@ -812,7 +859,11 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         rewardValue = wonRewardValue,
         isSoundEnabled = isSoundEnabled,
         isVibrationEnabled = isVibrationEnabled,
-        onDismiss = { showResultPopup = false }
+        onDismiss = {
+            android.util.Log.d("PlayWinDebug", "REWARD_COLLECTED")
+            showResultPopup = false
+            viewModel.refreshUserData()
+        }
     )
 
     // Error Alert display dialog
@@ -1582,9 +1633,12 @@ object ScratchSoundPlayer {
 @Composable
 fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val wallet by viewModel.walletState.collectAsStateWithLifecycle()
+    val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val settings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
     val rewards by viewModel.scratchCardRewardsState.collectAsStateWithLifecycle()
+    val scratchState by viewModel.userScratchCardStateState.collectAsStateWithLifecycle()
+    val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val activity = context as? android.app.Activity
@@ -1604,29 +1658,118 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
     // Ad management states
     var showAdLoadingDialog by remember { mutableStateOf(false) }
-    var showAdOverlay by remember { mutableStateOf(false) }
-    var adSecondsLeft by remember { mutableStateOf(0) }
+    var hasWatchedAdForCurrentCard by remember { mutableStateOf(false) }
 
     // Dynamic checks
-    val scratchesToday = currentUser?.scratchesToday ?: 0
-    val cardsLeft = maxOf(0, settings.dailyLimit - scratchesToday)
+    val scratchesToday = scratchState.scratchesToday
+    val cardsLeft = maxOf(0, settings.dailyScratchLimit - scratchesToday)
     val userLevel = currentUser?.level ?: 1
 
+    val freeScratchUsed = scratchState.freeScratchUsed
+    val rewardedScratchUsed = scratchState.rewardedScratchUsed
+    val needsAdToUnlock = scratchesToday >= settings.dailyFreeScratch && 
+                           settings.rewardedScratchEnabled && 
+                           rewardedScratchUsed < settings.maxRewardedScratchPerDay &&
+                           scratchesToday < settings.dailyScratchLimit
+
     // Cooldown verification
-    val lastScratchTime = currentUser?.lastScratchResetTime ?: 0L
-    val cooldownDurationMs = settings.cooldownMinutes * 60 * 1000L
-    val timeElapsed = System.currentTimeMillis() - lastScratchTime
-    val isCooldownActive = lastScratchTime > 0L && timeElapsed < cooldownDurationMs
+    val lastScratchTimestamp = scratchState.lastScratchTimestamp
+    val cooldownDurationMs = settings.rewardCooldownMinutes * 60 * 1000L
+    val isCooldownActive = lastScratchTimestamp > 0L && currentServerTime < (lastScratchTimestamp + cooldownDurationMs)
 
     // Live countdown timer state
-    var cooldownSecondsLeft by remember { mutableStateOf(0L) }
-    LaunchedEffect(lastScratchTime, settings.cooldownMinutes) {
-        while (true) {
-            val elapsed = System.currentTimeMillis() - lastScratchTime
-            val remaining = cooldownDurationMs - elapsed
-            cooldownSecondsLeft = if (remaining > 0L) remaining / 1000L else 0L
-            delay(1000L)
+    val cooldownSecondsLeft = if (isCooldownActive) {
+        maxOf(0L, (lastScratchTimestamp + cooldownDurationMs - currentServerTime) / 1000L)
+    } else {
+        0L
+    }
+
+    var rewardedAd by remember { mutableStateOf<com.google.android.gms.ads.rewarded.RewardedAd?>(null) }
+    var isLoadingAd by remember { mutableStateOf(false) }
+    var adWatchedCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    val adController = remember(activity, isLoadingAd, rewardedAd, adWatchedCallback) {
+        object {
+            fun loadAd() {
+                val act = activity ?: return
+                if (isLoadingAd || rewardedAd != null) {
+                    return
+                }
+                isLoadingAd = true
+                android.util.Log.d("PlayWinDebug", "Scratch preloading Ad started.")
+                val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
+                val adUnitId = "ca-app-pub-3940256099942544/5224354917"
+
+                com.google.android.gms.ads.rewarded.RewardedAd.load(
+                    act,
+                    adUnitId,
+                    adRequest,
+                    object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
+                        override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
+                            android.util.Log.d("PlayWinDebug", "Scratch Ad loaded successfully")
+                            isLoadingAd = false
+                            rewardedAd = ad
+                            if (showAdLoadingDialog) {
+                                showAdLoadingDialog = false
+                                val callback = adWatchedCallback
+                                if (callback != null) {
+                                    adWatchedCallback = null
+                                    showAndPlayAd(callback)
+                                }
+                            }
+                        }
+
+                        override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
+                            android.util.Log.e("PlayWinDebug", "Scratch Ad Failed to load: ${loadAdError.message}")
+                            isLoadingAd = false
+                            rewardedAd = null
+                            if (showAdLoadingDialog) {
+                                showAdLoadingDialog = false
+                                errorMessage = "Failed to load ad. Please try again."
+                            }
+                            coroutineScope.launch {
+                                delay(5000)
+                                loadAd()
+                            }
+                        }
+                    }
+                )
+            }
+
+            fun showAndPlayAd(onAdWatched: () -> Unit) {
+                val act = activity ?: return
+                adWatchedCallback = onAdWatched
+                val currentAd = rewardedAd
+                if (currentAd != null) {
+                    showAdLoadingDialog = false
+                    currentAd.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {
+                            rewardedAd = null
+                            loadAd()
+                        }
+
+                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
+                            rewardedAd = null
+                            showAdLoadingDialog = false
+                            errorMessage = "Ad failed to show. Preloading another..."
+                            loadAd()
+                        }
+                    }
+
+                    currentAd.show(act, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
+                        android.util.Log.d("PlayWinDebug", "Scratch onUserEarnedReward() triggered")
+                        onAdWatched()
+                    })
+                } else {
+                    showAdLoadingDialog = true
+                    loadAd()
+                }
+            }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        adController.loadAd()
     }
 
     // Grid scratch area tracker (12x8 grid)
@@ -1781,7 +1924,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$cardsLeft / ${settings.dailyLimit}",
+                            text = "$cardsLeft / ${settings.dailyScratchLimit}",
                             style = MaterialTheme.typography.titleLarge,
                             color = GoldCoin,
                             fontWeight = FontWeight.Bold
@@ -1836,7 +1979,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                         Text("The scratch card feature is temporarily disabled by the admin. Please try again later.", color = TextWhite.copy(alpha = 0.7f), textAlign = TextAlign.Center)
                     }
                 }
-            } else if (userLevel < settings.minimumLevel) {
+            } else if (userLevel < settings.minimumUserLevel) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1851,7 +1994,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                     ) {
                         Icon(Icons.Default.Lock, contentDescription = "Level Locked", tint = PrimaryDark, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Requires Level ${settings.minimumLevel}", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text("Requires Level ${settings.minimumUserLevel}", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("You are currently Level $userLevel. Continue completing tasks to level up and unlock this game!", color = TextWhite.copy(alpha = 0.7f), textAlign = TextAlign.Center)
                     }
@@ -1894,7 +2037,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Come back tomorrow for another ${settings.dailyLimit} cards!",
+                        text = "Come back tomorrow for another ${settings.dailyScratchLimit} cards!",
                         color = TextWhite.copy(alpha = 0.6f),
                         textAlign = TextAlign.Center
                     )
@@ -1972,8 +2115,9 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer { alpha = 0.99f }
-                                .pointerInput(isProcessing) {
+                                .pointerInput(isProcessing, needsAdToUnlock, hasWatchedAdForCurrentCard) {
                                     if (isProcessing || isFullyScratched) return@pointerInput
+                                    if (needsAdToUnlock && !hasWatchedAdForCurrentCard) return@pointerInput
                                     detectDragGestures(
                                         onDragStart = { offset ->
                                             if (!isStarted && !isProcessing) {
@@ -2117,6 +2261,53 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                                 Text("Securing reward...", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                         }
+                    } else if (needsAdToUnlock && !hasWatchedAdForCurrentCard) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.85f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow, 
+                                    contentDescription = "Unlock Card Icon", 
+                                    tint = GoldCoin, 
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Watch Ad to Unlock Card",
+                                    color = TextWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Extra scratch cards require watching a rewarded ad first.",
+                                    color = TextWhite.copy(alpha = 0.6f),
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        adController.showAndPlayAd {
+                                            hasWatchedAdForCurrentCard = true
+                                            android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.testTag("unlock_scratch_card_ad_btn")
+                                ) {
+                                    Text("WATCH AD TO UNLOCK", color = CardDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                            }
+                        }
                     } else if (!isStarted && cardsLeft > 0) {
                         // Instruct overlay sitting on the front
                         Box(
@@ -2159,8 +2350,8 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                     }
                 } else {
                     Text(
-                        text = "Swipe/Scratch Here!",
-                        color = GoldCoin,
+                        text = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) "Unlock With Ad First!" else "Swipe/Scratch Here!",
+                        color = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) Color.Red else GoldCoin,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 16.dp)
@@ -2539,8 +2730,8 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                                         } catch (ex: Exception) {}
 
                                         wonReward?.let { r ->
-                                            android.util.Log.d("PlayWinScratch", "[UI_CLICK] Collecting reward: ${r.name}, type: ${r.type}, value: ${r.value}, txId: $scratchTxId")
-                                            viewModel.performScratchCardTransactionSecure(r, scratchTxId) { success, reward, err ->
+                                            android.util.Log.d("PlayWinScratch", "[UI_CLICK] Collecting reward: ${r.name}, type: ${r.type}, value: ${r.value}, txId: $scratchTxId, isAdScratch: $needsAdToUnlock")
+                                            viewModel.performScratchCardTransactionSecure(r, scratchTxId, isAdScratch = needsAdToUnlock) { success, reward, err ->
                                                 isCollecting = false
                                                 if (success && reward != null) {
                                                     android.util.Log.d("PlayWinScratch", "[UI_SUCCESS] Reward collection committed successfully!")
@@ -2551,6 +2742,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                                                     isFullyScratched = false
                                                     isStarted = false
                                                     wonReward = null
+                                                    hasWatchedAdForCurrentCard = false // reset ad watch state for the next card!
                                                 } else {
                                                     android.util.Log.e("PlayWinScratch", "[UI_FAILURE] Reward collection failed: $err")
                                                     errorMessage = err ?: "Failed to process reward transaction."
@@ -2665,56 +2857,6 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
             containerColor = CardDark,
             shape = RoundedCornerShape(24.dp)
         )
-    }
-
-    // Ad watch / delay overlay dialogues
-    if (showAdOverlay) {
-        AlertDialog(
-            onDismissRequest = {},
-            confirmButton = {},
-            title = {
-                Text("📺 Watching Rewarded Ad", color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator(
-                        progress = adSecondsLeft.toFloat() / 3f,
-                        color = GoldCoin,
-                        strokeWidth = 4.dp
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Your ad is playing... extra scratch in ${adSecondsLeft}s",
-                        color = Color.White.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            },
-            containerColor = CardDark,
-            shape = RoundedCornerShape(24.dp)
-        )
-
-        LaunchedEffect(Unit) {
-            adSecondsLeft = 3
-            while (adSecondsLeft > 0) {
-                delay(1000L)
-                adSecondsLeft--
-            }
-            showAdOverlay = false
-            viewModel.unlockAdScratch { success, errorMsg ->
-                if (success) {
-                    dragPoints.clear()
-                    isFullyScratched = false
-                    isStarted = false
-                    errorMessage = null
-                } else {
-                    errorMessage = errorMsg ?: "Failed to unlock extra scratch."
-                }
-            }
-        }
     }
 
     if (showAdLoadingDialog) {
@@ -3127,7 +3269,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                     )
                 } else {
                     Text(
-                        text = "Today's Scratch Cards Finished\nCome back tomorrow.",
+                        text = "Today's Scratch Cards Finished\nReset in $remainingTime",
                         color = Color.Red,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,

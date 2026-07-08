@@ -31,6 +31,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Pre-create WebView default directories to prevent chromium opendir errors from polluting logcat
+        try {
+            val cacheDir = this.cacheDir
+            if (cacheDir != null) {
+                val webViewCodeCacheDir = java.io.File(cacheDir, "WebView/Default/HTTP Cache/Code Cache")
+                java.io.File(webViewCodeCacheDir, "js").mkdirs()
+                java.io.File(webViewCodeCacheDir, "wasm").mkdirs()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to pre-create WebView default cache directories", e)
+        }
+
         // Initialize Google Mobile Ads SDK
         try {
             MobileAds.initialize(this)

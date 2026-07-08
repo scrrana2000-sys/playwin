@@ -1005,6 +1005,7 @@ class FirebaseDbManager {
         val userRef = usersRef.child(userId)
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                com.playwin.app.data.model.verifyAndLogBooleans(snapshot)
                 val user = snapshot.getValue(FirebaseUser::class.java)
                 trySend(user)
             }
@@ -1023,6 +1024,7 @@ class FirebaseDbManager {
         }
         usersRef.child(userId).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                com.playwin.app.data.model.verifyAndLogBooleans(snapshot)
                 val user = snapshot.getValue(FirebaseUser::class.java)
                 continuation.resume(user) {}
             }
@@ -1373,6 +1375,7 @@ class FirebaseDbManager {
     fun observeAllUsers(): kotlinx.coroutines.flow.Flow<List<FirebaseUser>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                com.playwin.app.data.model.verifyAndLogBooleans(snapshot)
                 val list = mutableListOf<FirebaseUser>()
                 for (child in snapshot.children) {
                     try {
@@ -2180,53 +2183,115 @@ class FirebaseDbManager {
     }
 
     fun observeScratchCardSettings(): Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = callbackFlow {
-        val ref = database.getReference("settings/scratchCard")
+        val ref = database.getReference("admin/gameSettings/scratchCard")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
                     val defaultSettings = com.playwin.app.data.model.FirebaseScratchCardSettings()
-                    ref.setValue(defaultSettings)
                     trySend(defaultSettings)
                     return
                 }
                 try {
-                    val enabledVal = snapshot.child("enabled").value
+                    val enabledVal = snapshot.child("enabled").value ?: snapshot.child("active").value ?: true
                     val enabled = when (enabledVal) {
                         is Boolean -> enabledVal
                         is String -> enabledVal.toBoolean()
+                        is Number -> enabledVal.toInt() != 0
                         else -> true
                     }
-                    val dailyLimitVal = snapshot.child("dailyLimit").value
-                    val dailyLimit = when (dailyLimitVal) {
-                        is Number -> dailyLimitVal.toInt()
-                        is String -> dailyLimitVal.toIntOrNull() ?: 5
+                    val dailyScratchLimitVal = snapshot.child("dailyScratchLimit").value ?: snapshot.child("dailyLimit").value
+                    val dailyScratchLimit = when (dailyScratchLimitVal) {
+                        is Number -> dailyScratchLimitVal.toInt()
+                        is String -> dailyScratchLimitVal.toIntOrNull() ?: 5
                         else -> 5
                     }
-                    val cooldownMinutesVal = snapshot.child("cooldownMinutes").value
-                    val cooldownMinutes = when (cooldownMinutesVal) {
-                        is Number -> cooldownMinutesVal.toInt()
-                        is String -> cooldownMinutesVal.toIntOrNull() ?: 15
-                        else -> 15
-                    }
-                    val rewardAdRequiredVal = snapshot.child("rewardAdRequired").value
-                    val rewardAdRequired = when (rewardAdRequiredVal) {
-                        is Boolean -> rewardAdRequiredVal
-                        is String -> rewardAdRequiredVal.toBoolean()
-                        else -> false
-                    }
-                    val minimumLevelVal = snapshot.child("minimumLevel").value
-                    val minimumLevel = when (minimumLevelVal) {
-                        is Number -> minimumLevelVal.toInt()
-                        is String -> minimumLevelVal.toIntOrNull() ?: 1
+                    val dailyFreeScratchVal = snapshot.child("dailyFreeScratch").value ?: snapshot.child("freeScratches").value
+                    val dailyFreeScratch = when (dailyFreeScratchVal) {
+                        is Number -> dailyFreeScratchVal.toInt()
+                        is String -> dailyFreeScratchVal.toIntOrNull() ?: 1
                         else -> 1
                     }
-                    trySend(com.playwin.app.data.model.FirebaseScratchCardSettings(enabled, dailyLimit, cooldownMinutes, rewardAdRequired, minimumLevel))
+                    val rewardedScratchEnabledVal = snapshot.child("rewardedScratchEnabled").value
+                    val rewardedScratchEnabled = when (rewardedScratchEnabledVal) {
+                        is Boolean -> rewardedScratchEnabledVal
+                        is String -> rewardedScratchEnabledVal.toBoolean()
+                        is Number -> rewardedScratchEnabledVal.toInt() != 0
+                        else -> true
+                    }
+                    val requireAdForEveryExtraScratchVal = snapshot.child("requireAdForEveryExtraScratch").value ?: snapshot.child("rewardAdRequired").value
+                    val requireAdForEveryExtraScratch = when (requireAdForEveryExtraScratchVal) {
+                        is Boolean -> requireAdForEveryExtraScratchVal
+                        is String -> requireAdForEveryExtraScratchVal.toBoolean()
+                        is Number -> requireAdForEveryExtraScratchVal.toInt() != 0
+                        else -> true
+                    }
+                    val maxRewardedScratchPerDayVal = snapshot.child("maxRewardedScratchPerDay").value ?: snapshot.child("maxRewardedSpins").value
+                    val maxRewardedScratchPerDay = when (maxRewardedScratchPerDayVal) {
+                        is Number -> maxRewardedScratchPerDayVal.toInt()
+                        is String -> maxRewardedScratchPerDayVal.toIntOrNull() ?: 5
+                        else -> 5
+                    }
+                    val rewardCooldownMinutesVal = snapshot.child("rewardCooldownMinutes").value ?: snapshot.child("cooldownMinutes").value
+                    val rewardCooldownMinutes = when (rewardCooldownMinutesVal) {
+                        is Number -> rewardCooldownMinutesVal.toInt()
+                        is String -> rewardCooldownMinutesVal.toIntOrNull() ?: 0
+                        else -> 0
+                    }
+                    val minimumUserLevelVal = snapshot.child("minimumUserLevel").value ?: snapshot.child("minimumLevel").value
+                    val minimumUserLevel = when (minimumUserLevelVal) {
+                        is Number -> minimumUserLevelVal.toInt()
+                        is String -> minimumUserLevelVal.toIntOrNull() ?: 1
+                        else -> 1
+                    }
+                    val settings = com.playwin.app.data.model.FirebaseScratchCardSettings(
+                        enabled = enabled,
+                        dailyScratchLimit = dailyScratchLimit,
+                        dailyFreeScratch = dailyFreeScratch,
+                        rewardedScratchEnabled = rewardedScratchEnabled,
+                        requireAdForEveryExtraScratch = requireAdForEveryExtraScratch,
+                        maxRewardedScratchPerDay = maxRewardedScratchPerDay,
+                        rewardCooldownMinutes = rewardCooldownMinutes,
+                        minimumUserLevel = minimumUserLevel
+                    )
+                    trySend(settings)
                 } catch (e: Exception) {
                     trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
                 }
             }
             override fun onCancelled(error: DatabaseError) {
                 trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    fun observeUserScratchCardState(userId: String): Flow<com.playwin.app.data.model.FirebaseUserScratchCardState> = callbackFlow {
+        if (userId.isEmpty()) {
+            trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+            close()
+            return@callbackFlow
+        }
+        val ref = database.getReference("users").child(userId).child("scratchCard")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                    return
+                }
+                try {
+                    val state = snapshot.getValue(com.playwin.app.data.model.FirebaseUserScratchCardState::class.java)
+                    if (state != null) {
+                        trySend(state)
+                    } else {
+                        trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                    }
+                } catch (e: Exception) {
+                    trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
             }
         }
         ref.addValueEventListener(listener)
@@ -2373,6 +2438,7 @@ class FirebaseDbManager {
         userId: String,
         reward: com.playwin.app.data.model.FirebaseScratchCardReward,
         transactionId: String,
+        isAdScratch: Boolean,
         onComplete: (Boolean, String?, Int, Int) -> Unit
     ) {
         val typeSafe = reward.type?.trim() ?: "Coins"
@@ -2400,52 +2466,87 @@ class FirebaseDbManager {
             return
         }
 
-        android.util.Log.d("PlayWinScratchDebug", "[STEP 8] RUNNING FIREBASE TRANSACTION ON users/$userId/coins. increment: $coinIncrement, reward: ${reward.name}, txId: $transactionId")
+        android.util.Log.d("PlayWinScratchDebug", "Starting secure server Scratch Card Db Transaction for uid: $userId, txId: $transactionId, isAdScratch: $isAdScratch")
 
-        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-
-        WalletService.updateWallet(
-            userId = userId,
-            coinsDelta = coinIncrement,
-            source = "Scratch Card: ${reward.name}",
-            type = "scratch_reward",
-            extraCheck = { mutableData ->
+        val userRef = database.getReference("users").child(userId)
+        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+            override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
                 if (mutableData.child("processedScratchTx").child(transactionId).value != null) {
-                    "Transaction already processed."
-                } else {
-                    null
+                    return com.google.firebase.database.Transaction.abort()
                 }
-            },
-            extraUpdate = { mutableData ->
-                val currentTotalScratchCoins = mutableData.child("stats").child("totalScratchCoins").getValue(Int::class.java) ?: 0
-                mutableData.child("stats").child("totalScratchCoins").value = currentTotalScratchCoins + coinIncrement
-                
+
+                // Increment Coins in wallet
+                val walletRef = mutableData.child("wallet")
+                val currentCoins = walletRef.child("coins").getValue(Int::class.java) ?: 0
+                walletRef.child("coins").value = currentCoins + coinIncrement
+                walletRef.child("balance").value = currentCoins + coinIncrement
+                walletRef.child("currentCoins").value = currentCoins + coinIncrement
+
+                val totalRewardsVal = walletRef.child("totalScratchRewards").getValue(Int::class.java) ?: 0
+                walletRef.child("totalScratchRewards").value = totalRewardsVal + coinIncrement
+
+                val totalCoinsEarned = walletRef.child("totalCoinsEarned").getValue(Int::class.java) ?: 0
+                walletRef.child("totalCoinsEarned").value = totalCoinsEarned + coinIncrement
+
+                // Mark transaction as processed
                 mutableData.child("processedScratchTx").child(transactionId).value = true
-                
-                val lastScratchDate = mutableData.child("lastScratchDate").getValue(String::class.java) ?: ""
-                var scratchesToday = mutableData.child("scratchesToday").getValue(Int::class.java) ?: 0
-                if (lastScratchDate != today) {
+
+                // Update users/{uid}/scratchCard node with server timestamp and increment counts
+                val scratchCardNode = mutableData.child("scratchCard")
+                val currentServerTime = System.currentTimeMillis()
+
+                val nextReset = scratchCardNode.child("nextResetTimestamp").getValue(Long::class.java) ?: 0L
+                var freeScratchUsed = scratchCardNode.child("freeScratchUsed").getValue(Int::class.java) ?: 0
+                var rewardedScratchUsed = scratchCardNode.child("rewardedScratchUsed").getValue(Int::class.java) ?: 0
+                var scratchesToday = scratchCardNode.child("scratchesToday").getValue(Int::class.java) ?: 0
+
+                if (currentServerTime >= nextReset) {
+                    freeScratchUsed = 0
+                    rewardedScratchUsed = 0
                     scratchesToday = 0
+                    
+                    val calendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                    calendar.timeInMillis = currentServerTime
+                    calendar.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                    calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    calendar.set(java.util.Calendar.MINUTE, 0)
+                    calendar.set(java.util.Calendar.SECOND, 0)
+                    calendar.set(java.util.Calendar.MILLISECOND, 0)
+                    scratchCardNode.child("nextResetTimestamp").value = calendar.timeInMillis
+                }
+
+                if (isAdScratch) {
+                    rewardedScratchUsed += 1
+                    scratchCardNode.child("lastRewardedAdTimestamp").value = com.google.firebase.database.ServerValue.TIMESTAMP
+                } else {
+                    freeScratchUsed += 1
                 }
                 scratchesToday += 1
+
+                scratchCardNode.child("freeScratchUsed").value = freeScratchUsed
+                scratchCardNode.child("rewardedScratchUsed").value = rewardedScratchUsed
+                scratchCardNode.child("scratchesToday").value = scratchesToday
+                scratchCardNode.child("lastScratchTimestamp").value = com.google.firebase.database.ServerValue.TIMESTAMP
+
+                // Legacy scratch fields update for compatibility
+                val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                mutableData.child("lastScratchDate").value = todayStr
                 mutableData.child("scratchesToday").value = scratchesToday
-                
-                val remainingScratchCards = mutableData.child("remainingScratchCards").getValue(Int::class.java) ?: 0
-                if (reward.type == "Retry Scratch") {
-                    mutableData.child("remainingScratchCards").value = remainingScratchCards
-                } else if (remainingScratchCards > 0) {
-                    mutableData.child("remainingScratchCards").value = remainingScratchCards - 1
-                }
-                
-                val totalRewardsVal = mutableData.child("totalScratchRewards").getValue(Int::class.java) ?: 0
-                mutableData.child("totalScratchRewards").value = totalRewardsVal + coinIncrement
-                
-                mutableData.child("lastScratchDate").value = today
-                mutableData.child("lastScratchResetTime").value = System.currentTimeMillis()
-            },
-            onComplete = { success, coinsBefore, coinsAfter, errorMsg ->
-                if (success) {
-                    android.util.Log.d("PlayWinScratchDebug", "[STEP 9] TRANSACTION SUCCESS: Wallet balance BEFORE: $coinsBefore, AFTER: $coinsAfter")
+                mutableData.child("lastScratchResetTime").value = currentServerTime
+
+                return com.google.firebase.database.Transaction.success(mutableData)
+            }
+
+            override fun onComplete(
+                error: com.google.firebase.database.DatabaseError?,
+                committed: Boolean,
+                currentData: com.google.firebase.database.DataSnapshot?
+            ) {
+                if (committed && currentData != null) {
+                    val walletSnapshot = currentData.child("wallet")
+                    val coinsAfter = walletSnapshot.child("coins").getValue(Int::class.java) ?: 0
+                    val coinsBefore = coinsAfter - coinIncrement
+
                     val timestamp = System.currentTimeMillis()
                     val tx = FirebaseTransaction(
                         id = transactionId,
@@ -2462,21 +2563,6 @@ class FirebaseDbManager {
                     )
                     database.getReference("users").child(userId).child("transactions").child(transactionId).setValue(tx)
                     database.getReference("users").child(userId).child("wallet").child("history").child(transactionId).setValue(tx)
-                    
-                    val walletRef = database.getReference("users").child(userId).child("wallet")
-                    walletRef.child("coins").setValue(coinsAfter)
-                    walletRef.child("balance").setValue(coinsAfter)
-                    walletRef.child("currentCoins").setValue(coinsAfter)
-                    walletRef.child("lastScratchTime").setValue(timestamp)
-                    walletRef.child("updatedAt").setValue(timestamp)
-                    
-                    walletRef.addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
-                        override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
-                            val currentTotal = snapshot.child("totalCoinsEarned").getValue(Int::class.java) ?: 0
-                            walletRef.child("totalCoinsEarned").setValue(currentTotal + coinIncrement)
-                        }
-                        override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
-                    })
                     
                     val historyId = database.getReference("users").child(userId).child("scratchHistory").push().key ?: "sc_$timestamp"
                     val deviceTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
@@ -2495,12 +2581,13 @@ class FirebaseDbManager {
                         transactionId = transactionId
                     )
                     database.getReference("users").child(userId).child("scratchHistory").child(historyId).setValue(history)
+
+                    onComplete(true, null, coinsBefore, coinsAfter)
                 } else {
-                    android.util.Log.e("PlayWinScratchDebug", "[STEP 9] TRANSACTION FAILURE: error: $errorMsg")
+                    onComplete(false, error?.message ?: "Transaction aborted or check failed.", 0, 0)
                 }
-                onComplete(success, errorMsg, coinsBefore, coinsAfter)
             }
-        )
+        })
     }
 }
 
