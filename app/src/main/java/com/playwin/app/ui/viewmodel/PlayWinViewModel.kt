@@ -2107,19 +2107,6 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
     data class SpinRewardOption(val amount: Int, val label: String, val index: Int)
 
-    fun rollSpinReward(): SpinRewardOption {
-        val roll = kotlin.random.Random.nextInt(100) // 0..99
-        return when {
-            roll < 35 -> SpinRewardOption(5, "+5 Coins", index = 0)
-            roll < 60 -> SpinRewardOption(10, "+10 Coins", index = 1)
-            roll < 80 -> SpinRewardOption(20, "+20 Coins", index = 2)
-            roll < 90 -> SpinRewardOption(30, "+30 Coins", index = 3)
-            roll < 97 -> SpinRewardOption(50, "+50 Coins", index = 4)
-            roll < 99 -> SpinRewardOption(100, "+100 Coins", index = 5)
-            else -> SpinRewardOption(200, "+200 Coins", index = 6)
-        }
-    }
-
     fun rollSpinRewardDynamic(): Int {
         val activeRewards = spinRewardsState.value.filter { it.active }.sortedBy { it.displayOrder }
         if (activeRewards.isEmpty()) return -1
