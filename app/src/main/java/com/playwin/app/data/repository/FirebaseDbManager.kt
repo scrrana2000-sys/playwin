@@ -2482,6 +2482,10 @@ class FirebaseDbManager {
                 walletRef.child("balance").value = currentCoins + coinIncrement
                 walletRef.child("currentCoins").value = currentCoins + coinIncrement
 
+                // Root level coins increment to ensure instant real-time sync with user flow
+                val currentRootCoins = mutableData.child("coins").getValue(Int::class.java) ?: 0
+                mutableData.child("coins").value = currentRootCoins + coinIncrement
+
                 val totalRewardsVal = walletRef.child("totalScratchRewards").getValue(Int::class.java) ?: 0
                 walletRef.child("totalScratchRewards").value = totalRewardsVal + coinIncrement
 
@@ -2581,6 +2585,15 @@ class FirebaseDbManager {
                         transactionId = transactionId
                     )
                     database.getReference("users").child(userId).child("scratchHistory").child(historyId).setValue(history)
+
+                    // Write to walletSummary node in real-time to trigger instant observer synchronization
+                    val walletSummaryMap = mapOf(
+                        "userId" to userId,
+                        "coins" to coinsAfter,
+                        "totalCoins" to coinsAfter,
+                        "lastUpdated" to timestamp
+                    )
+                    database.getReference("walletSummary").child(userId).setValue(walletSummaryMap)
 
                     onComplete(true, null, coinsBefore, coinsAfter)
                 } else {

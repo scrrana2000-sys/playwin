@@ -35,6 +35,7 @@ import com.playwin.app.ui.theme.*
 import com.playwin.app.ui.viewmodel.PlayWinViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.ui.window.Dialog
@@ -1644,6 +1645,13 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val activity = context as? android.app.Activity
     val coroutineScope = rememberCoroutineScope()
 
+    val buttonInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val isButtonPressed by buttonInteractionSource.collectIsPressedAsState()
+    val buttonScale by animateFloatAsState(
+        targetValue = if (isButtonPressed) 0.95f else 1f,
+        label = "button_scale_anim"
+    )
+
     // Local state variables
     val dragPoints = remember { mutableStateListOf<Offset>() }
     var isProcessing by remember { mutableStateOf(false) }
@@ -2115,17 +2123,11 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .graphicsLayer { alpha = 0.99f }
-                                .pointerInput(isProcessing, needsAdToUnlock, hasWatchedAdForCurrentCard) {
-                                    if (isProcessing || isFullyScratched) return@pointerInput
+                                .pointerInput(isProcessing, needsAdToUnlock, hasWatchedAdForCurrentCard, isStarted) {
+                                    if (isProcessing || isFullyScratched || !isStarted) return@pointerInput
                                     if (needsAdToUnlock && !hasWatchedAdForCurrentCard) return@pointerInput
                                     detectDragGestures(
                                         onDragStart = { offset ->
-                                            if (!isStarted && !isProcessing) {
-                                                isStarted = true
-                                                errorMessage = null
-                                                scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
-                                                wonReward = viewModel.rollScratchRewardFromFirebase()
-                                            }
                                             if (isStarted && !isProcessing) {
                                                 dragPoints.add(offset)
                                             }
@@ -2261,67 +2263,38 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                                 Text("Securing reward...", color = TextWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                         }
-                    } else if (needsAdToUnlock && !hasWatchedAdForCurrentCard) {
+                    } else if (!isStarted) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.85f)),
+                                .background(Brush.linearGradient(
+                                    colors = listOf(Color(0xFF2C2C2C), Color(0xFF1C1C1C), Color(0xFF141414))
+                                )),
                             contentAlignment = Alignment.Center
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.padding(16.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow, 
-                                    contentDescription = "Unlock Card Icon", 
-                                    tint = GoldCoin, 
-                                    modifier = Modifier.size(48.dp)
+                                Text(
+                                    text = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) "🎬" else "🎁",
+                                    fontSize = 54.sp
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "Watch Ad to Unlock Card",
-                                    color = TextWhite,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
+                                    text = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) "WATCH AD TO UNLOCK" else "PREMIUM SCRATCH CARD",
+                                    color = GoldCoin,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp,
+                                    textAlign = TextAlign.Center
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Extra scratch cards require watching a rewarded ad first.",
-                                    color = TextWhite.copy(alpha = 0.6f),
-                                    fontSize = 12.sp,
+                                    text = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) "Click WATCH AD & SCRATCH below!" else "Click SCRATCH NOW below to play!",
+                                    color = TextWhite.copy(alpha = 0.7f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
                                     textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Button(
-                                    onClick = {
-                                        adController.showAndPlayAd {
-                                            hasWatchedAdForCurrentCard = true
-                                            android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
-                                    shape = RoundedCornerShape(20.dp),
-                                    modifier = Modifier.testTag("unlock_scratch_card_ad_btn")
-                                ) {
-                                    Text("WATCH AD TO UNLOCK", color = CardDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    } else if (!isStarted && cardsLeft > 0) {
-                        // Instruct overlay sitting on the front
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.Lock, contentDescription = "Safe Lock Icon", tint = PrimaryDark, modifier = Modifier.size(42.dp))
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Scratch Safe Film Here!",
-                                    color = PrimaryDark,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
@@ -2330,31 +2303,142 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                if (isFullyScratched) {
-                    Button(
-                        onClick = {
+                val buttonEnabled = when {
+                    isProcessing -> false
+                    cardsLeft <= 0 -> false
+                    isCooldownActive -> false
+                    isStarted && !isFullyScratched -> false
+                    else -> true
+                }
+
+                Button(
+                    onClick = {
+                        if (isFullyScratched) {
                             dragPoints.clear()
                             scratchedCells.clear()
                             isFullyScratched = false
                             isStarted = false
                             wonReward = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
+                        } else if (needsAdToUnlock && !hasWatchedAdForCurrentCard) {
+                            adController.showAndPlayAd {
+                                hasWatchedAdForCurrentCard = true
+                                isStarted = true
+                                errorMessage = null
+                                scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
+                                wonReward = viewModel.rollScratchRewardFromFirebase()
+                                dragPoints.clear()
+                                scratchedCells.clear()
+                                android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        } else if (!isStarted) {
+                            isStarted = true
+                            errorMessage = null
+                            scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
+                            wonReward = viewModel.rollScratchRewardFromFirebase()
+                            dragPoints.clear()
+                            scratchedCells.clear()
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .height(56.dp)
+                        .graphicsLayer {
+                            scaleX = buttonScale
+                            scaleY = buttonScale
+                        }
+                        .shadow(8.dp, RoundedCornerShape(28.dp))
+                        .testTag("scratch_action_button"),
+                    enabled = buttonEnabled,
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        disabledContainerColor = Color(0xFF2C2C2C)
+                    ),
+                    contentPadding = PaddingValues(),
+                    interactionSource = buttonInteractionSource
+                ) {
+                    Box(
                         modifier = Modifier
-                            .width(220.dp)
-                            .height(48.dp)
-                            .testTag("scratch_another_button"),
-                        shape = RoundedCornerShape(24.dp)
+                            .fillMaxSize()
+                            .then(
+                                if (buttonEnabled) {
+                                    Modifier.background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(Color(0xFFFFE259), Color(0xFFFFA751))
+                                        )
+                                    )
+                                } else {
+                                    Modifier.background(Color(0xFF2E2E2E))
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text("SCRATCH ANOTHER", color = CardDark, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            val buttonText = when {
+                                isProcessing -> "⏳ SECURING REWARD..."
+                                cardsLeft <= 0 -> "🔒 Today's Scratch Cards Completed"
+                                isCooldownActive -> "⏳ COOLDOWN ACTIVE"
+                                isFullyScratched -> "🎉 SCRATCH ANOTHER"
+                                isStarted && !isFullyScratched -> "🎨 SWIPE ON THE CARD TO REVEAL"
+                                needsAdToUnlock && !hasWatchedAdForCurrentCard -> "🎬 WATCH AD & SCRATCH"
+                                else -> "🪙 SCRATCH NOW"
+                            }
+                            
+                            val textColor = if (buttonEnabled) Color.White else Color.White.copy(alpha = 0.4f)
+                            Text(
+                                text = buttonText,
+                                color = textColor,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 16.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
-                } else {
+                }
+
+                // Add support text / subtitle below button for distinct states
+                if (needsAdToUnlock && !hasWatchedAdForCurrentCard && !isStarted && !isFullyScratched && cardsLeft > 0 && !isCooldownActive) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) "Unlock With Ad First!" else "Swipe/Scratch Here!",
-                        color = if (needsAdToUnlock && !hasWatchedAdForCurrentCard) Color.Red else GoldCoin,
-                        fontWeight = FontWeight.Bold,
+                        text = "Watch a rewarded ad to unlock one scratch.",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
+
+                if (cardsLeft <= 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Next Reset In",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = remainingTime,
+                        color = GoldCoin,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Black,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                if (isCooldownActive && cardsLeft > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Next card available in ${cooldownSecondsLeft / 60}:${String.format("%02d", cooldownSecondsLeft % 60)}",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
