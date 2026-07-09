@@ -72,6 +72,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var firebaseWeeklyQuizProgressJob: kotlinx.coroutines.Job? = null
     private var referralsHistoryJob: kotlinx.coroutines.Job? = null
     private var quizzesJob: kotlinx.coroutines.Job? = null
+    private var firebaseQuizResetTimestampJob: kotlinx.coroutines.Job? = null
 
     val quizProgressState = MutableStateFlow<com.playwin.app.data.model.FirebaseQuizProgress?>(null)
     
@@ -85,6 +86,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val weeklyQuizProgressState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>>(emptyMap())
     val referralHistoryState = MutableStateFlow<List<FirebaseReferralRecord>>(emptyList())
     val quizzesState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseQuiz>>(emptyList())
+    val nextQuizResetTimestampState = MutableStateFlow<Long>(0L)
     
     val dailyCheckInSettingsState = MutableStateFlow<com.playwin.app.data.model.FirebaseDailyCheckInSettings?>(null)
     val dailyCheckInLoadingState = MutableStateFlow(true)
@@ -2543,6 +2545,62 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
+        firebaseQuizResetTimestampJob = viewModelScope.launch {
+            try {
+                val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                
+                // We listen to "quizzes/nextQuizResetTimestamp"
+                val ref1 = db.getReference("quizzes/nextQuizResetTimestamp")
+                val listener1 = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        val value = snapshot.getValue(Long::class.java)
+                        if (value != null && value > 0) {
+                            nextQuizResetTimestampState.value = value
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                ref1.addValueEventListener(listener1)
+
+                // We also listen to "admin/gameSettings/quiz/nextQuizResetTimestamp"
+                val ref2 = db.getReference("admin/gameSettings/quiz/nextQuizResetTimestamp")
+                val listener2 = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        val value = snapshot.getValue(Long::class.java)
+                        if (value != null && value > 0) {
+                            nextQuizResetTimestampState.value = value
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                ref2.addValueEventListener(listener2)
+
+                // We also listen to "quizSettings/nextQuizResetTimestamp"
+                val ref3 = db.getReference("quizSettings/nextQuizResetTimestamp")
+                val listener3 = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        val value = snapshot.getValue(Long::class.java)
+                        if (value != null && value > 0) {
+                            nextQuizResetTimestampState.value = value
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                ref3.addValueEventListener(listener3)
+
+                try {
+                    kotlinx.coroutines.awaitCancellation()
+                } finally {
+                    ref1.removeEventListener(listener1)
+                    ref2.removeEventListener(listener2)
+                    ref3.removeEventListener(listener3)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PlayWinQuiz", "Error listening to quiz reset timestamp", e)
+            }
+        }
+
 
 
         referralsHistoryJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -2723,7 +2781,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         referralsHistoryJob = null
         quizzesJob?.cancel()
         quizzesJob = null
+        firebaseQuizResetTimestampJob?.cancel()
+        firebaseQuizResetTimestampJob = null
         quizProgressState.value = null
+        nextQuizResetTimestampState.value = 0L
         completedQuizzesState.value = emptyMap()
         weeklyQuizProgressState.value = emptyMap()
         referralHistoryState.value = emptyList()

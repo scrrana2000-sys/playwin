@@ -1270,7 +1270,69 @@ fun QuizArenaScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val todayDate = viewModel.getLocalDateString()
 
+    // 1. Reactive Server Time & Countdown
+    val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+    val nextQuizResetTimestamp by viewModel.nextQuizResetTimestampState.collectAsStateWithLifecycle()
+
+    val nextResetVal = if (nextQuizResetTimestamp > 0L) {
+        nextQuizResetTimestamp
+    } else {
+        com.playwin.app.data.repository.DailyResetManager.getNextResetUtc(currentServerTime)
+    }
+
+    val diffMs = nextResetVal - currentServerTime
+    val countdownText = if (diffMs <= 0) {
+        "00:00:00"
+    } else {
+        val sec = (diffMs / 1000) % 60
+        val min = (diffMs / (1000 * 60)) % 60
+        val hr = (diffMs / (1000 * 60 * 60))
+        String.format(java.util.Locale.US, "%02d:%02d:%02d", hr, min, sec)
+    }
+
+    // Determine today's day of week name using UTC SimpleDateFormat
+    val sdfDay = remember {
+        java.text.SimpleDateFormat("EEEE", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+    }
+    val todayDayName = sdfDay.format(java.util.Date(currentServerTime))
+
+    // Real-time synchronization & Auto reset
+    LaunchedEffect(diffMs <= 0) {
+        if (diffMs <= 0) {
+            val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+            if (currentUserId.isNotEmpty()) {
+                com.playwin.app.data.repository.DailyResetManager.performDailyReset(currentUserId)
+            }
+        }
+    }
+
+    // App resume handler: refresh countdown / daily reset state on resume
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                if (currentUserId.isNotEmpty()) {
+                    com.playwin.app.data.repository.DailyResetManager.performDailyReset(currentUserId)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val weekdayOrder = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
     val activeQuizzes = quizzes
+        .filter { it.dayOfWeek.trim().isNotEmpty() }
+        .distinctBy { it.dayOfWeek.lowercase().trim() }
+        .sortedBy { quiz ->
+            val index = weekdayOrder.indexOfFirst { it.equals(quiz.dayOfWeek.trim(), ignoreCase = true) }
+            if (index != -1) index else 999
+        }
 
     Column(
         modifier = Modifier
@@ -1306,6 +1368,55 @@ fun QuizArenaScreen(
                     color = Color.Gray,
                     fontSize = 11.sp
                 )
+            }
+        }
+
+        // Live Reset Countdown Banner
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.5f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "Next Quiz Reset In",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = countdownText,
+                        color = Color(0xFF4CAF50),
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Color(0xFF4CAF50).copy(alpha = 0.15f), CircleShape)
+                        .border(1.dp, Color(0xFF4CAF50).copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Reset Timer",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 
@@ -1364,27 +1475,17 @@ fun QuizArenaScreen(
             }
         } else {
             activeQuizzes.forEach { quiz ->
-                val todayDayName = viewModel.getTodayDayOfWeekName()
-                val isTodayQuiz = quiz.dayOfWeek.equals(todayDayName, ignoreCase = true)
+                val isTodayQuiz = quiz.dayOfWeek.trim().equals(todayDayName, ignoreCase = true)
                 val isCompletedToday = currentDailyQuiz != null && currentDailyQuiz.completed && currentDailyQuiz.lastCompletedDate == todayDate
 
-                val cardStatus = when {
-                    isTodayQuiz && !isCompletedToday -> "AVAILABLE"
-                    isTodayQuiz && isCompletedToday -> "COMPLETED_TODAY"
-                    else -> {
-                        val isPreviouslyCompleted = currentDailyQuiz != null && currentDailyQuiz.completed && currentDailyQuiz.lastCompletedDay.equals(quiz.dayOfWeek, ignoreCase = true)
-                        if (isPreviouslyCompleted) "COMPLETED" else "LOCKED"
-                    }
+                val cardStatus = if (isTodayQuiz) {
+                    if (isCompletedToday) "COMPLETED_TODAY" else "AVAILABLE"
+                } else {
+                    "LOCKED"
                 }
 
-                val color = when (cardStatus) {
-                    "AVAILABLE" -> Color(0xFF9C27B0)
-                    "COMPLETED_TODAY" -> Color(0xFF4CAF50)
-                    "COMPLETED" -> Color(0xFF2196F3)
-                    else -> Color.Gray
-                }
-
-                val isClickable = cardStatus == "AVAILABLE"
+                val color = if (isTodayQuiz) Color(0xFF4CAF50) else Color.Gray
+                val isClickable = isTodayQuiz
 
                 Card(
                     modifier = Modifier

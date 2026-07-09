@@ -2046,6 +2046,7 @@ class FirebaseDbManager {
                         val category = (child.child("category").value ?: child.child("categoryId").value ?: "").toString()
                         val description = (child.child("description").value ?: child.child("desc").value ?: "").toString()
                         val difficulty = (child.child("difficulty").value ?: child.child("level").value ?: "Medium").toString()
+                        val dayOfWeek = (child.child("dayOfWeek").value ?: child.child("day").value ?: "").toString()
                         
                         val rewardPerQuestion = (child.child("rewardPerQuestion").value ?: child.child("rewardCoins").value ?: child.child("reward").value ?: child.child("coins").value ?: 0).toString().toIntOrNull() ?: 0
                         val rewardCoins = rewardPerQuestion
@@ -2164,6 +2165,7 @@ class FirebaseDbManager {
                             active = active,
                             status = status,
                             allowReview = allowReview,
+                            dayOfWeek = dayOfWeek,
                             questions = questionsList
                         )
                         list.add(quizItem)
