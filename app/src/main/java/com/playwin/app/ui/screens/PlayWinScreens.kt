@@ -4175,7 +4175,8 @@ fun WalletScreen(
     val dailyRewardsSum = transactions.filter { it.type == "daily_reward" }.sumOf { it.coins }
     val videoAdsSum = transactions.filter { it.type == "video_ad" }.sumOf { it.coins }
     val referralsSum = transactions.filter { it.type == "referral" }.sumOf { it.coins }
-    val spinScratchSum = transactions.filter { it.type == "spin_reward" || it.type == "scratch_reward" }.sumOf { it.coins }
+    val spinRewardsSum = transactions.filter { it.type == "spin_reward" }.sumOf { it.coins }
+    val scratchCardsSum = wallet.totalScratchRewards
 
     var showExportDialog by remember { mutableStateOf(false) }
 
@@ -4408,11 +4409,24 @@ fun WalletScreen(
                             modifier = Modifier.weight(1f)
                         )
                         SummaryCard(
-                            title = "Spin & Scratch",
-                            coins = spinScratchSum,
+                            title = "Spin Wheel",
+                            coins = spinRewardsSum,
                             icon = "🎡",
                             modifier = Modifier.weight(1f)
                         )
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        SummaryCard(
+                            title = "Scratch Cards",
+                            coins = scratchCardsSum,
+                            icon = "🎫",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box(modifier = Modifier.weight(1f))
                     }
                 }
             }

@@ -74,6 +74,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var quizzesJob: kotlinx.coroutines.Job? = null
 
     val quizProgressState = MutableStateFlow<com.playwin.app.data.model.FirebaseQuizProgress?>(null)
+    
+    // Realtime listeners for direct Firebase synchronization
+    private var firebaseWalletListener: com.google.firebase.database.ValueEventListener? = null
+    private var firebaseWalletSummaryListener: com.google.firebase.database.ValueEventListener? = null
+    private var firebaseTransactionsListener: com.google.firebase.database.ValueEventListener? = null
+    private var firebaseHistoryListener: com.google.firebase.database.ValueEventListener? = null
+    private var firebaseScratchHistoryListener: com.google.firebase.database.ValueEventListener? = null
     val completedQuizzesState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>>(emptyMap())
     val weeklyQuizProgressState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>>(emptyMap())
     val referralHistoryState = MutableStateFlow<List<FirebaseReferralRecord>>(emptyList())
@@ -2568,9 +2575,125 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 ref.removeEventListener(listener)
             }
         }
+
+        // Realtime listeners for direct Firebase synchronization
+        viewModelScope.launch {
+            try {
+                val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+
+                // 1. wallet listener: users/{userId}/wallet
+                firebaseWalletListener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        if (snapshot.exists()) {
+                            val coins = snapshot.child("coins").getValue(Int::class.java) ?: 0
+                            val totalScratchRewards = snapshot.child("totalScratchRewards").getValue(Int::class.java) ?: 0
+                            android.util.Log.d("PlayWinRealtime", "Realtime wallet updated: coins=$coins, totalScratchRewards=$totalScratchRewards")
+                            
+                            viewModelScope.launch {
+                                val currentWallet = walletState.value
+                                if (currentWallet.userId == userId) {
+                                    val updated = currentWallet.copy(
+                                        coins = coins,
+                                        totalScratchRewards = totalScratchRewards
+                                    )
+                                    repository.saveWalletLocally(updated)
+                                }
+                            }
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                db.getReference("users").child(userId).child("wallet").addValueEventListener(firebaseWalletListener!!)
+
+                // 2. walletSummary listener: walletSummary/{userId}
+                firebaseWalletSummaryListener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        if (snapshot.exists()) {
+                            val coins = snapshot.child("coins").getValue(Int::class.java) ?: 0
+                            android.util.Log.d("PlayWinRealtime", "Realtime walletSummary updated: coins=$coins")
+                            viewModelScope.launch {
+                                val currentWallet = walletState.value
+                                if (currentWallet.userId == userId && currentWallet.coins != coins) {
+                                    val updated = currentWallet.copy(coins = coins)
+                                    repository.saveWalletLocally(updated)
+                                }
+                            }
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                db.getReference("walletSummary").child(userId).addValueEventListener(firebaseWalletSummaryListener!!)
+
+                // 3. transactions listener: transactions/{userId}
+                firebaseTransactionsListener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        val txList = mutableListOf<com.playwin.app.data.model.FirebaseTransaction>()
+                        for (child in snapshot.children) {
+                            val tx = child.getValue(com.playwin.app.data.model.FirebaseTransaction::class.java)
+                            if (tx != null) {
+                                txList.add(tx.copy(id = child.key ?: tx.id))
+                            }
+                        }
+                        txList.sortByDescending { it.timestamp }
+                        android.util.Log.d("PlayWinRealtime", "Realtime transactions updated: size=${txList.size}")
+                        _firebaseTransactions.value = txList
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                db.getReference("transactions").child(userId).addValueEventListener(firebaseTransactionsListener!!)
+
+                // 4. history listener: users/{userId}/wallet/history
+                firebaseHistoryListener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        if (snapshot.exists()) {
+                            val totalScratchRewardsVal = snapshot.child("totalScratchRewards").getValue(Int::class.java) ?: 0
+                            android.util.Log.d("PlayWinRealtime", "Realtime wallet/history updated: totalScratchRewards=$totalScratchRewardsVal")
+                            viewModelScope.launch {
+                                val currentWallet = walletState.value
+                                if (currentWallet.userId == userId && currentWallet.totalScratchRewards != totalScratchRewardsVal) {
+                                    val updated = currentWallet.copy(totalScratchRewards = totalScratchRewardsVal)
+                                    repository.saveWalletLocally(updated)
+                                }
+                            }
+                        }
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                db.getReference("users").child(userId).child("wallet").child("history").addValueEventListener(firebaseHistoryListener!!)
+
+                // 5. scratchHistory listener: users/{userId}/scratchHistory
+                firebaseScratchHistoryListener = object : com.google.firebase.database.ValueEventListener {
+                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                        android.util.Log.d("PlayWinRealtime", "Realtime scratchHistory updated")
+                    }
+                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+                }
+                db.getReference("users").child(userId).child("scratchHistory").addValueEventListener(firebaseScratchHistoryListener!!)
+
+            } catch (e: Exception) {
+                android.util.Log.e("PlayWinRealtime", "Error starting realtime observers", e)
+            }
+        }
     }
 
     private fun stopFirebaseSync() {
+        val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+        val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+        val uid = walletState.value.userId
+        if (uid.isNotEmpty()) {
+            firebaseWalletListener?.let { db.getReference("users").child(uid).child("wallet").removeEventListener(it) }
+            firebaseWalletSummaryListener?.let { db.getReference("walletSummary").child(uid).removeEventListener(it) }
+            firebaseTransactionsListener?.let { db.getReference("transactions").child(uid).removeEventListener(it) }
+            firebaseHistoryListener?.let { db.getReference("users").child(uid).child("wallet").child("history").removeEventListener(it) }
+            firebaseScratchHistoryListener?.let { db.getReference("users").child(uid).child("scratchHistory").removeEventListener(it) }
+        }
+        firebaseWalletListener = null
+        firebaseWalletSummaryListener = null
+        firebaseTransactionsListener = null
+        firebaseHistoryListener = null
+        firebaseScratchHistoryListener = null
+
         firebaseUserJob?.cancel()
         firebaseUserJob = null
         firebaseTxJob?.cancel()
@@ -2888,6 +3011,40 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                         totalScratchRewards = currentWallet.totalScratchRewards + rewardValueCoins
                     )
                     repository.saveWalletLocally(updatedWallet)
+
+                    // Force instant client-side update of transactions list
+                    val newTx = FirebaseTransaction(
+                        id = transactionId,
+                        userId = userId,
+                        type = "scratch_reward",
+                        title = "Scratch Card: ${rolledReward.name}",
+                        coins = rewardValueCoins,
+                        status = "Completed",
+                        timestamp = System.currentTimeMillis(),
+                        amount = rewardValueCoins,
+                        source = "Scratch Card: ${rolledReward.name}",
+                        coinsBefore = currentWallet.coins,
+                        coinsAfter = coinsAfter
+                    )
+                    _firebaseTransactions.value = (listOf(newTx) + _firebaseTransactions.value).sortedByDescending { it.timestamp }
+
+                    // Force instant client-side update of user scratch card state (scratches today, cooldown)
+                    val currentScratchState = userScratchCardStateState.value
+                    val updatedScratchState = currentScratchState.copy(
+                        scratchesToday = currentScratchState.scratchesToday + 1,
+                        freeScratchUsed = if (isAdScratch) currentScratchState.freeScratchUsed else currentScratchState.freeScratchUsed + 1,
+                        rewardedScratchUsed = if (isAdScratch) currentScratchState.rewardedScratchUsed + 1 else currentScratchState.rewardedScratchUsed,
+                        lastScratchTimestamp = System.currentTimeMillis()
+                    )
+                    userScratchCardStateState.value = updatedScratchState
+
+                    // Force instant client-side update of current user state
+                    currentUserState.value = currentUserState.value?.copy(
+                        coins = coinsAfter,
+                        totalScratchRewards = (currentUserState.value?.totalScratchRewards ?: 0) + rewardValueCoins,
+                        scratchesToday = (currentUserState.value?.scratchesToday ?: 0) + 1
+                    )
+
                     refreshUserData()
                     onResult(true, rolledReward, null)
                 }

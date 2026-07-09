@@ -2487,7 +2487,15 @@ class FirebaseDbManager {
                 mutableData.child("coins").value = currentRootCoins + coinIncrement
 
                 val totalRewardsVal = walletRef.child("totalScratchRewards").getValue(Int::class.java) ?: 0
-                walletRef.child("totalScratchRewards").value = totalRewardsVal + coinIncrement
+                val newTotal = totalRewardsVal + coinIncrement
+                walletRef.child("totalScratchRewards").value = newTotal
+
+                // Root level totalScratchRewards increment to ensure instant real-time sync with user flow
+                val rootTotalRewardsVal = mutableData.child("totalScratchRewards").getValue(Int::class.java) ?: 0
+                mutableData.child("totalScratchRewards").value = rootTotalRewardsVal + coinIncrement
+
+                // wallet/history/totalScratchRewards increment
+                walletRef.child("history").child("totalScratchRewards").value = newTotal
 
                 val totalCoinsEarned = walletRef.child("totalCoinsEarned").getValue(Int::class.java) ?: 0
                 walletRef.child("totalCoinsEarned").value = totalCoinsEarned + coinIncrement
@@ -2565,6 +2573,7 @@ class FirebaseDbManager {
                         coinsBefore = coinsBefore,
                         coinsAfter = coinsAfter
                     )
+                    database.getReference("transactions").child(userId).child(transactionId).setValue(tx)
                     database.getReference("users").child(userId).child("transactions").child(transactionId).setValue(tx)
                     database.getReference("users").child(userId).child("wallet").child("history").child(transactionId).setValue(tx)
                     
