@@ -93,6 +93,11 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val userDailyCheckInState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserDailyCheckIn?>(null)
     val userScratchCardStateState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserScratchCardState>(com.playwin.app.data.model.FirebaseUserScratchCardState())
     val dailyQuizState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserDailyQuiz?>(null)
+    
+    val watchAdsConfigState: StateFlow<com.playwin.app.data.model.FirebaseWatchAdsConfig>
+    val userRewardAdsState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserRewardAds>(com.playwin.app.data.model.FirebaseUserRewardAds())
+    private var firebaseUserRewardAdsJob: kotlinx.coroutines.Job? = null
+
     var serverTimeOffset = 0L
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
@@ -206,6 +211,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = emptyList()
+            )
+
+        watchAdsConfigState = repository.firebaseWatchAdsConfigFlow
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = com.playwin.app.data.model.FirebaseWatchAdsConfig()
             )
 
         // Start centralized daily countdown
@@ -1637,6 +1649,351 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun getTodayDateString(timeMs: Long): String {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return sdf.format(java.util.Date(timeMs))
+    }
+
+    private var isClaimingAdReward = false
+
+    fun claimUpgradedRewardedAdReward(onResult: (Boolean, String?, Boolean) -> Unit) {
+        if (isClaimingAdReward) {
+            onResult(false, "Another claim is already in progress.", false)
+            return
+        }
+
+        val context = getApplication<Application>()
+        validateFirebaseAndUser(context) { isValid, errorMsg, db, userId ->
+            if (!isValid || db == null || userId.isNullOrEmpty()) {
+                onResult(false, errorMsg ?: "Authentication check failed.", false)
+                return@validateFirebaseAndUser
+            }
+
+            val config = watchAdsConfigState.value
+            if (!config.adsEnabled) {
+                onResult(false, "Rewarded ads are currently disabled by Admin.", false)
+                return@validateFirebaseAndUser
+            }
+            if (config.maintenanceMode) {
+                onResult(false, "Rewarded ads engine is under maintenance.", false)
+                return@validateFirebaseAndUser
+            }
+
+            isClaimingAdReward = true
+
+            // Log ad requested
+            logAdEvent(userId, "Ad Requested", "User initiated watch ad flow.")
+
+            viewModelScope.launch {
+                rewardMutex.withLock {
+                    try {
+                        val userRef = db.getReference("users").child(userId)
+                        userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+                            var coinsBefore = 0
+                            var coinsAfter = 0
+                            var gotBonus = false
+                            var bonusCoins = 0
+                            var txError: String? = null
+                            var newTodayCount = 0
+                            var newLifetimeCount = 0
+                            var newTodayCoins = 0
+                            var newLifetimeCoins = 0
+                            var newBonusProgress = 0
+                            var newBonusClaimed = 0
+                            val txNow = System.currentTimeMillis() + serverTimeOffset
+                            val todayDateStr = getTodayDateString(txNow)
+
+                            override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                                if (mutableData.value == null) {
+                                    txError = "User profile does not exist."
+                                    return com.google.firebase.database.Transaction.abort()
+                                }
+
+                                // 1. Read Reward Ads Sub-node
+                                val rewardAdsNode = mutableData.child("reward_ads")
+                                var todayCount = rewardAdsNode.child("todayCount").getValue(Int::class.java) ?: 0
+                                var lifetimeCount = rewardAdsNode.child("lifetimeCount").getValue(Int::class.java) ?: 0
+                                var todayCoins = rewardAdsNode.child("todayCoins").getValue(Int::class.java) ?: 0
+                                var lifetimeCoins = rewardAdsNode.child("lifetimeCoins").getValue(Int::class.java) ?: 0
+                                var bonusProgress = rewardAdsNode.child("bonusProgress").getValue(Int::class.java) ?: 0
+                                var bonusClaimed = rewardAdsNode.child("bonusClaimed").getValue(Int::class.java) ?: 0
+                                val lastRewardTimestamp = rewardAdsNode.child("lastRewardTimestamp").getValue(Long::class.java) ?: 0L
+                                val lastResetDate = rewardAdsNode.child("lastResetDate").getValue(String::class.java) ?: ""
+
+                                // Check for day reset
+                                if (lastResetDate != todayDateStr || lastResetDate.isEmpty()) {
+                                    todayCount = 0
+                                    todayCoins = 0
+                                }
+
+                                // 2. Validate Limits & Cooldowns
+                                if (todayCount >= config.maxAdsPerDay) {
+                                    txError = "Daily Reward Ad Limit Reached. Come Back Tomorrow."
+                                    return com.google.firebase.database.Transaction.abort()
+                                }
+
+                                val elapsedMs = txNow - lastRewardTimestamp
+                                val cooldownMs = config.cooldownSeconds * 1000L
+                                if (lastRewardTimestamp != 0L && elapsedMs < cooldownMs) {
+                                    val remainingSec = (cooldownMs - elapsedMs) / 1000
+                                    txError = "Cooldown is active. Please wait $remainingSec seconds."
+                                    return com.google.firebase.database.Transaction.abort()
+                                }
+
+                                // 3. Update Counts and Coins
+                                val rewardAmt = config.rewardCoins
+                                todayCount += 1
+                                lifetimeCount += 1
+                                todayCoins += rewardAmt
+                                lifetimeCoins += rewardAmt
+
+                                // Check Bonus Rules
+                                bonusProgress = todayCount
+                                if (todayCount % config.bonusRuleWatchCount == 0 && todayCount > 0) {
+                                    gotBonus = true
+                                    bonusCoins = config.bonusCoins
+                                    bonusClaimed += 1
+                                    lifetimeCoins += bonusCoins
+                                    todayCoins += bonusCoins
+                                }
+
+                                val totalEarnedThisTx = rewardAmt + bonusCoins
+
+                                // Update Main Coins
+                                val currentCoins = mutableData.child("coins").getValue(Int::class.java) ?: 0
+                                coinsBefore = currentCoins
+                                coinsAfter = currentCoins + totalEarnedThisTx
+
+                                mutableData.child("coins").value = coinsAfter
+                                mutableData.child("lastActiveTime").value = txNow
+
+                                // Sync for legacy compat
+                                mutableData.child("dailyAdsWatched").value = todayCount
+                                mutableData.child("lastRewardAdTime").value = txNow
+                                mutableData.child("lastAdResetTime").value = txNow
+
+                                // Update Reward Ads Node
+                                rewardAdsNode.child("todayCount").value = todayCount
+                                rewardAdsNode.child("lifetimeCount").value = lifetimeCount
+                                rewardAdsNode.child("todayCoins").value = todayCoins
+                                rewardAdsNode.child("lifetimeCoins").value = lifetimeCoins
+                                rewardAdsNode.child("bonusProgress").value = bonusProgress
+                                rewardAdsNode.child("bonusClaimed").value = bonusClaimed
+                                rewardAdsNode.child("lastRewardTimestamp").value = txNow
+                                rewardAdsNode.child("lastResetDate").value = todayDateStr
+                                rewardAdsNode.child("status").value = "Ready"
+
+                                newTodayCount = todayCount
+                                newLifetimeCount = lifetimeCount
+                                newTodayCoins = todayCoins
+                                newLifetimeCoins = lifetimeCoins
+                                newBonusProgress = bonusProgress
+                                newBonusClaimed = bonusClaimed
+
+                                return com.google.firebase.database.Transaction.success(mutableData)
+                            }
+
+                            override fun onComplete(
+                                databaseError: com.google.firebase.database.DatabaseError?,
+                                committed: Boolean,
+                                snapshot: com.google.firebase.database.DataSnapshot?
+                            ) {
+                                isClaimingAdReward = false
+                                if (committed && databaseError == null) {
+                                    val txNow = System.currentTimeMillis() + serverTimeOffset
+                                    
+                                    // Async logs, history, transactions & analytics
+                                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        try {
+                                            // Write transaction
+                                            val txId = db.getReference("users").child(userId).child("reward_ads/wallet_transactions").push().key ?: "tx_${System.currentTimeMillis()}"
+                                            val txMap = mapOf(
+                                                "id" to txId,
+                                                "type" to "video_ad",
+                                                "title" to "Rewarded Ad",
+                                                "coins" to config.rewardCoins,
+                                                "status" to "Completed",
+                                                "timestamp" to txNow,
+                                                "source" to "Rewarded Ad",
+                                                "referenceId" to txId,
+                                                "coinsBefore" to coinsBefore,
+                                                "coinsAfter" to (coinsBefore + config.rewardCoins)
+                                            )
+                                            db.getReference("users").child(userId).child("reward_ads/wallet_transactions").child(txId).setValue(txMap)
+
+                                            // Save main wallet transactions compatibility
+                                            val mainTxRef = db.getReference("transactions").child(userId).push()
+                                            val mainTx = com.playwin.app.data.model.FirebaseTransaction(
+                                                id = mainTxRef.key ?: "",
+                                                userId = userId,
+                                                type = "video_ad",
+                                                title = "Watch Ads Reward",
+                                                coins = config.rewardCoins,
+                                                status = "Completed",
+                                                timestamp = txNow,
+                                                amount = config.rewardCoins,
+                                                source = "Watch Ads Reward",
+                                                coinsBefore = coinsBefore,
+                                                coinsAfter = coinsBefore + config.rewardCoins
+                                            )
+                                            mainTxRef.setValue(mainTx)
+
+                                            // Save main reward history compatibility
+                                            val mainHistoryRef = db.getReference("rewardHistory").child(userId).push()
+                                            val mainHistoryMap = mapOf(
+                                                "id" to (mainHistoryRef.key ?: ""),
+                                                "type" to "video_ad",
+                                                "reward" to config.rewardCoins,
+                                                "source" to "Watch Ads Reward",
+                                                "timestamp" to txNow,
+                                                "title" to "Watch Ads Reward",
+                                                "coins" to config.rewardCoins,
+                                                "status" to "Completed",
+                                                "coinsBefore" to coinsBefore,
+                                                "coinsAfter" to coinsBefore + config.rewardCoins
+                                            )
+                                            mainHistoryRef.setValue(mainHistoryMap)
+
+                                            // Save history
+                                            val historyId = db.getReference("users").child(userId).child("reward_ads/reward_history").push().key ?: "h_${System.currentTimeMillis()}"
+                                            val historyEntry = com.playwin.app.data.model.FirebaseUserRewardHistoryEntry(
+                                                id = historyId,
+                                                timestamp = txNow,
+                                                coinsEarned = config.rewardCoins,
+                                                isBonus = false,
+                                                status = "Success"
+                                            )
+                                            db.getReference("users").child(userId).child("reward_ads/reward_history").child(historyId).setValue(historyEntry)
+
+                                            // Save ad logs
+                                            logAdEvent(userId, "Reward Granted", "Earned ${config.rewardCoins} coins from ad.")
+
+                                            if (gotBonus) {
+                                                // Bonus history
+                                                val bonusHistoryId = db.getReference("users").child(userId).child("reward_ads/reward_history").push().key ?: "hb_${System.currentTimeMillis()}"
+                                                val bonusHistoryEntry = com.playwin.app.data.model.FirebaseUserRewardHistoryEntry(
+                                                    id = bonusHistoryId,
+                                                    timestamp = txNow,
+                                                    coinsEarned = config.bonusCoins,
+                                                    isBonus = true,
+                                                    status = "Success"
+                                                )
+                                                db.getReference("users").child(userId).child("reward_ads/reward_history").child(bonusHistoryId).setValue(bonusHistoryEntry)
+
+                                                // Bonus transaction compatibility
+                                                val bonusTxRef = db.getReference("transactions").child(userId).push()
+                                                val bonusTx = com.playwin.app.data.model.FirebaseTransaction(
+                                                    id = bonusTxRef.key ?: "",
+                                                    userId = userId,
+                                                    type = "ad_bonus",
+                                                    title = "Watch Ads Daily Bonus",
+                                                    coins = config.bonusCoins,
+                                                    status = "Completed",
+                                                    timestamp = txNow,
+                                                    amount = config.bonusCoins,
+                                                    source = "Watch Ads Daily Bonus",
+                                                    coinsBefore = coinsBefore + config.rewardCoins,
+                                                    coinsAfter = coinsAfter
+                                                )
+                                                bonusTxRef.setValue(bonusTx)
+
+                                                // Log bonus
+                                                logAdEvent(userId, "Bonus Granted", "Earned ${config.bonusCoins} bonus coins for watching ${config.bonusRuleWatchCount} ads.")
+                                            }
+
+                                            // Save analytics
+                                            val analyticsId = db.getReference("users").child(userId).child("reward_ads/analytics").push().key ?: "a_${System.currentTimeMillis()}"
+                                            val analyticsMap = mapOf(
+                                                "id" to analyticsId,
+                                                "event" to "reward_ad_completed",
+                                                "timestamp" to txNow,
+                                                "rewardCoins" to config.rewardCoins,
+                                                "isBonusGranted" to gotBonus,
+                                                "bonusCoins" to (if (gotBonus) config.bonusCoins else 0),
+                                                "todayCount" to newTodayCount,
+                                                "lifetimeCount" to newLifetimeCount
+                                            )
+                                            db.getReference("users").child(userId).child("reward_ads/analytics").child(analyticsId).setValue(analyticsMap)
+
+                                            // Increment rewardHistoryCount
+                                            val currentCount = snapshot?.child("rewardHistoryCount")?.getValue(Int::class.java) ?: 0
+                                            userRef.child("rewardHistoryCount").setValue(currentCount + (if (gotBonus) 2 else 1))
+
+                                            // Update global wallet summary
+                                            val walletSummaryMap = mapOf(
+                                                "userId" to userId,
+                                                "coins" to coinsAfter,
+                                                "dailyAdsWatched" to newTodayCount,
+                                                "lastRewardAdTime" to txNow,
+                                                "lastAdResetTime" to txNow
+                                            )
+                                            db.getReference("walletSummary/$userId").setValue(walletSummaryMap)
+
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("PlayWinAds", "Error writing ad rewards sub-nodes: ${e.message}")
+                                        }
+                                    }
+
+                                    // Update local room wallet state
+                                    val currentWallet = walletState.value
+                                    if (currentWallet.userId == userId) {
+                                        val updatedWallet = currentWallet.copy(
+                                            coins = coinsAfter,
+                                            dailyAdsWatched = newTodayCount,
+                                            lastRewardAdTime = txNow
+                                        )
+                                        viewModelScope.launch {
+                                            repository.saveWalletLocally(updatedWallet)
+                                        }
+                                    }
+
+                                    onResult(true, null, gotBonus)
+                                } else {
+                                    val err = databaseError?.message ?: txError ?: "Ad Reward Transaction failed."
+                                    logAdEvent(userId, "Reward Failed", "Error: $err")
+                                    onResult(false, err, false)
+                                }
+                            }
+                        })
+                    } catch (e: Exception) {
+                        isClaimingAdReward = false
+                        logAdEvent(userId, "Reward Failed", "Exception: ${e.message}")
+                        onResult(false, e.message ?: "An unexpected error occurred.", false)
+                    }
+                }
+            }
+        }
+    }
+
+    fun logUpgradedAdEvent(event: String, message: String) {
+        val context = getApplication<Application>()
+        validateFirebaseAndUser(context) { isValid, _, _, userId ->
+            if (isValid && !userId.isNullOrEmpty()) {
+                logAdEvent(userId, event, message)
+            }
+        }
+    }
+
+    private fun logAdEvent(userId: String, event: String, message: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                val logId = db.getReference("users").child(userId).child("reward_ads/reward_logs").push().key ?: "log_${System.currentTimeMillis()}"
+                val entry = com.playwin.app.data.model.FirebaseUserRewardLogEntry(
+                    logId = logId,
+                    timestamp = System.currentTimeMillis() + serverTimeOffset,
+                    event = event,
+                    message = message
+                )
+                db.getReference("users").child(userId).child("reward_ads/reward_logs").child(logId).setValue(entry)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+    }
+
     fun claimRewardedAdReward(onResult: (Boolean, String?) -> Unit) {
         claimRewardedAdRewardInternal("video_ad", "Watch Ads Reward", onResult)
     }
@@ -2443,6 +2800,12 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
+        firebaseUserRewardAdsJob = viewModelScope.launch {
+            repository.getFirebaseUserRewardAdsFlow(userId).collect { state ->
+                userRewardAdsState.value = state
+            }
+        }
+
         firebaseRedemptionJob = viewModelScope.launch {
             repository.getFirebaseRedemptionsFlow(userId).collect { redList ->
                 redemptionsState.value = redList
@@ -2762,6 +3125,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         firebaseUserDailyCheckInJob = null
         firebaseUserScratchCardJob?.cancel()
         firebaseUserScratchCardJob = null
+        firebaseUserRewardAdsJob?.cancel()
+        firebaseUserRewardAdsJob = null
         dailyQuizJob?.cancel()
         dailyQuizJob = null
         dailyQuizState.value = null

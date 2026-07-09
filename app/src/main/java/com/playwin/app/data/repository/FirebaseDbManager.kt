@@ -2300,6 +2300,65 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
+    fun observeWatchAdsConfig(): Flow<com.playwin.app.data.model.FirebaseWatchAdsConfig> = callbackFlow {
+        val ref = database.getReference("config/watch_ads")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                    return
+                }
+                try {
+                    val config = snapshot.getValue(com.playwin.app.data.model.FirebaseWatchAdsConfig::class.java)
+                    if (config != null) {
+                        trySend(config)
+                    } else {
+                        trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                    }
+                } catch (e: Exception) {
+                    trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    fun observeUserRewardAds(userId: String): Flow<com.playwin.app.data.model.FirebaseUserRewardAds> = callbackFlow {
+        if (userId.isEmpty()) {
+            trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+            close()
+            return@callbackFlow
+        }
+        val ref = database.getReference("users").child(userId).child("reward_ads")
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (!snapshot.exists()) {
+                    trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                    return
+                }
+                try {
+                    val state = snapshot.getValue(com.playwin.app.data.model.FirebaseUserRewardAds::class.java)
+                    if (state != null) {
+                        trySend(state)
+                    } else {
+                        trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                    }
+                } catch (e: Exception) {
+                    trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                }
+            }
+            override fun onCancelled(error: DatabaseError) {
+                trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+            }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
     fun observeScratchCardRewards(): Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = callbackFlow {
         val ref = database.getReference("scratchCardRewards")
         val listener = object : ValueEventListener {

@@ -554,6 +554,46 @@ fun com.google.firebase.database.MutableData.getSafeBoolean(fieldName: String, d
     return defaultValue
 }
 
+data class FirebaseWatchAdsConfig(
+    val adsEnabled: Boolean = true,
+    val maxAdsPerDay: Int = 10,
+    val rewardCoins: Int = 50,
+    val cooldownSeconds: Int = 60,
+    val bonusRuleWatchCount: Int = 10,
+    val bonusCoins: Int = 100,
+    val minWatchPercentage: Int = 100,
+    val maintenanceMode: Boolean = false,
+    val retryCount: Int = 3,
+    val adTimeout: Int = 15
+)
+
+data class FirebaseUserRewardAds(
+    val todayCount: Int = 0,
+    val lifetimeCount: Int = 0,
+    val todayCoins: Int = 0,
+    val lifetimeCoins: Int = 0,
+    val bonusProgress: Int = 0,
+    val bonusClaimed: Int = 0,
+    val lastRewardTimestamp: Long = 0L,
+    val lastResetDate: String = "",
+    val status: String = "Ready"
+)
+
+data class FirebaseUserRewardHistoryEntry(
+    val id: String = "",
+    val timestamp: Long = 0L,
+    val coinsEarned: Int = 0,
+    val isBonus: Boolean = false,
+    val status: String = "Success"
+)
+
+data class FirebaseUserRewardLogEntry(
+    val logId: String = "",
+    val timestamp: Long = 0L,
+    val event: String = "",
+    val message: String = ""
+)
+
 
 
 

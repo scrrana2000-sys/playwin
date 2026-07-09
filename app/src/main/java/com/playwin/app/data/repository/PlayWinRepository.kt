@@ -20,6 +20,11 @@ class PlayWinRepository(private val dao: PlayWinDao) {
     val firebaseSpinWheelConfigFlow: Flow<com.playwin.app.data.model.FirebaseSpinWheelConfig> = firebaseDbManager.observeSpinWheelConfig()
     val firebaseScratchCardSettingsFlow: Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = firebaseDbManager.observeScratchCardSettings()
     val firebaseScratchCardRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = firebaseDbManager.observeScratchCardRewards()
+    val firebaseWatchAdsConfigFlow: Flow<com.playwin.app.data.model.FirebaseWatchAdsConfig> = firebaseDbManager.observeWatchAdsConfig()
+
+    fun getFirebaseUserRewardAdsFlow(userId: String): Flow<com.playwin.app.data.model.FirebaseUserRewardAds> {
+        return firebaseDbManager.observeUserRewardAds(userId)
+    }
 
     fun getFirebaseUserScratchCardStateFlow(userId: String): Flow<com.playwin.app.data.model.FirebaseUserScratchCardState> {
         return firebaseDbManager.observeUserScratchCardState(userId)

@@ -2071,6 +2071,9 @@ fun HomeScreen(
     val scratchState by viewModel.userScratchCardStateState.collectAsStateWithLifecycle()
     val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
     
+    val adConfig by viewModel.watchAdsConfigState.collectAsStateWithLifecycle()
+    val userRewardAds by viewModel.userRewardAdsState.collectAsStateWithLifecycle()
+    
     // Dynamic Scratch card variables
     val scratchesToday = scratchState.scratchesToday
     val scratchDailyLimit = scratchSettings.dailyScratchLimit
@@ -2122,164 +2125,425 @@ fun HomeScreen(
     var adCardSubtitle by remember { mutableStateOf("Watch Reward Ad (+50 Coins)") }
     var adCooldownActive by remember { mutableStateOf(false) }
 
-    LaunchedEffect(wallet.lastRewardAdTime, wallet.dailyAdsWatched) {
-        while (true) {
-            val now = System.currentTimeMillis()
-            val elapsed = now - wallet.lastRewardAdTime
-            val cooldownDuration = 1 * 60 * 1000L
-            if (wallet.dailyAdsWatched >= 10) {
-                adCooldownActive = false
-                adCardSubtitle = "Daily Reward Ad Limit Reached. Come Back Tomorrow."
-            } else if (wallet.lastRewardAdTime != 0L && elapsed < cooldownDuration) {
-                adCooldownActive = true
-                val remainingSec = (cooldownDuration - elapsed) / 1000
-                val min = remainingSec / 60
-                val sec = remainingSec % 60
-                adCardSubtitle = String.format("Next Reward Ad Available In: %02d:%02d", min, sec)
-            } else {
-                adCooldownActive = false
-                adCardSubtitle = "Watch Reward Ad (+50 Coins)"
-            }
-            delay(1000L)
+    var secondsLeft by remember { mutableStateOf(0L) }
+    var currentAdStatus by remember { mutableStateOf("Ready") }
+
+    LaunchedEffect(adConfig, userRewardAds, currentServerTime) {
+        val serverTime = currentServerTime
+        val lastTime = userRewardAds.lastRewardTimestamp
+        val cooldownSec = adConfig.cooldownSeconds
+        val elapsedMs = serverTime - lastTime
+        val cooldownMs = cooldownSec * 1000L
+        
+        val cooldownActive = lastTime != 0L && elapsedMs < cooldownMs
+        secondsLeft = if (cooldownActive) maxOf(0L, (lastTime + cooldownMs - serverTime) / 1000L) else 0L
+
+        currentAdStatus = when {
+            !adConfig.adsEnabled -> "Disabled"
+            adConfig.maintenanceMode -> "Maintenance"
+            userRewardAds.todayCount >= adConfig.maxAdsPerDay -> "Limit Reached"
+            cooldownActive -> "Cooldown"
+            else -> "Ready"
+        }
+
+        adCooldownActive = cooldownActive
+        adCardSubtitle = when (currentAdStatus) {
+            "Disabled" -> "Rewarded Ads are disabled"
+            "Maintenance" -> "Under Maintenance"
+            "Limit Reached" -> "Daily Limit Reached. Come back tomorrow."
+            "Cooldown" -> String.format("Cooldown: %02d:%02d remaining", secondsLeft / 60, secondsLeft % 60)
+            else -> "Watch Reward Ad (+${adConfig.rewardCoins} Coins)"
         }
     }
 
     if (showRewardedAdDialog) {
-        AlertDialog(
+        androidx.compose.ui.window.Dialog(
             onDismissRequest = { 
                 if (!adLoadingState) showRewardedAdDialog = false 
-            },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "🎬 Watch Rewarded Ad",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                }
-            },
-            text = {
+            }
+        ) {
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 16.dp),
+                shape = RoundedCornerShape(28.dp),
+                color = Color(0xFF12121A),
+                border = BorderStroke(1.dp, Color(0xFF2C2C3C)),
+                tonalElevation = 8.dp
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (adLoadingState) {
-                        CircularProgressIndicator(
-                            color = Color(0xFFD32F2F),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Loading Ad...",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 14.sp
-                        )
-                    } else if (adFeedbackMessage != null) {
-                        Text(
-                            text = adFeedbackMessage ?: "",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    } else {
-                        Text(
-                            text = "Watch a short ad completely to earn 50 coins.",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                if (!adLoadingState) {
-                    if (adFeedbackMessage != null) {
-                        Button(
-                            onClick = {
-                                adFeedbackMessage = null
-                                showRewardedAdDialog = false
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFD32F2F)
-                            )
-                        ) {
-                            Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        Button(
-                            onClick = {
-                                if (activity != null) {
-                                    adLoadingState = true
-                                    adFeedbackMessage = null
-                                    
-                                    val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                                    val adUnitId = "ca-app-pub-3940256099942544/5224354917"
-                                    
-                                    com.google.android.gms.ads.rewarded.RewardedAd.load(
-                                        activity,
-                                        adUnitId,
-                                        adRequest,
-                                        object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                                            override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
-                                                adLoadingState = false
-                                                
-                                                ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                                                    override fun onAdDismissedFullScreenContent() {
-                                                        android.util.Log.d("PlayWinAds", "Ad dismissed")
-                                                        if (adFeedbackMessage == null) {
-                                                            showRewardedAdDialog = false
-                                                        }
-                                                    }
-                                                    override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                                                        android.util.Log.e("PlayWinAds", "Failed to show ad: ${error.message}")
-                                                        adFeedbackMessage = "Rewarded Ad failed to display.\nPlease try again later."
-                                                    }
-                                                }
-                                                
-                                                ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
-                                                    viewModel.claimRewardedAdReward { success, errMsg ->
-                                                        if (success) {
-                                                            adFeedbackMessage = "Success! 50 Coins added to your Wallet."
-                                                        } else {
-                                                            adFeedbackMessage = errMsg ?: "Failed to claim reward."
-                                                        }
-                                                    }
-                                                })
-                                            }
-
-                                            override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                                                adLoadingState = false
-                                                android.util.Log.e("PlayWinAds", "Failed to load ad: ${loadAdError.message}")
-                                                adFeedbackMessage = "Rewarded Ad not available.\nPlease try again later."
-                                            }
-                                        }
-                                    )
-                                } else {
-                                    adFeedbackMessage = "Internal error. Activity context unavailable."
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFD32F2F)
-                            )
-                        ) {
-                            Text("Watch Ad", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            },
-            dismissButton = {
-                if (!adLoadingState && adFeedbackMessage == null) {
-                    TextButton(
-                        onClick = { showRewardedAdDialog = false }
+                    // Header Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Cancel", color = Color.White.copy(alpha = 0.6f))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "🎬",
+                                fontSize = 24.sp,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Watch Ad Engine",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Anti-Cheat Verified System",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = { showRewardedAdDialog = false },
+                            enabled = !adLoadingState
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                                contentDescription = "Close Dialog",
+                                tint = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Status Banner
+                    val statusText: String
+                    val statusBg: Color
+                    val statusColor: Color
+                    when (currentAdStatus) {
+                        "Disabled" -> {
+                            statusText = "TEMPORARILY DISABLED"
+                            statusBg = Color(0x1AD32F2F)
+                            statusColor = Color(0xFFF44336)
+                        }
+                        "Maintenance" -> {
+                            statusText = "ENGINE UNDER MAINTENANCE"
+                            statusBg = Color(0x1A9E9E9E)
+                            statusColor = Color(0xFFB0BEC5)
+                        }
+                        "Limit Reached" -> {
+                            statusText = "DAILY LIMIT COMPLETED"
+                            statusBg = Color(0x1A4CAF50)
+                            statusColor = Color(0xFF4CAF50)
+                        }
+                        "Cooldown" -> {
+                            statusText = String.format("COOLDOWN ACTIVE: %02d:%02d", secondsLeft / 60, secondsLeft % 60)
+                            statusBg = Color(0x1AFF9800)
+                            statusColor = Color(0xFFFF9800)
+                        }
+                        else -> {
+                            statusText = "ENGINE ONLINE • READY"
+                            statusBg = Color(0x1A00E676)
+                            statusColor = Color(0xFF00E676)
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(statusBg, RoundedCornerShape(12.dp))
+                            .border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                            .padding(vertical = 10.dp, horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = statusText,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = statusColor,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (adFeedbackMessage != null) {
+                        // Feedback Screen (e.g. Success, Error)
+                        val isSuccess = adFeedbackMessage?.contains("Success", ignoreCase = true) == true
+                        val isBonus = adFeedbackMessage?.contains("Bonus", ignoreCase = true) == true
+                        
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = if (isSuccess) (if (isBonus) "🎁✨🎁" else "🎉🪙🎉") else "⚠️",
+                                fontSize = 48.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = if (isSuccess) "Congratulations!" else "Notice",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = if (isSuccess) Color(0xFF00E676) else Color(0xFFFF9800)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = adFeedbackMessage ?: "",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = { adFeedbackMessage = null },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF7C4DFF)
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth(0.6f)
+                            ) {
+                                Text("Continue", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        // Standard Stats Dashboard
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Ads Remaining Card
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A26)),
+                                border = BorderStroke(1.dp, Color(0xFF2C2C3E))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("Ads Remaining", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val remaining = maxOf(0, adConfig.maxAdsPerDay - userRewardAds.todayCount)
+                                    Text(
+                                        text = "$remaining / ${adConfig.maxAdsPerDay}",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (remaining > 0) Color.White else Color(0xFFF44336)
+                                    )
+                                }
+                            }
+
+                            // Coins Earned Card
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A26)),
+                                border = BorderStroke(1.dp, Color(0xFF2C2C3E))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("Coins Earned Today", fontSize = 11.sp, color = Color.White.copy(alpha = 0.5f))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${userRewardAds.todayCoins}",
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFFD700)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("🪙", fontSize = 14.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Bonus Progress Milestone Bar
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A26)),
+                            border = BorderStroke(1.dp, Color(0xFF2C2C3E))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🎁 Milestone Bonus",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "+${adConfig.bonusCoins} Bonus Coins",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF00E676)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Watch ${adConfig.bonusRuleWatchCount} ads to claim daily bonus.",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                val currentMilestoneProgress = userRewardAds.todayCount % adConfig.bonusRuleWatchCount
+                                val progressFraction = if (adConfig.bonusRuleWatchCount > 0) {
+                                    currentMilestoneProgress.toFloat() / adConfig.bonusRuleWatchCount.toFloat()
+                                } else {
+                                    0f
+                                }
+                                
+                                LinearProgressIndicator(
+                                    progress = progressFraction,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(10.dp)
+                                        .clip(RoundedCornerShape(5.dp)),
+                                    color = Color(0xFF7C4DFF),
+                                    trackColor = Color(0xFF2C2C3E)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Progress: ${(progressFraction * 100).toInt()}%",
+                                        fontSize = 10.sp,
+                                        color = Color.White.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = "$currentMilestoneProgress / ${adConfig.bonusRuleWatchCount} Ads",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        if (adLoadingState) {
+                            CircularProgressIndicator(
+                                color = Color(0xFF7C4DFF),
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Preparing Secure Stream...",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 12.sp
+                            )
+                        } else {
+                            val btnEnabled = currentAdStatus == "Ready"
+                            Button(
+                                onClick = {
+                                    if (activity != null) {
+                                        adLoadingState = true
+                                        viewModel.logUpgradedAdEvent("Ad Requested", "User clicked Watch Ad button.")
+                                        
+                                        val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
+                                        val adUnitId = "ca-app-pub-3940256099942544/5224354917"
+                                        
+                                        com.google.android.gms.ads.rewarded.RewardedAd.load(
+                                            activity,
+                                            adUnitId,
+                                            adRequest,
+                                            object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
+                                                override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
+                                                    adLoadingState = false
+                                                    viewModel.logUpgradedAdEvent("Ad Loaded", "Google Ad loaded successfully.")
+                                                    
+                                                    ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
+                                                        override fun onAdDismissedFullScreenContent() {
+                                                            viewModel.logUpgradedAdEvent("Ad Dismissed", "User dismissed the full-screen ad.")
+                                                            if (adFeedbackMessage == null) {
+                                                                // Dismissed
+                                                            }
+                                                        }
+                                                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
+                                                            viewModel.logUpgradedAdEvent("Ad Play Failed", "Error: ${error.message}")
+                                                            adLoadingState = false
+                                                            adFeedbackMessage = "Failed to display ad.\nPlease try again."
+                                                        }
+                                                    }
+                                                    
+                                                    ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
+                                                        viewModel.logUpgradedAdEvent("onUserEarnedReward", "Google callback received.")
+                                                        viewModel.claimUpgradedRewardedAdReward { success, errMsg, isBonus ->
+                                                            if (success) {
+                                                                adFeedbackMessage = if (isBonus) {
+                                                                    "Success! +${adConfig.rewardCoins} Coins added for Ad.\n🎁 Daily Bonus +${adConfig.bonusCoins} Coins Unlocked!"
+                                                                } else {
+                                                                    "Success! +${adConfig.rewardCoins} Coins added to your Wallet."
+                                                                }
+                                                            } else {
+                                                                adFeedbackMessage = errMsg ?: "Ad claim failed."
+                                                            }
+                                                        }
+                                                    })
+                                                }
+
+                                                override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
+                                                    adLoadingState = false
+                                                    viewModel.logUpgradedAdEvent("Ad Load Failed", "Error: ${loadAdError.message}")
+                                                    adFeedbackMessage = "Ad failed to load. Please verify your connection and try again."
+                                                }
+                                            }
+                                        )
+                                    } else {
+                                        adFeedbackMessage = "Activity context is unavailable."
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFD32F2F),
+                                    disabledContainerColor = Color(0xFF2A2A38)
+                                ),
+                                enabled = btnEnabled,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = when (currentAdStatus) {
+                                            "Disabled" -> "Ads Disabled"
+                                            "Maintenance" -> "Under Maintenance"
+                                            "Limit Reached" -> "Limit Reached"
+                                            "Cooldown" -> String.format("Cooldown: %02d:%02d", secondsLeft / 60, secondsLeft % 60)
+                                            else -> "🎬 Watch Ad to Earn"
+                                        },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = if (btnEnabled) Color.White else Color.White.copy(alpha = 0.4f)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            },
-            containerColor = Color(0xFF16141F),
-            shape = RoundedCornerShape(24.dp)
-        )
+            }
+        }
     }
 
     // Dialog Rendering
@@ -2702,6 +2966,73 @@ fun HomeScreen(
                     }
                 }
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // --- PREMIUM REWARDED ADS DASHBOARD BANNER ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showRewardedAdDialog = true },
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF16141F)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF2C2A35))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color(0xFFD32F2F).copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("🎬", fontSize = 20.sp)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Premium Ad Engine",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val remaining = maxOf(0, adConfig.maxAdsPerDay - userRewardAds.todayCount)
+                        Text(
+                            text = when (currentAdStatus) {
+                                "Cooldown" -> String.format("⏳ Cooldown: %02dm %02ds left", secondsLeft / 60, secondsLeft % 60)
+                                "Limit Reached" -> "🎉 Daily limit completed! (+${userRewardAds.todayCoins} 🪙 earned)"
+                                "Maintenance" -> "🔧 Under scheduled maintenance"
+                                "Disabled" -> "🚫 Watch Ads are disabled"
+                                else -> "⚡ Ready • Earn +${adConfig.rewardCoins} Coins ($remaining left)"
+                            },
+                            fontSize = 11.sp,
+                            color = when (currentAdStatus) {
+                                "Cooldown" -> Color(0xFFFF9800)
+                                "Limit Reached" -> Color(0xFF00E676)
+                                else -> Color.White.copy(alpha = 0.6f)
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = "Open Dashboard",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 
@@ -5441,10 +5772,31 @@ fun CouponCardItem(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = coupon.image.ifEmpty { "🎟️" },
-                    fontSize = 26.sp
-                )
+                val imageUrl = coupon.image.trim()
+                if (imageUrl.isNotEmpty()) {
+                    var isError by remember { mutableStateOf(false) }
+                    if (!isError) {
+                        coil.compose.AsyncImage(
+                            model = imageUrl,
+                            contentDescription = "Coupon Image",
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            onError = { isError = true }
+                        )
+                    } else {
+                        Text(
+                            text = "🎟️",
+                            fontSize = 26.sp
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "🎟️",
+                        fontSize = 26.sp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(14.dp))
@@ -6412,7 +6764,25 @@ fun CouponDetailsDialog(
                             .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(coupon.image.ifEmpty { "🎟️" }, fontSize = 32.sp)
+                        val imageUrl = coupon.image.trim()
+                        if (imageUrl.isNotEmpty()) {
+                            var isError by remember { mutableStateOf(false) }
+                            if (!isError) {
+                                coil.compose.AsyncImage(
+                                    model = imageUrl,
+                                    contentDescription = "Coupon Image",
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    onError = { isError = true }
+                                )
+                            } else {
+                                Text("🎟️", fontSize = 32.sp)
+                            }
+                        } else {
+                            Text("🎟️", fontSize = 32.sp)
+                        }
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
@@ -7708,6 +8078,42 @@ Get +50 coins instantly after signup.
 }
 
 // --- PROFILE SCREEN ---
+private const val GAME_RULES_URL = "https://example.com/game-rules"
+private const val PRIVACY_POLICY_URL = "https://example.com/privacy-policy"
+private const val TERMS_URL = "https://example.com/terms"
+private const val FAQ_URL = "https://example.com/faq"
+private const val CONTACT_URL = "https://example.com/contact"
+
+@Composable
+fun ProfileMenuItem(
+    title: String,
+    icon: ImageVector,
+    url: String,
+    context: android.content.Context,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    snackbarHostState: SnackbarHostState
+) {
+    ProfileMenuRowItem(
+        title = title,
+        icon = icon,
+        onClick = {
+            try {
+                val customTabsIntent = androidx.browser.customtabs.CustomTabsIntent.Builder().build()
+                customTabsIntent.launchUrl(context, android.net.Uri.parse(url))
+            } catch (e: Exception) {
+                try {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    context.startActivity(intent)
+                } catch (ex: Exception) {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Unable to open link.")
+                    }
+                }
+            }
+        }
+    )
+}
+
 @Composable
 fun ProfileScreen(
     wallet: com.playwin.app.data.model.UserWallet,
@@ -7832,6 +8238,68 @@ fun ProfileScreen(
                 }
             }
         }
+
+        val context = androidx.compose.ui.platform.LocalContext.current
+
+        // 1. Game Rules & How to Play
+        ProfileMenuItem(
+            title = "Game Rules & How to Play",
+            icon = Icons.Default.MenuBook,
+            url = GAME_RULES_URL,
+            context = context,
+            coroutineScope = coroutineScope,
+            snackbarHostState = snackbarHostState
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 2. Privacy Policy
+        ProfileMenuItem(
+            title = "Privacy Policy",
+            icon = Icons.Default.Lock,
+            url = PRIVACY_POLICY_URL,
+            context = context,
+            coroutineScope = coroutineScope,
+            snackbarHostState = snackbarHostState
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 3. Terms & Conditions
+        ProfileMenuItem(
+            title = "Terms & Conditions",
+            icon = Icons.Default.Description,
+            url = TERMS_URL,
+            context = context,
+            coroutineScope = coroutineScope,
+            snackbarHostState = snackbarHostState
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 4. FAQ
+        ProfileMenuItem(
+            title = "FAQ",
+            icon = Icons.Default.Help,
+            url = FAQ_URL,
+            context = context,
+            coroutineScope = coroutineScope,
+            snackbarHostState = snackbarHostState
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 5. Contact Support
+        ProfileMenuItem(
+            title = "Contact Support",
+            icon = Icons.Default.Email,
+            url = CONTACT_URL,
+            context = context,
+            coroutineScope = coroutineScope,
+            snackbarHostState = snackbarHostState
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Profile Menu settings
         ProfileMenuRowItem(
