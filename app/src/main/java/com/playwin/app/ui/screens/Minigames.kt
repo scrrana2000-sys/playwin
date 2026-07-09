@@ -1669,7 +1669,11 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     var hasWatchedAdForCurrentCard by remember { mutableStateOf(false) }
 
     // Dynamic checks
-    val scratchesToday = scratchState.scratchesToday
+    val scratchesToday = if (scratchState.nextResetTimestamp > 0L && currentServerTime >= scratchState.nextResetTimestamp) {
+        0
+    } else {
+        scratchState.scratchesToday
+    }
     val cardsLeft = maxOf(0, settings.dailyScratchLimit - scratchesToday)
     val userLevel = currentUser?.level ?: 1
 
@@ -1690,6 +1694,25 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         maxOf(0L, (lastScratchTimestamp + cooldownDurationMs - currentServerTime) / 1000L)
     } else {
         0L
+    }
+
+    val nextResetTimestamp = scratchState.nextResetTimestamp
+    val isResetTimerActive = nextResetTimestamp > 0L && currentServerTime < nextResetTimestamp
+    val resetSecondsLeft = if (isResetTimerActive) {
+        maxOf(0L, (nextResetTimestamp - currentServerTime) / 1000L)
+    } else {
+        0L
+    }
+    
+    val resetHr = resetSecondsLeft / 3600
+    val resetMin = (resetSecondsLeft % 3600) / 60
+    val resetSec = resetSecondsLeft % 60
+    val resetCountdownStr = String.format(java.util.Locale.US, "%02d:%02d:%02d", resetHr, resetMin, resetSec)
+
+    LaunchedEffect(resetSecondsLeft, isResetTimerActive) {
+        if (nextResetTimestamp > 0L && currentServerTime >= nextResetTimestamp) {
+            viewModel.refreshUserData()
+        }
     }
 
     var rewardedAd by remember { mutableStateOf<com.google.android.gms.ads.rewarded.RewardedAd?>(null) }
@@ -2045,9 +2068,11 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Come back tomorrow for another ${settings.dailyScratchLimit} cards!",
+                        text = "Scratch Cards Reset in $resetCountdownStr",
                         color = TextWhite.copy(alpha = 0.6f),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
                     )
                 }
             } else {
@@ -2303,143 +2328,160 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                val buttonEnabled = when {
-                    isProcessing -> false
-                    cardsLeft <= 0 -> false
-                    isCooldownActive -> false
-                    isStarted && !isFullyScratched -> false
-                    else -> true
-                }
+                if (cardsLeft <= 0) {
+                    // Hide all play buttons, show disabled grey button: "🔒 Scratch Cards Reset in HH:MM:SS"
+                    Button(
+                        onClick = {},
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .height(64.dp)
+                            .shadow(4.dp, RoundedCornerShape(28.dp))
+                            .testTag("scratch_reset_timer_button"),
+                        enabled = false,
+                        shape = RoundedCornerShape(28.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            disabledContainerColor = Color(0xFF2C2C2C),
+                            disabledContentColor = Color.White.copy(alpha = 0.6f)
+                        ),
+                        contentPadding = PaddingValues()
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "🔒 Scratch Cards Reset in",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = resetCountdownStr,
+                                color = GoldCoin,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 18.sp
+                            )
+                        }
+                    }
+                } else {
+                    val buttonEnabled = when {
+                        isProcessing -> false
+                        isCooldownActive -> false
+                        isStarted && !isFullyScratched -> false
+                        else -> true
+                    }
 
-                Button(
-                    onClick = {
-                        if (isFullyScratched) {
-                            dragPoints.clear()
-                            scratchedCells.clear()
-                            isFullyScratched = false
-                            isStarted = false
-                            wonReward = null
-                        } else if (needsAdToUnlock && !hasWatchedAdForCurrentCard) {
-                            adController.showAndPlayAd {
-                                hasWatchedAdForCurrentCard = true
+                    Button(
+                        onClick = {
+                            if (isFullyScratched) {
+                                dragPoints.clear()
+                                scratchedCells.clear()
+                                isFullyScratched = false
+                                isStarted = false
+                                wonReward = null
+                            } else if (needsAdToUnlock && !hasWatchedAdForCurrentCard) {
+                                adController.showAndPlayAd {
+                                    hasWatchedAdForCurrentCard = true
+                                    isStarted = true
+                                    errorMessage = null
+                                    scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
+                                    wonReward = viewModel.rollScratchRewardFromFirebase()
+                                    dragPoints.clear()
+                                    scratchedCells.clear()
+                                    android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } else if (!isStarted) {
                                 isStarted = true
                                 errorMessage = null
                                 scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
                                 wonReward = viewModel.rollScratchRewardFromFirebase()
                                 dragPoints.clear()
                                 scratchedCells.clear()
-                                android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
                             }
-                        } else if (!isStarted) {
-                            isStarted = true
-                            errorMessage = null
-                            scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
-                            wonReward = viewModel.rollScratchRewardFromFirebase()
-                            dragPoints.clear()
-                            scratchedCells.clear()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth(0.85f)
-                        .height(56.dp)
-                        .graphicsLayer {
-                            scaleX = buttonScale
-                            scaleY = buttonScale
-                        }
-                        .shadow(8.dp, RoundedCornerShape(28.dp))
-                        .testTag("scratch_action_button"),
-                    enabled = buttonEnabled,
-                    shape = RoundedCornerShape(28.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.Transparent,
-                        disabledContainerColor = Color(0xFF2C2C2C)
-                    ),
-                    contentPadding = PaddingValues(),
-                    interactionSource = buttonInteractionSource
-                ) {
-                    Box(
+                        },
                         modifier = Modifier
-                            .fillMaxSize()
-                            .then(
-                                if (buttonEnabled) {
-                                    Modifier.background(
-                                        Brush.horizontalGradient(
-                                            colors = listOf(Color(0xFFFFE259), Color(0xFFFFA751))
-                                        )
-                                    )
-                                } else {
-                                    Modifier.background(Color(0xFF2E2E2E))
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            val buttonText = when {
-                                isProcessing -> "⏳ SECURING REWARD..."
-                                cardsLeft <= 0 -> "🔒 Today's Scratch Cards Completed"
-                                isCooldownActive -> "⏳ COOLDOWN ACTIVE"
-                                isFullyScratched -> "🎉 SCRATCH ANOTHER"
-                                isStarted && !isFullyScratched -> "🎨 SWIPE ON THE CARD TO REVEAL"
-                                needsAdToUnlock && !hasWatchedAdForCurrentCard -> "🎬 WATCH AD & SCRATCH"
-                                else -> "🪙 SCRATCH NOW"
+                            .fillMaxWidth(0.85f)
+                            .height(56.dp)
+                            .graphicsLayer {
+                                scaleX = buttonScale
+                                scaleY = buttonScale
                             }
-                            
-                            val textColor = if (buttonEnabled) Color.White else Color.White.copy(alpha = 0.4f)
-                            Text(
-                                text = buttonText,
-                                color = textColor,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp,
-                                letterSpacing = 0.5.sp
-                            )
+                            .shadow(8.dp, RoundedCornerShape(28.dp))
+                            .testTag("scratch_action_button"),
+                        enabled = buttonEnabled,
+                        shape = RoundedCornerShape(28.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Transparent,
+                            disabledContainerColor = Color(0xFF2C2C2C)
+                        ),
+                        contentPadding = PaddingValues(),
+                        interactionSource = buttonInteractionSource
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (buttonEnabled) {
+                                        Modifier.background(
+                                            Brush.horizontalGradient(
+                                                colors = listOf(Color(0xFFFFE259), Color(0xFFFFA751))
+                                            )
+                                        )
+                                    } else {
+                                        Modifier.background(Color(0xFF2E2E2E))
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                val buttonText = when {
+                                    isProcessing -> "⏳ SECURING REWARD..."
+                                    isCooldownActive -> "⏳ COOLDOWN ACTIVE"
+                                    isFullyScratched -> "🎉 SCRATCH ANOTHER"
+                                    isStarted && !isFullyScratched -> "🎨 SWIPE ON THE CARD TO REVEAL"
+                                    needsAdToUnlock && !hasWatchedAdForCurrentCard -> "🎬 WATCH AD & SCRATCH"
+                                    else -> "🪙 SCRATCH NOW"
+                                }
+                                
+                                val textColor = if (buttonEnabled) Color.White else Color.White.copy(alpha = 0.4f)
+                                Text(
+                                    text = buttonText,
+                                    color = textColor,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 16.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
                         }
                     }
-                }
 
-                // Add support text / subtitle below button for distinct states
-                if (needsAdToUnlock && !hasWatchedAdForCurrentCard && !isStarted && !isFullyScratched && cardsLeft > 0 && !isCooldownActive) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Watch a rewarded ad to unlock one scratch.",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                }
+                    // Add support text / subtitle below button for distinct states
+                    if (needsAdToUnlock && !hasWatchedAdForCurrentCard && !isStarted && !isFullyScratched && cardsLeft > 0 && !isCooldownActive) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Watch a rewarded ad to unlock one scratch.",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                    }
 
-                if (cardsLeft <= 0) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Next Reset In",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = remainingTime,
-                        color = GoldCoin,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Black,
-                        textAlign = TextAlign.Center
-                    )
-                }
-
-                if (isCooldownActive && cardsLeft > 0) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Next card available in ${cooldownSecondsLeft / 60}:${String.format("%02d", cooldownSecondsLeft % 60)}",
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center
-                    )
+                    if (isCooldownActive && cardsLeft > 0) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Next card available in ${cooldownSecondsLeft / 60}:${String.format("%02d", cooldownSecondsLeft % 60)}",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
 
