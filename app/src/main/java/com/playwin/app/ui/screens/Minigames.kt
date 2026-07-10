@@ -120,7 +120,7 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                 isLoadingAd = true
                 android.util.Log.d("PlayWinDebug", "MobileAds initialized: verified on MainActivity onCreate. Initiating load.")
                 val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                val adUnitId = "ca-app-pub-3940256099942544/5224354917"
+                val adUnitId = com.playwin.ads.AdConstants.REWARDED_AD_UNIT_ID
 
                 com.google.android.gms.ads.rewarded.RewardedAd.load(
                     act,
@@ -1729,7 +1729,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                 isLoadingAd = true
                 android.util.Log.d("PlayWinDebug", "Scratch preloading Ad started.")
                 val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                val adUnitId = "ca-app-pub-3940256099942544/5224354917"
+                val adUnitId = com.playwin.ads.AdConstants.REWARDED_AD_UNIT_ID
 
                 com.google.android.gms.ads.rewarded.RewardedAd.load(
                     act,
@@ -3607,7 +3607,7 @@ fun AdRewardButton(
             if (activity != null) {
                 showLoading(true)
                 val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                val adUnitId = "ca-app-pub-3940256099942544/5224354917" // AdMob Test Rewarded Ad Unit ID
+                val adUnitId = com.playwin.ads.AdConstants.REWARDED_AD_UNIT_ID // AdMob Rewarded Ad Unit ID
                 
                 com.google.android.gms.ads.rewarded.RewardedAd.load(
                     activity,
@@ -3772,6 +3772,14 @@ fun TriviaQuizScreen(
     quizSetId: String,
     onBack: () -> Unit
 ) {
+    val scaffoldState = remember { androidx.compose.material3.SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(Unit) {
+        com.playwin.ads.RewardedManager.preload(context)
+    }
+
     val quizzes by viewModel.quizzesState.collectAsStateWithLifecycle()
     val currentQuiz = remember(quizzes, quizSetId) { quizzes.find { it.id == quizSetId } }
 
@@ -3783,7 +3791,6 @@ fun TriviaQuizScreen(
     var quizQuestions by remember { mutableStateOf<List<com.playwin.app.data.model.Quiz>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    val context = androidx.compose.ui.platform.LocalContext.current
     val today = viewModel.getLocalDateString()
     var isCheckingFirebase by remember { mutableStateOf(true) }
     var isAlreadyCompletedTodayFirebase by remember { mutableStateOf(false) }
@@ -3909,8 +3916,6 @@ fun TriviaQuizScreen(
     var lifelines by remember { mutableStateOf(2) }
     var adRefillCount by remember { mutableStateOf(0) }
     var showOutofLifelines by remember { mutableStateOf(false) }
-    var showAdOverlay by remember { mutableStateOf(false) }
-    var adSecondsLeft by remember { mutableStateOf(3) }
 
     // Timer State
     var timeLeftSeconds by remember(timerLimit) { mutableStateOf(timerLimit) }
@@ -3993,95 +3998,172 @@ fun TriviaQuizScreen(
 
     // Dialog when Out of Lifelines
     if (showOutofLifelines) {
-        AlertDialog(
-            onDismissRequest = { /* Force action */ },
-            confirmButton = {
-                if (adRefillCount < 3) {
-                    Button(
-                        onClick = {
-                            showAdOverlay = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
-                        modifier = Modifier.fillMaxWidth().testTag("watch_ad_button")
-                    ) {
-                        Text("Watch Rewarded Ad 📺 (+2 Lifelines)", color = PrimaryDark, fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Button(
-                        onClick = { /* Disabled */ },
-                        enabled = false,
-                        colors = ButtonDefaults.buttonColors(disabledContainerColor = Color.Gray),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Ad Refill Limit Reached (3/3)", color = Color.White.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = onBack,
-                    modifier = Modifier.fillMaxWidth().testTag("exit_quiz_button")
-                ) {
-                    Text("Exit Quiz", color = Color.White.copy(alpha = 0.6f))
-                }
-            },
-            title = {
-                Text("💔 No Lifelines Remaining", color = Color.White, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Text("You have run out of lifelines for this quiz. Watch a quick ad to get +2 lifelines and continue (Refills used: $adRefillCount/3), or exit back to the arena.", color = Color.White.copy(alpha = 0.8f))
-            },
-            containerColor = CardDark,
-            shape = RoundedCornerShape(24.dp)
-        )
-    }
-
-    // Rewarded Ad Simulation Overlay
-    if (showAdOverlay) {
-        AlertDialog(
-            onDismissRequest = { /* Force watch to completion */ },
-            confirmButton = {},
-            title = {
-                Text("📺 Watching Rewarded Ad", color = Color.White, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-            },
-            text = {
+        Dialog(
+            onDismissRequest = { /* Force action */ }
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentHeight()
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = CardDark),
+                border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.3f))
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    CircularProgressIndicator(
-                        progress = adSecondsLeft.toFloat() / 3f,
-                        color = GoldCoin,
-                        strokeWidth = 4.dp
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Title
                     Text(
-                        text = "Your ad is playing... rewards in ${adSecondsLeft}s",
-                        color = Color.White.copy(alpha = 0.8f),
+                        text = "💔 No Lifelines Remaining",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
                         textAlign = TextAlign.Center
                     )
-                }
-            },
-            containerColor = CardDark,
-            shape = RoundedCornerShape(24.dp)
-        )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Description
+                    Text(
+                        text = "You have run out of lifelines for this quiz. Watch a quick ad to get +2 lifelines and continue (Refills used: $adRefillCount/3), or exit back to the arena.",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // Watch Rewarded Button
+                    if (adRefillCount < 3) {
+                        Button(
+                            onClick = {
+                                val activity = context as? android.app.Activity
+                                if (activity != null) {
+                                    if (com.playwin.ads.RewardedManager.isAdReady(activity)) {
+                                        com.playwin.ads.RewardedManager.showAd(
+                                            activity = activity,
+                                            rewardType = com.playwin.ads.RewardType.QUIZ_LIFELINE,
+                                            callbacks = object : com.playwin.ads.RewardCallback {
+                                                override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                                    // Grant +2 lifelines.
+                                                    lifelines = (lifelines + 2).coerceAtMost(8)
+                                                    adRefillCount++
+                                                    
+                                                    // Resume quiz & Continue timer correctly.
+                                                    isAnswered = false
+                                                    selectedAnswerIdx = null
+                                                    resultMessage = ""
+                                                    timeLeftSeconds = timerLimit
+                                                    timeLeftFraction = 1.0f
+                                                    isTimerActive = true
+                                                    
+                                                    // Dismiss popup.
+                                                    showOutofLifelines = false
+                                                }
 
-        LaunchedEffect(Unit) {
-            adSecondsLeft = 3
-            while (adSecondsLeft > 0) {
-                delay(1000L)
-                adSecondsLeft--
+                                                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                                    coroutineScope.launch {
+                                                        scaffoldState.showSnackbar("Ad unavailable. Please try again.")
+                                                    }
+                                                }
+
+                                                override fun onAdFailedToShow(errorMessage: String) {
+                                                    coroutineScope.launch {
+                                                        scaffoldState.showSnackbar("Ad unavailable. Please try again.")
+                                                    }
+                                                }
+
+                                                override fun onAdClosed(userEarnedReward: Boolean) {
+                                                    if (!userEarnedReward) {
+                                                        coroutineScope.launch {
+                                                            scaffoldState.showSnackbar("Ad dismissed. No lifelines granted.")
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    } else {
+                                        com.playwin.ads.RewardedManager.preload(activity)
+                                        coroutineScope.launch {
+                                            scaffoldState.showSnackbar("Ad unavailable. Please try again.")
+                                        }
+                                    }
+                                } else {
+                                    coroutineScope.launch {
+                                        scaffoldState.showSnackbar("Ad unavailable. Please try again.")
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .testTag("watch_ad_button"),
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 20.dp)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = PrimaryDark,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Watch Rewarded Ad (+2 Lifelines)",
+                                    color = PrimaryDark,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { /* Disabled */ },
+                            enabled = false,
+                            colors = ButtonDefaults.buttonColors(disabledContainerColor = Color.Gray.copy(alpha = 0.3f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text(
+                                text = "Ad Refill Limit Reached (3/3)",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Exit Button
+                    TextButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("exit_quiz_button"),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            text = "Exit Quiz",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
             }
-            showAdOverlay = false
-            showOutofLifelines = false
-            adRefillCount++
-            lifelines = (lifelines + 2).coerceAtMost(8) // Gain +2 Lifelines up to max 8
-            isAnswered = false
-            selectedAnswerIdx = null
-            resultMessage = ""
-            timeLeftSeconds = timerLimit
-            timeLeftFraction = 1.0f
-            isTimerActive = true
         }
     }
 
@@ -4215,209 +4297,223 @@ fun TriviaQuizScreen(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkBg)
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextWhite)
-            }
-            Text(
-                text = categoryTitle,
-                style = MaterialTheme.typography.titleLarge,
-                color = TextWhite,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 8.dp)
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = scaffoldState) },
+        bottomBar = {
+            com.playwin.ads.BannerManager.BannerAd(
+                modifier = Modifier.fillMaxWidth()
             )
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Progress indicators
-        Text(
-            text = "Question ${currentQuestionIdx + 1} of ${quizQuestions.size}",
-            color = ElectricPink,
-            fontWeight = FontWeight.Bold
-        )
-
-        // TIMER & LIFELINES PROMINENT HEADER
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        },
+        containerColor = DarkBg
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(DarkBg)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextWhite)
+                }
                 Text(
-                    text = "Lifelines: ",
+                    text = categoryTitle,
+                    style = MaterialTheme.typography.titleLarge,
                     color = TextWhite,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    modifier = Modifier.padding(start = 8.dp)
                 )
-                repeat(lifelines.coerceIn(0, 8)) {
-                    Text(
-                        text = "❤️",
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(horizontal = 2.dp)
-                    )
-                }
-                if (lifelines == 0) {
-                    Text(
-                        text = "💔",
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(horizontal = 2.dp)
-                    )
-                }
             }
-            
-            QuizCircularTimer(secondsLeft = timeLeftSeconds, progress = timeLeftFraction)
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = CardDark)
-        ) {
+            // Progress indicators
             Text(
-                text = quiz.question,
-                color = TextWhite,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
+                text = "Question ${currentQuestionIdx + 1} of ${quizQuestions.size}",
+                color = ElectricPink,
+                fontWeight = FontWeight.Bold
             )
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Answer Slices
-        quiz.options.forEachIndexed { index, option ->
-            val buttonColor = when {
-                !isAnswered && selectedAnswerIdx == index -> ElectricPurple
-                isAnswered && index == quiz.correctAnswerIdx -> Color(0xFF4CAF50)
-                isAnswered && selectedAnswerIdx == index && index != quiz.correctAnswerIdx -> Color(0xFFF44336)
-                else -> CardDark
+            // TIMER & LIFELINES PROMINENT HEADER
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Lifelines: ",
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    repeat(lifelines.coerceIn(0, 8)) {
+                        Text(
+                            text = "❤️",
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
+                    if (lifelines == 0) {
+                        Text(
+                            text = "💔",
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
+                }
+                
+                QuizCircularTimer(secondsLeft = timeLeftSeconds, progress = timeLeftFraction)
             }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             Card(
-                onClick = {
-                    if (!isAnswered && lifelines > 0) {
-                        selectedAnswerIdx = index
-                        // Stop timer immediately on selection
-                        isTimerActive = false
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
-                    .testTag("quiz_option_$index"),
-                colors = CardDefaults.cardColors(containerColor = buttonColor),
-                shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardDark)
             ) {
                 Text(
-                    text = option,
+                    text = quiz.question,
                     color = TextWhite,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    textAlign = TextAlign.Start,
-                    fontWeight = FontWeight.Medium
+                        .padding(16.dp)
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-        if (!isAnswered) {
-            Button(
-                onClick = {
-                    if (selectedAnswerIdx != null) {
-                        isAnswered = true
-                        isTimerActive = false
-                        val answerTimeMs = (System.currentTimeMillis() - startTime).coerceAtMost(10000L)
-                        
-                        if (!answeredQuestionIds.contains(quiz.id)) {
-                            answeredQuestionIds.add(quiz.id)
+            // Answer Slices
+            quiz.options.forEachIndexed { index, option ->
+                val buttonColor = when {
+                    !isAnswered && selectedAnswerIdx == index -> ElectricPurple
+                    isAnswered && index == quiz.correctAnswerIdx -> Color(0xFF4CAF50)
+                    isAnswered && selectedAnswerIdx == index && index != quiz.correctAnswerIdx -> Color(0xFFF44336)
+                    else -> CardDark
+                }
+
+                Card(
+                    onClick = {
+                        if (!isAnswered && lifelines > 0) {
+                            selectedAnswerIdx = index
+                            // Stop timer immediately on selection
+                            isTimerActive = false
                         }
-
-                        if (selectedAnswerIdx == quiz.correctAnswerIdx) {
-                            score++
-                            resultMessage = "Awesome! Correct Answer +20 Coins!"
-                            viewModel.trackQuizStats(timeOut = false, lifelineLostByTimeout = false, answerTimeMs = answerTimeMs)
-                        } else {
-                            lifelines = (lifelines - 1).coerceAtLeast(0)
-                            resultMessage = "Wrong Answer - 1 Lifeline Lost"
-                            viewModel.trackQuizStats(timeOut = false, lifelineLostByTimeout = false, answerTimeMs = answerTimeMs)
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth(0.7f)
-                    .height(48.dp)
-                    .testTag("submit_quiz_button"),
-                colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
-                enabled = selectedAnswerIdx != null,
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Text("Submit Answer", color = PrimaryDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-        } else {
-            // Show Feedback
-            Text(
-                text = resultMessage,
-                color = if (selectedAnswerIdx == quiz.correctAnswerIdx) Color(0xFF81C784) else Color(0xFFE57373),
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(16.dp)
-            )
-
-            Button(
-                onClick = {
-                    if (lifelines > 0) {
-                        if (currentQuestionIdx < quizQuestions.size - 1) {
-                            currentQuestionIdx++
-                            selectedAnswerIdx = null
-                            isAnswered = false
-                            resultMessage = ""
-                            timeLeftSeconds = timerLimit
-                            timeLeftFraction = 1.0f
-                            isTimerActive = true
-                        } else {
-                            isQuizFinished = true
-                        }
-                    } else {
-                        showOutofLifelines = true
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth(0.7f)
-                    .height(48.dp)
-                    .testTag("next_quiz_button"),
-                colors = ButtonDefaults.buttonColors(containerColor = if (lifelines > 0) ElectricPurple else Color(0xFFE57373)),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Text(
-                    text = if (lifelines > 0) {
-                        if (currentQuestionIdx < quizQuestions.size - 1) "Next Question" else "Finish Quiz"
-                    } else {
-                        "No Lifelines Remaining"
                     },
-                    color = TextWhite,
-                    fontWeight = FontWeight.Bold
-                )
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .testTag("quiz_option_$index"),
+                    colors = CardDefaults.cardColors(containerColor = buttonColor),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = option,
+                        color = TextWhite,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp, horizontal = 16.dp),
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (!isAnswered) {
+                Button(
+                    onClick = {
+                        if (selectedAnswerIdx != null) {
+                            isAnswered = true
+                            isTimerActive = false
+                            val answerTimeMs = (System.currentTimeMillis() - startTime).coerceAtMost(10000L)
+                            
+                            if (!answeredQuestionIds.contains(quiz.id)) {
+                                answeredQuestionIds.add(quiz.id)
+                            }
+
+                            if (selectedAnswerIdx == quiz.correctAnswerIdx) {
+                                score++
+                                resultMessage = "Awesome! Correct Answer +20 Coins!"
+                                viewModel.trackQuizStats(timeOut = false, lifelineLostByTimeout = false, answerTimeMs = answerTimeMs)
+                            } else {
+                                lifelines = (lifelines - 1).coerceAtLeast(0)
+                                resultMessage = "Wrong Answer - 1 Lifeline Lost"
+                                viewModel.trackQuizStats(timeOut = false, lifelineLostByTimeout = false, answerTimeMs = answerTimeMs)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(48.dp)
+                        .testTag("submit_quiz_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldCoin),
+                    enabled = selectedAnswerIdx != null,
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Text("Submit Answer", color = PrimaryDark, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            } else {
+                // Show Feedback
+                Text(
+                    text = resultMessage,
+                    color = if (selectedAnswerIdx == quiz.correctAnswerIdx) Color(0xFF81C784) else Color(0xFFE57373),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(8.dp)
+                )
+
+                Button(
+                    onClick = {
+                        if (lifelines > 0) {
+                            if (currentQuestionIdx < quizQuestions.size - 1) {
+                                currentQuestionIdx++
+                                selectedAnswerIdx = null
+                                isAnswered = false
+                                resultMessage = ""
+                                timeLeftSeconds = timerLimit
+                                timeLeftFraction = 1.0f
+                                isTimerActive = true
+                            } else {
+                                isQuizFinished = true
+                            }
+                        } else {
+                            showOutofLifelines = true
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(48.dp)
+                        .testTag("next_quiz_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (lifelines > 0) ElectricPurple else Color(0xFFE57373)),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Text(
+                        text = if (lifelines > 0) {
+                            if (currentQuestionIdx < quizQuestions.size - 1) "Next Question" else "Finish Quiz"
+                        } else {
+                            "No Lifelines Remaining"
+                        },
+                        color = TextWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Guaranteed bottom spacing so content never touches or overlaps with the fixed Banner Ad
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

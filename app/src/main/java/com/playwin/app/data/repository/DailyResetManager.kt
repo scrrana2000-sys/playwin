@@ -225,6 +225,14 @@ object DailyResetManager {
                 mutableData.child("dailyAdsWatched").value = 0
                 mutableData.child("lastAdResetTime").value = nowServer
 
+                val rewardAdsNode = mutableData.child("reward_ads")
+                rewardAdsNode.child("todayCount").value = 0
+                rewardAdsNode.child("todayCoins").value = 0
+                rewardAdsNode.child("bonusProgress").value = 0
+                rewardAdsNode.child("bonusClaimed").value = 0
+                rewardAdsNode.child("lastResetTimestamp").value = 0L
+                rewardAdsNode.child("status").value = "Ready"
+
                 // 5. Daily Task Status / Reset tasks active times
                 mutableData.child("lastCheckInTime").value = 0L // reset so check-in becomes available
                 

@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import com.playwin.app.ui.screens.PlayWinApp
 import com.playwin.app.ui.theme.PlayWinTheme
 import com.playwin.app.ui.viewmodel.PlayWinViewModel
-import com.google.android.gms.ads.MobileAds
 
 class MainActivity : ComponentActivity() {
     private val viewModel: PlayWinViewModel by viewModels()
@@ -41,13 +40,6 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Failed to pre-create WebView default cache directories", e)
-        }
-
-        // Initialize Google Mobile Ads SDK
-        try {
-            MobileAds.initialize(this)
-        } catch (e: Exception) {
-            android.util.Log.e("PlayWinAds", "Failed to initialize MobileAds SDK", e)
         }
         
         val sharedPrefs = getSharedPreferences("playwin_prefs", MODE_PRIVATE)

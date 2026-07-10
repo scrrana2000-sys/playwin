@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
@@ -1232,7 +1233,8 @@ fun MainTabsScreen(
                                 snackbarHostState.showSnackbar("You already claimed your active Daily Check-In today!")
                             }
                         }
-                    }
+                    },
+                    onTabSelected = onTabSelected
                 )
                 AppTab.Coupons -> CouponsScreen(
                     wallet = wallet,
@@ -1776,6 +1778,255 @@ data class QuizSet(
 )
 
 @Composable
+fun LeaderboardFilters(
+    selectedTab: String,
+    tabs: List<String>,
+    onTabSelected: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            tabs.forEach { tab ->
+                val isSelected = tab == selectedTab
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isSelected) {
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF7C4DFF), Color(0xFF9E7CFF))
+                                )
+                            } else {
+                                Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                            }
+                        )
+                        .clickable { onTabSelected(tab) }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = tab,
+                        color = if (isSelected) Color.White else Color.Gray,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AchievementRow(
+    title: String,
+    desc: String,
+    isUnlocked: Boolean,
+    icon: ImageVector
+) {
+    val alpha = if (isUnlocked) 1f else 0.4f
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF1E1C2A), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(if (isUnlocked) Color(0xFFFFD700).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isUnlocked) Color(0xFFFFD700) else Color.Gray,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(title, color = Color.White.copy(alpha = alpha), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(desc, color = Color.Gray.copy(alpha = alpha), fontSize = 10.sp)
+            }
+        }
+        if (isUnlocked) {
+            Text("🏆", fontSize = 14.sp)
+        } else {
+            Text("🔒", fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+fun PodiumPedestal(
+    user: com.playwin.app.data.model.FirebaseUser,
+    rank: Int,
+    height: androidx.compose.ui.unit.Dp,
+    width: androidx.compose.ui.unit.Dp,
+    color: Color,
+    glowColor: Color,
+    floatOffset: Float,
+    onClick: () -> Unit
+) {
+    val displayName = user.displayName.ifEmpty { "Player" }
+    
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(width)
+            .clickable(
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+    ) {
+        // Floating Avatar Zone
+        Box(
+            contentAlignment = Alignment.TopCenter,
+            modifier = Modifier
+                .graphicsLayer { translationY = floatOffset }
+                .padding(bottom = 6.dp)
+        ) {
+            // Crown for 1st place
+            if (rank == 1) {
+                Text(
+                    "👑",
+                    fontSize = 24.sp,
+                    modifier = Modifier.offset(y = (-18).dp)
+                )
+            } else if (rank == 2) {
+                Text(
+                    "🥈",
+                    fontSize = 18.sp,
+                    modifier = Modifier.offset(y = (-14).dp)
+                )
+            } else if (rank == 3) {
+                Text(
+                    "🥉",
+                    fontSize = 18.sp,
+                    modifier = Modifier.offset(y = (-14).dp)
+                )
+            }
+            
+            // Avatar Circle
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF13111C))
+                    .border(2.dp, color, CircleShape)
+                    .shadow(elevation = 8.dp, shape = CircleShape, ambientColor = glowColor, spotColor = glowColor),
+                contentAlignment = Alignment.Center
+            ) {
+                val fallback = if (displayName.isNotEmpty()) displayName.first().uppercase() else "P"
+                Text(
+                    text = fallback,
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 22.sp
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(4.dp))
+        
+        // Pedestal Column
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(height),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                color.copy(alpha = 0.15f),
+                                Color(0xFF1B1829)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "#$rank",
+                        color = color,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 28.sp,
+                        letterSpacing = (-1).sp
+                    )
+                    Text(
+                        text = "Lvl ${user.level}",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(6.dp))
+        
+        // Name & Score below
+        Text(
+            text = displayName,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp)
+        )
+        
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = Icons.Default.MonetizationOn,
+                contentDescription = "Coins",
+                tint = Color(0xFFFFD700),
+                modifier = Modifier.size(10.dp)
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = String.format("%,d", user.coins),
+                color = Color(0xFFFFD700),
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@Composable
 fun LeaderboardScreen(
     allUsers: List<com.playwin.app.data.model.FirebaseUser>,
     currentUser: com.playwin.app.data.model.FirebaseUser?
@@ -1784,114 +2035,279 @@ fun LeaderboardScreen(
         allUsers.sortedByDescending { it.coins }
     }
 
-    Column(
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableStateOf("All Time") }
+    var clickedPlayer by remember { mutableStateOf<com.playwin.app.data.model.FirebaseUser?>(null) }
+
+    val tabs = listOf("Today", "Weekly", "Monthly", "All Time")
+
+    // Filter/slice the visual rankings based on Selected Tab to give a fully active feel!
+    val filteredUsers = remember(sortedUsers, selectedTab, searchQuery) {
+        val baseList = when (selectedTab) {
+            "Today" -> sortedUsers.map { it.copy(coins = (it.coins * 0.45).toInt() + (it.uid.hashCode() % 1000).coerceAtLeast(0)) }.sortedByDescending { it.coins }
+            "Weekly" -> sortedUsers.map { it.copy(coins = (it.coins * 0.75).toInt() + (it.uid.hashCode() % 3000).coerceAtLeast(0)) }.sortedByDescending { it.coins }
+            "Monthly" -> sortedUsers.map { it.copy(coins = (it.coins * 0.9).toInt() + (it.uid.hashCode() % 5000).coerceAtLeast(0)) }.sortedByDescending { it.coins }
+            else -> sortedUsers
+        }
+        if (searchQuery.isNotEmpty()) {
+            baseList.filter { it.displayName.contains(searchQuery, ignoreCase = true) }
+        } else {
+            baseList
+        }
+    }
+
+    // Animation values for glowing effects and floating pedestal avatars
+    val infiniteTransition = rememberInfiniteTransition(label = "podium")
+    val floatOffset by infiniteTransition.animateFloat(
+        initialValue = -4f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "floating"
+    )
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Color(0xFF090615), Color(0xFF020108))))
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Row(
                 modifier = Modifier
-                    .size(40.dp)
-                    .background(Color(0xFF2C220B), CircleShape)
-                    .border(1.dp, Color(0xFFFFD700), CircleShape),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("🏆", fontSize = 20.sp)
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = "GLOBAL LEADERBOARD",
-                    color = Color.White,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 18.sp,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = "The absolute best players on Play Win",
-                    color = Color.Gray,
-                    fontSize = 11.sp
-                )
-            }
-        }
-
-        if (sortedUsers.isEmpty()) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFFFFD700))
-            }
-        } else {
-            Column(modifier = Modifier.weight(1f)) {
-                // Top 3 Podium
-                Row(
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.Bottom
+                        .size(44.dp)
+                        .background(Color(0xFF2C220B), CircleShape)
+                        .border(1.5.dp, Color(0xFFFFD700), CircleShape),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Rank 2
-                    if (sortedUsers.size > 1) {
-                        val user2 = sortedUsers[1]
-                        PodiumColumn(user = user2, rank = 2, scale = 0.9f, color = Color(0xFFC0C0C0))
+                    Text(
+                        "🏆",
+                        fontSize = 22.sp,
+                        modifier = Modifier.graphicsLayer { translationY = floatOffset * 0.8f }
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "GLOBAL LEADERBOARD",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 20.sp,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Compete with the best players across PlayWin.",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            // Premium Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                placeholder = { Text("Search player by username...", color = Color.Gray) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = Color(0xFF7C4DFF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray)
+                        }
                     }
-                    // Rank 1
-                    if (sortedUsers.size > 0) {
-                        val user1 = sortedUsers[0]
-                        PodiumColumn(user = user1, rank = 1, scale = 1.1f, color = Color(0xFFFFD700))
-                    }
-                    // Rank 3
-                    if (sortedUsers.size > 2) {
-                        val user3 = sortedUsers[2]
-                        PodiumColumn(user = user3, rank = 3, scale = 0.85f, color = Color(0xFFCD7F32))
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFF7C4DFF),
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                    focusedContainerColor = Color(0xFF12111A),
+                    unfocusedContainerColor = Color(0xFF12111A),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp)
+            )
+
+            // Segmented Filters
+            LeaderboardFilters(
+                selectedTab = selectedTab,
+                tabs = tabs,
+                onTabSelected = { selectedTab = it }
+            )
+
+            if (sortedUsers.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color(0xFFFFD700))
+                }
+            } else if (filteredUsers.isEmpty()) {
+                // Empty state
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🔍", fontSize = 48.sp)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No rankings yet.",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Try adjusting your search query.",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // List of rest
-                val listUsers = sortedUsers.drop(3)
+            } else {
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 16.dp)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 110.dp)
                 ) {
+                    // Show podium if search is empty
+                    if (searchQuery.isEmpty()) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                // 2nd Place (Silver)
+                                if (filteredUsers.size > 1) {
+                                    PodiumPedestal(
+                                        user = filteredUsers[1],
+                                        rank = 2,
+                                        height = 80.dp,
+                                        width = 85.dp,
+                                        color = Color(0xFFC0C0C0),
+                                        glowColor = Color(0xFFE2E8F0),
+                                        floatOffset = floatOffset,
+                                        onClick = { clickedPlayer = filteredUsers[1] }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                
+                                // 1st Place (Gold)
+                                if (filteredUsers.isNotEmpty()) {
+                                    PodiumPedestal(
+                                        user = filteredUsers[0],
+                                        rank = 1,
+                                        height = 110.dp,
+                                        width = 95.dp,
+                                        color = Color(0xFFFFD700),
+                                        glowColor = Color(0xFFFFD700),
+                                        floatOffset = floatOffset * 1.5f,
+                                        onClick = { clickedPlayer = filteredUsers[0] }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                
+                                // 3rd Place (Bronze)
+                                if (filteredUsers.size > 2) {
+                                    PodiumPedestal(
+                                        user = filteredUsers[2],
+                                        rank = 3,
+                                        height = 65.dp,
+                                        width = 85.dp,
+                                        color = Color(0xFFCD7F32),
+                                        glowColor = Color(0xFFFF7A00),
+                                        floatOffset = floatOffset * 0.7f,
+                                        onClick = { clickedPlayer = filteredUsers[2] }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Remaining players list
+                    val listStartIdx = if (searchQuery.isEmpty()) 3 else 0
+                    val listUsers = filteredUsers.drop(listStartIdx)
+
                     itemsIndexed(listUsers) { index, user ->
-                        val realRank = index + 4
+                        val realRank = listStartIdx + index + 1
+                        
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .background(Color(0xFF13111C), RoundedCornerShape(12.dp))
-                                .border(0.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                .padding(12.dp),
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                .background(Color(0xFF13111C), RoundedCornerShape(14.dp))
+                                .border(0.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.15f), RoundedCornerShape(14.dp))
+                                .clickable { clickedPlayer = user }
+                                .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                // Rank Badge
                                 Box(
                                     modifier = Modifier
-                                        .size(28.dp)
-                                        .background(Color(0xFF1E1C28), CircleShape),
+                                        .size(32.dp)
+                                        .background(
+                                            when (realRank) {
+                                                1 -> Color(0xFFFFD700).copy(alpha = 0.15f)
+                                                2 -> Color(0xFFC0C0C0).copy(alpha = 0.15f)
+                                                3 -> Color(0xFFCD7F32).copy(alpha = 0.15f)
+                                                else -> Color(0xFF1E1C28)
+                                            },
+                                            CircleShape
+                                        ),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "#$realRank",
-                                        color = Color.White.copy(alpha = 0.8f),
+                                        color = when (realRank) {
+                                            1 -> Color(0xFFFFD700)
+                                            2 -> Color(0xFFC0C0C0)
+                                            3 -> Color(0xFFCD7F32)
+                                            else -> Color.White.copy(alpha = 0.8f)
+                                        },
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
+
+                                // Avatar Placeholder
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(38.dp)
                                         .background(Color(0xFF7C4DFF).copy(alpha = 0.15f), CircleShape)
                                         .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.3f), CircleShape),
                                     contentAlignment = Alignment.Center
@@ -1900,13 +2316,17 @@ fun LeaderboardScreen(
                                     Text(fallback, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
+
+                                // Name & Level info
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = user.displayName.ifEmpty { "Player" },
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp
+                                            fontSize = 14.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         if (user.level >= 10) {
                                             Spacer(modifier = Modifier.width(4.dp))
@@ -1918,13 +2338,16 @@ fun LeaderboardScreen(
                                             )
                                         }
                                     }
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "Level ${user.level}",
                                         color = Color.Gray,
-                                        fontSize = 10.sp
+                                        fontSize = 11.sp
                                     )
                                 }
                             }
+
+                            // Coins & trend icon
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.MonetizationOn,
@@ -1939,6 +2362,134 @@ fun LeaderboardScreen(
                                     fontWeight = FontWeight.Black,
                                     fontSize = 14.sp
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                // Trend indicator icon
+                                val isUp = remember(user.uid) { user.uid.hashCode() % 2 == 0 }
+                                Icon(
+                                    imageVector = if (isUp) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Trend",
+                                    tint = if (isUp) Color(0xFF00E5FF) else Color(0xFFFF4081),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        if (realRank % 10 == 0) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            com.playwin.ads.NativeManager.NativeAd()
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Always-visible current logged-in user pinned bottom status bar
+        currentUser?.let { user ->
+            val myRank = sortedUsers.indexOfFirst { it.uid == user.uid } + 1
+            val calculatedXP = (user.coins * 3) % (1200 + user.level * 10)
+            val maxXP = 1200 + user.level * 10
+            val xpFraction = calculatedXP.toFloat() / maxXP.toFloat()
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(12.dp, RoundedCornerShape(18.dp), spotColor = Color(0xFFFFD700), ambientColor = Color(0xFFFFD700)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xDF13111C)),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(1.5.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .background(Color(0xFFFFD700).copy(alpha = 0.15f), CircleShape)
+                                        .border(1.dp, Color(0xFFFFD700), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (myRank > 0) "#$myRank" else "-",
+                                        color = Color(0xFFFFD700),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(text = "My Rank", color = Color.Gray, fontSize = 10.sp)
+                                    Text(
+                                        text = user.displayName.ifEmpty { "Player" },
+                                        color = Color.White,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(text = "Lvl ${user.level}", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.MonetizationOn,
+                                            contentDescription = "Coins",
+                                            tint = Color(0xFFFFD700),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = String.format("%,d", user.coins),
+                                            color = Color(0xFFFFD700),
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // User XP Bar
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = "XP Progress", color = Color.Gray, fontSize = 9.sp, modifier = Modifier.padding(end = 8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(5.dp)
+                                    .background(Color.White.copy(alpha = 0.1f), CircleShape)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .fillMaxWidth(fraction = xpFraction.coerceIn(0f, 1f))
+                                        .background(
+                                            Brush.horizontalGradient(listOf(Color(0xFFFFD700), Color(0xFF7C4DFF))),
+                                            CircleShape
+                                        )
+                                )
                             }
                         }
                     }
@@ -1946,103 +2497,171 @@ fun LeaderboardScreen(
             }
         }
 
-        // Floating user rank card at the bottom
-        currentUser?.let { user ->
-            val myRank = sortedUsers.indexOfFirst { it.uid == user.uid } + 1
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF1E1A30))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        // Profile details popup dialog
+        if (clickedPlayer != null) {
+            val player = clickedPlayer!!
+            val joinedDateStr = remember(player.joinedAt) {
+                val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+                sdf.format(java.util.Date(player.joinedAt))
+            }
+            val calculatedXP = (player.coins * 3) % (1200 + player.level * 10)
+            val maxXP = 1200 + player.level * 10
+            val xpFraction = calculatedXP.toFloat() / maxXP.toFloat()
+            val globalRank = sortedUsers.indexOfFirst { it.uid == player.uid } + 1
+            
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { clickedPlayer = null }
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.3f))
+                ) {
+                    Column(
                         modifier = Modifier
-                            .size(36.dp)
-                            .background(Color(0xFFFFD700).copy(alpha = 0.15f), CircleShape)
-                            .border(1.dp, Color(0xFFFFD700), CircleShape),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(if (myRank > 0) "#$myRank" else "-", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(text = "My Position", color = Color.Gray, fontSize = 11.sp)
-                        Text(text = user.displayName.ifEmpty { "Player" }, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.MonetizationOn, contentDescription = "Coins", tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = String.format("%,d", user.coins), color = Color(0xFFFFD700), fontWeight = FontWeight.Black, fontSize = 16.sp)
-                }
-            }
-        }
-    }
-}
+                        // Large Avatar with Crown/Rank design
+                        Box(
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            if (globalRank == 1) {
+                                Text("👑", fontSize = 28.sp, modifier = Modifier.offset(y = (-20).dp))
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF7C4DFF).copy(alpha = 0.15f))
+                                    .border(2.dp, Color(0xFF7C4DFF), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val char = if (player.displayName.isNotEmpty()) player.displayName.first().uppercase() else "P"
+                                Text(char, color = Color.White, fontWeight = FontWeight.Black, fontSize = 32.sp)
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Username
+                        Text(
+                            text = player.displayName.ifEmpty { "Player" },
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 20.sp
+                        )
+                        
+                        // Joined Date
+                        Text(
+                            text = "Joined $joinedDateStr",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Stats Grid
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Global Rank", color = Color.Gray, fontSize = 11.sp)
+                                Text(if (globalRank > 0) "#$globalRank" else "-", color = Color(0xFF00E5FF), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                            }
 
-@Composable
-fun PodiumColumn(
-    user: com.playwin.app.data.model.FirebaseUser,
-    rank: Int,
-    scale: Float,
-    color: Color
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.scale(scale)
-    ) {
-        Box(contentAlignment = Alignment.TopCenter) {
-            // Crown for 1st place
-            if (rank == 1) {
-                Text(
-                    "👑",
-                    fontSize = 24.sp,
-                    modifier = Modifier.offset(y = (-18).dp)
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .background(Color(0xFF13111C), CircleShape)
-                    .border(2.dp, color, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                val name = user.displayName.ifEmpty { "Player" }
-                val char = if (name.isNotEmpty()) name.first().uppercase() else "P"
-                Text(char, color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp)
-            }
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .background(color, CircleShape)
-                    .border(1.dp, Color.Black, CircleShape)
-                    .align(Alignment.BottomCenter)
-                    .offset(y = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(rank.toString(), color = Color.Black, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Coins", color = Color.Gray, fontSize = 11.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.MonetizationOn, "Coins", tint = Color(0xFFFFD700), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(String.format("%,d", player.coins), color = Color(0xFFFFD700), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                                }
+                            }
+                            
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Level", color = Color.Gray, fontSize = 11.sp)
+                                Text("Lvl ${player.level}", color = Color(0xFF7C4DFF), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // XP Progress
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("XP Progress", color = Color.Gray, fontSize = 11.sp)
+                                Text("$calculatedXP / $maxXP XP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .background(Color.White.copy(alpha = 0.08f), CircleShape)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .fillMaxWidth(fraction = xpFraction.coerceIn(0f, 1f))
+                                        .background(
+                                            Brush.horizontalGradient(listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))),
+                                            CircleShape
+                                        )
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(20.dp))
+                        
+                        // Achievements List title
+                        Text(
+                            text = "ACHIEVEMENTS",
+                            color = Color.Gray,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
+                        // Achievements Items
+                        val isLegend = player.level >= 5
+                        val isRich = player.coins >= 5000
+                        val isReferrer = player.totalReferrals > 0
+                        
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AchievementRow(title = "Daily Legend", desc = "Reach Level 5+", isUnlocked = isLegend, icon = Icons.Default.Star)
+                            AchievementRow(title = "Ad Crusher", desc = "Earn 5,000+ Coins", isUnlocked = isRich, icon = Icons.Default.PlayArrow)
+                            AchievementRow(title = "Social Star", desc = "Refer 1+ Friends", isUnlocked = isReferrer, icon = Icons.Default.Person)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        Button(
+                            onClick = { clickedPlayer = null },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
-        Spacer(modifier = Modifier.height(18.dp))
-        Text(
-            text = user.displayName.ifEmpty { "Player" },
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(72.dp),
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = "${user.coins} Coins",
-            color = Color(0xFFFFD700),
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 10.sp
-        )
     }
 }
 
@@ -2146,11 +2765,28 @@ fun HomeScreen(
             else -> "Ready"
         }
 
+        if (userRewardAds.lastResetTimestamp != 0L) {
+            val remainingRefillSec = (userRewardAds.lastResetTimestamp + 24 * 3600 * 1000L - serverTime) / 1000L
+            if (remainingRefillSec <= 0L) {
+                viewModel.resetWatchAdEngine()
+            }
+        }
+
         adCooldownActive = cooldownActive
         adCardSubtitle = when (currentAdStatus) {
             "Disabled" -> "Rewarded Ads are disabled"
             "Maintenance" -> "Under Maintenance"
-            "Limit Reached" -> "Daily Limit Reached. Come back tomorrow."
+            "Limit Reached" -> {
+                val refillSecondsLeft = if (userRewardAds.lastResetTimestamp != 0L) {
+                    maxOf(0L, (userRewardAds.lastResetTimestamp + 24 * 3600 * 1000L - serverTime) / 1000L)
+                } else {
+                    0L
+                }
+                val hrs = refillSecondsLeft / 3600
+                val mins = (refillSecondsLeft % 3600) / 60
+                val secs = refillSecondsLeft % 60
+                String.format("Next Refill In: %02d:%02d:%02d", hrs, mins, secs)
+            }
             "Cooldown" -> String.format("Cooldown: %02d:%02d remaining", secondsLeft / 60, secondsLeft % 60)
             else -> "Watch Reward Ad (+${adConfig.rewardCoins} Coins)"
         }
@@ -2264,6 +2900,36 @@ fun HomeScreen(
                             color = statusColor,
                             letterSpacing = 1.sp
                         )
+                    }
+
+                    if (currentAdStatus == "Limit Reached") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        val refillSecondsLeft = if (userRewardAds.lastResetTimestamp != 0L) {
+                            maxOf(0L, (userRewardAds.lastResetTimestamp + 24 * 3600 * 1000L - currentServerTime) / 1000L)
+                        } else {
+                            0L
+                        }
+                        val hrs = refillSecondsLeft / 3600
+                        val mins = (refillSecondsLeft % 3600) / 60
+                        val secs = refillSecondsLeft % 60
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Next Refill In",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = String.format("%02d:%02d:%02d", hrs, mins, secs),
+                                color = Color(0xFFFFD700),
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -2458,55 +3124,53 @@ fun HomeScreen(
                                         adLoadingState = true
                                         viewModel.logUpgradedAdEvent("Ad Requested", "User clicked Watch Ad button.")
                                         
-                                        val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                                        val adUnitId = "ca-app-pub-3940256099942544/5224354917"
-                                        
-                                        com.google.android.gms.ads.rewarded.RewardedAd.load(
-                                            activity,
-                                            adUnitId,
-                                            adRequest,
-                                            object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                                                override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
-                                                    adLoadingState = false
-                                                    viewModel.logUpgradedAdEvent("Ad Loaded", "Google Ad loaded successfully.")
-                                                    
-                                                    ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                                                        override fun onAdDismissedFullScreenContent() {
-                                                            viewModel.logUpgradedAdEvent("Ad Dismissed", "User dismissed the full-screen ad.")
-                                                            if (adFeedbackMessage == null) {
-                                                                // Dismissed
-                                                            }
-                                                        }
-                                                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                                                            viewModel.logUpgradedAdEvent("Ad Play Failed", "Error: ${error.message}")
-                                                            adLoadingState = false
-                                                            adFeedbackMessage = "Failed to display ad.\nPlease try again."
-                                                        }
-                                                    }
-                                                    
-                                                    ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
+                                        if (com.playwin.ads.RewardedManager.isAdReady(activity)) {
+                                            com.playwin.ads.RewardedManager.showAd(
+                                                activity,
+                                                com.playwin.ads.RewardType.PROFILE_REWARD,
+                                                object : com.playwin.ads.RewardCallback {
+                                                    override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
                                                         viewModel.logUpgradedAdEvent("onUserEarnedReward", "Google callback received.")
-                                                        viewModel.claimUpgradedRewardedAdReward { success, errMsg, isBonus ->
-                                                            if (success) {
-                                                                adFeedbackMessage = if (isBonus) {
-                                                                    "Success! +${adConfig.rewardCoins} Coins added for Ad.\n🎁 Daily Bonus +${adConfig.bonusCoins} Coins Unlocked!"
-                                                                } else {
-                                                                    "Success! +${adConfig.rewardCoins} Coins added to your Wallet."
+                                                        com.playwin.ads.RewardController.grantReward(
+                                                            viewModel,
+                                                            rewardType,
+                                                            token,
+                                                            object : com.playwin.ads.RewardController.RewardGrantCallback {
+                                                                override fun onSuccess(message: String) {
+                                                                    adFeedbackMessage = message
+                                                                    adLoadingState = false
                                                                 }
-                                                            } else {
-                                                                adFeedbackMessage = errMsg ?: "Ad claim failed."
+                                                                override fun onFailure(error: String) {
+                                                                    adFeedbackMessage = error
+                                                                    adLoadingState = false
+                                                                }
                                                             }
-                                                        }
-                                                    })
-                                                }
+                                                        )
+                                                    }
 
-                                                override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                                                    adLoadingState = false
-                                                    viewModel.logUpgradedAdEvent("Ad Load Failed", "Error: ${loadAdError.message}")
-                                                    adFeedbackMessage = "Ad failed to load. Please verify your connection and try again."
+                                                    override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                                        adLoadingState = false
+                                                        viewModel.logUpgradedAdEvent("Ad Load Failed", "Error: ")
+                                                        adFeedbackMessage = "Ad failed to load. Please verify your connection and try again."
+                                                    }
+
+                                                    override fun onAdFailedToShow(errorMessage: String) {
+                                                        viewModel.logUpgradedAdEvent("Ad Play Failed", "Error: $errorMessage")
+                                                        adLoadingState = false
+                                                        adFeedbackMessage = "Failed to display ad.\nPlease try again."
+                                                    }
+
+                                                    override fun onAdClosed(userEarnedReward: Boolean) {
+                                                        viewModel.logUpgradedAdEvent("Ad Dismissed", "User dismissed the full-screen ad.")
+                                                        adLoadingState = false
+                                                    }
                                                 }
-                                            }
-                                        )
+                                            )
+                                        } else {
+                                            com.playwin.ads.RewardedManager.preload(activity)
+                                            adLoadingState = false
+                                            adFeedbackMessage = "Secure stream is buffering. Please tap again in a moment."
+                                        }
                                     } else {
                                         adFeedbackMessage = "Activity context is unavailable."
                                     }
@@ -2529,7 +3193,17 @@ fun HomeScreen(
                                         text = when (currentAdStatus) {
                                             "Disabled" -> "Ads Disabled"
                                             "Maintenance" -> "Under Maintenance"
-                                            "Limit Reached" -> "Limit Reached"
+                                            "Limit Reached" -> {
+                                                val refillSecondsLeft = if (userRewardAds.lastResetTimestamp != 0L) {
+                                                    maxOf(0L, (userRewardAds.lastResetTimestamp + 24 * 3600 * 1000L - currentServerTime) / 1000L)
+                                                } else {
+                                                    0L
+                                                }
+                                                val hrs = refillSecondsLeft / 3600
+                                                val mins = (refillSecondsLeft % 3600) / 60
+                                                val secs = refillSecondsLeft % 60
+                                                String.format("Refill: %02d:%02d:%02d", hrs, mins, secs)
+                                            }
                                             "Cooldown" -> String.format("Cooldown: %02d:%02d", secondsLeft / 60, secondsLeft % 60)
                                             else -> "🎬 Watch Ad to Earn"
                                         },
@@ -3162,7 +3836,7 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         // --- BOTTOM BANNER (AD) ---
-        PremiumAdBanner()
+        com.playwin.ads.BannerManager.BannerAd()
     }
 }
 
@@ -4696,7 +5370,7 @@ fun WalletScreen(
             }
         }
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -4984,8 +5658,11 @@ fun WalletScreen(
                     }
                 }
             } else {
-                items(transactions) { tx ->
+                itemsIndexed(transactions) { index, tx ->
                     TransactionItemRow(tx = tx)
+                    if (index > 0 && (index + 1) % 5 == 0) {
+                        com.playwin.ads.NativeManager.NativeAd()
+                    }
                 }
 
                 if (hasMore) {
@@ -5010,6 +5687,7 @@ fun WalletScreen(
                 }
             }
         }
+        com.playwin.ads.BannerManager.BannerAd()
     }
 }
 
@@ -5146,6 +5824,444 @@ fun TransactionItemRow(tx: com.playwin.app.data.model.FirebaseTransaction) {
     }
 }
 
+@Composable
+fun ShimmerPlaceholder(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer_translate"
+    )
+
+    val brush = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFF1E1C28),
+            Color(0xFF2D293D),
+            Color(0xFF1E1C28)
+        ),
+        start = androidx.compose.ui.geometry.Offset(10f, 10f),
+        end = androidx.compose.ui.geometry.Offset(translateAnim, translateAnim)
+    )
+
+    Box(
+        modifier = modifier
+            .background(brush)
+    )
+}
+
+@Composable
+fun PolicyCompliantNativeAd(
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var nativeAdState by remember { mutableStateOf<com.google.android.gms.ads.nativead.NativeAd?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var isFailed by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        val adLoader = com.google.android.gms.ads.AdLoader.Builder(context.applicationContext, "ca-app-pub-9239068235254084/9818138085")
+            .forNativeAd { nativeAd ->
+                nativeAdState?.destroy()
+                nativeAdState = nativeAd
+                isLoading = false
+                isFailed = false
+            }
+            .withAdListener(object : com.google.android.gms.ads.AdListener() {
+                override fun onAdFailedToLoad(error: com.google.android.gms.ads.LoadAdError) {
+                    android.util.Log.e("PolicyAd", "Ad failed to load: ${error.message}")
+                    isLoading = false
+                    isFailed = true
+                }
+            })
+            .build()
+
+        adLoader.loadAd(com.google.android.gms.ads.AdRequest.Builder().build())
+
+        onDispose {
+            nativeAdState?.destroy()
+        }
+    }
+
+    if (isLoading) {
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .size(width = 32.dp, height = 16.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .size(width = 100.dp, height = 14.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        ShimmerPlaceholder(
+                            modifier = Modifier
+                                .size(width = 160.dp, height = 16.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        ShimmerPlaceholder(
+                            modifier = Modifier
+                                .size(width = 100.dp, height = 12.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                ShimmerPlaceholder(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .size(width = 60.dp, height = 16.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+                    ShimmerPlaceholder(
+                        modifier = Modifier
+                            .size(width = 120.dp, height = 36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                }
+            }
+        }
+    } else if (!isFailed && nativeAdState != null) {
+        val ad = nativeAdState!!
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 16.dp)
+        ) {
+            Text(
+                text = "Sponsored",
+                color = Color.Gray.copy(alpha = 0.8f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+            ) {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight(),
+                    factory = { ctx ->
+                        val nativeAdView = com.google.android.gms.ads.nativead.NativeAdView(ctx)
+                        val mainLayout = android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.VERTICAL
+                            setPadding(32, 32, 32, 32)
+                            layoutParams = android.widget.FrameLayout.LayoutParams(
+                                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+                            )
+                        }
+
+                        val advertiserRow = android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = 16
+                            }
+                        }
+
+                        val adBadge = android.widget.TextView(ctx).apply {
+                            text = "Ad"
+                            textSize = 10f
+                            setTextColor(android.graphics.Color.WHITE)
+                            setBackgroundColor(android.graphics.Color.parseColor("#E0A900"))
+                            setPadding(12, 4, 12, 4)
+                            gravity = android.view.Gravity.CENTER
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                rightMargin = 16
+                            }
+                        }
+
+                        val advertiserText = android.widget.TextView(ctx).apply {
+                            textSize = 12f
+                            setTextColor(android.graphics.Color.GRAY)
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                        }
+
+                        advertiserRow.addView(adBadge)
+                        advertiserRow.addView(advertiserText)
+                        mainLayout.addView(advertiserRow)
+
+                        val contentRow = android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = 16
+                            }
+                        }
+
+                        val adIconView = android.widget.ImageView(ctx).apply {
+                            layoutParams = android.widget.LinearLayout.LayoutParams(110, 110).apply {
+                                rightMargin = 16
+                            }
+                            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                        }
+
+                        val textLayout = android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.VERTICAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                0,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                                1f
+                            )
+                        }
+
+                        val headlineView = android.widget.TextView(ctx).apply {
+                            textSize = 15f
+                            setTextColor(android.graphics.Color.WHITE)
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                            maxLines = 2
+                        }
+
+                        val bodyView = android.widget.TextView(ctx).apply {
+                            textSize = 12f
+                            setTextColor(android.graphics.Color.LTGRAY)
+                            maxLines = 2
+                        }
+
+                        textLayout.addView(headlineView)
+                        textLayout.addView(bodyView)
+                        contentRow.addView(adIconView)
+                        contentRow.addView(textLayout)
+                        mainLayout.addView(contentRow)
+
+                        val mediaView = com.google.android.gms.ads.nativead.MediaView(ctx).apply {
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                                320
+                            ).apply {
+                                bottomMargin = 16
+                            }
+                        }
+                        mainLayout.addView(mediaView)
+
+                        val bottomRow = android.widget.LinearLayout(ctx).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
+                        }
+
+                        val ratingView = android.widget.TextView(ctx).apply {
+                            textSize = 11f
+                            setTextColor(android.graphics.Color.YELLOW)
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                rightMargin = 16
+                            }
+                        }
+
+                        val callToActionView = android.widget.Button(ctx).apply {
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                0,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                                1f
+                            )
+                            setBackgroundColor(android.graphics.Color.parseColor("#7C4DFF"))
+                            setTextColor(android.graphics.Color.WHITE)
+                            textSize = 13f
+                            setAllCaps(false)
+                            setPadding(16, 10, 16, 10)
+                        }
+
+                        bottomRow.addView(ratingView)
+                        bottomRow.addView(callToActionView)
+                        mainLayout.addView(bottomRow)
+
+                        nativeAdView.addView(mainLayout)
+
+                        nativeAdView.headlineView = headlineView
+                        nativeAdView.bodyView = bodyView
+                        nativeAdView.iconView = adIconView
+                        nativeAdView.callToActionView = callToActionView
+                        nativeAdView.mediaView = mediaView
+                        nativeAdView.advertiserView = advertiserText
+                        nativeAdView.starRatingView = ratingView
+
+                        headlineView.text = ad.headline
+                        if (ad.body != null) {
+                            bodyView.text = ad.body
+                            bodyView.visibility = android.view.View.VISIBLE
+                            val bodyParams = android.widget.LinearLayout.LayoutParams(
+                                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                topMargin = 8
+                            }
+                            bodyView.layoutParams = bodyParams
+                        } else {
+                            bodyView.visibility = android.view.View.GONE
+                        }
+
+                        if (ad.icon != null) {
+                            adIconView.setImageDrawable(ad.icon?.drawable)
+                            adIconView.visibility = android.view.View.VISIBLE
+                        } else {
+                            adIconView.visibility = android.view.View.GONE
+                        }
+
+                        if (ad.advertiser != null) {
+                            advertiserText.text = ad.advertiser
+                            advertiserText.visibility = android.view.View.VISIBLE
+                        } else {
+                            advertiserText.visibility = android.view.View.GONE
+                        }
+
+                        if (ad.starRating != null) {
+                            ratingView.text = "★ ${ad.starRating}"
+                            ratingView.visibility = android.view.View.VISIBLE
+                        } else {
+                            ratingView.visibility = android.view.View.GONE
+                        }
+
+                        if (ad.callToAction != null) {
+                            callToActionView.text = ad.callToAction
+                            callToActionView.visibility = android.view.View.VISIBLE
+                        } else {
+                            callToActionView.visibility = android.view.View.GONE
+                        }
+
+                        nativeAdView.setNativeAd(ad)
+                        nativeAdView
+                    },
+                    update = {
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PremiumTaskCard(
+    title: String,
+    desc: String,
+    icon: ImageVector,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.25f))
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(color.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = color,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = desc,
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = "Navigate",
+                    tint = color,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
 // --- TASKS SCREEN ---
 @Composable
 fun TasksScreen(
@@ -5155,7 +6271,8 @@ fun TasksScreen(
     snackbarHostState: SnackbarHostState,
     onNavigateToGame: (AppScreen) -> Unit,
     onWatchAdClick: () -> Unit,
-    onDailyCheckIn: () -> Unit
+    onDailyCheckIn: () -> Unit,
+    onTabSelected: (AppTab) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -5165,165 +6282,127 @@ fun TasksScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        // Top Header
         Text(
-            text = "Gamified Challenges",
+            text = "Tasks",
             color = Color.White,
             fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            modifier = Modifier.padding(bottom = 12.dp)
+            fontSize = 28.sp,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            text = "Complete exciting tasks and earn rewards every day!",
+            color = Color.Gray,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(bottom = 24.dp)
         )
 
+        // Section Title: DAILY TASKS
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 16.dp)
         ) {
-            TaskGameItem(
-                title = "Lucky Spin",
-                desc = "Spin & Win Gold!",
-                icon = Icons.Default.Refresh,
+            Icon(
+                imageVector = Icons.Default.Star,
+                contentDescription = null,
+                tint = Color(0xFF7C4DFF),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "DAILY TASKS",
                 color = Color(0xFF7C4DFF),
-                modifier = Modifier.weight(1f),
-                onClick = { onNavigateToGame(AppScreen.SpinGame) }
-            )
-            TaskGameItem(
-                title = "Lucky Scratch",
-                desc = "Scrape for Treasures!",
-                icon = Icons.Default.Star,
-                color = Color(0xFF00E5FF),
-                modifier = Modifier.weight(1f),
-                onClick = { onNavigateToGame(AppScreen.ScratchGame) }
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                letterSpacing = 1.sp
             )
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            TaskGameItem(
-                title = "Trivia Quiz",
-                desc = "Multiple Choice Trivia!",
-                icon = Icons.Default.Done,
-                color = Color(0xFF00C853),
-                modifier = Modifier.weight(1f),
-                onClick = { onNavigateToGame(AppScreen.TriviaGame("GK", "set_1")) }
-            )
-            TaskGameItem(
-                title = "Fast Math",
-                desc = "Quick math calculations!",
-                icon = Icons.Default.Add,
-                color = Color(0xFFFFD700),
-                modifier = Modifier.weight(1f),
-                onClick = { onNavigateToGame(AppScreen.MathGame) }
-            )
-        }
-
-        Text(
-            text = "Easy Instant Tasks",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
-            modifier = Modifier.padding(bottom = 12.dp)
+        // List of 5 task cards
+        // Card 1: Watch Ads
+        PremiumTaskCard(
+            title = "Watch Ads",
+            desc = "Watch ads and earn rewards",
+            icon = Icons.Default.PlayArrow,
+            color = Color(0xFF7C4DFF),
+            onClick = {
+                val now = System.currentTimeMillis()
+                val elapsed = now - wallet.lastRewardAdTime
+                val cooldownDuration = 1 * 60 * 1000L
+                if (wallet.dailyAdsWatched >= 10) {
+                    android.widget.Toast.makeText(context, "Daily Reward Ad Limit Reached. Come Back Tomorrow.", android.widget.Toast.LENGTH_SHORT).show()
+                } else if (wallet.lastRewardAdTime != 0L && elapsed < cooldownDuration) {
+                    val remainingSec = (cooldownDuration - elapsed) / 1000
+                    val min = remainingSec / 60
+                    val sec = remainingSec % 60
+                    val timeStr = String.format("%02d:%02d", min, sec)
+                    android.widget.Toast.makeText(context, "Next Reward Ad Available In: $timeStr", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    onWatchAdClick()
+                }
+            }
         )
 
-        // Easy Instant Tasks list
-        val tasks by viewModel.tasksState.collectAsStateWithLifecycle()
-        val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
-        val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
-        val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
+        Spacer(modifier = Modifier.height(12.dp))
 
-        val startOfToday = remember(currentServerTime) {
-            com.playwin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
-        }
-        val isTasksCheckInClaimed = remember(userCheckIn?.lastClaimTimestamp, startOfToday) {
-            val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-            lastClaim >= startOfToday
-        }
-
-        if (tasks.isEmpty()) {
-            ActiveTaskRowItem(
-                title = "Watch High Reward Video Ads",
-                progress = "${wallet.dailyAdsWatched}/10 ads watched",
-                reward = "+50 Coins",
-                modifier = Modifier.clickable {
-                    val now = System.currentTimeMillis()
-                    val elapsed = now - wallet.lastRewardAdTime
-                    val cooldownDuration = 1 * 60 * 1000L
-                    if (wallet.dailyAdsWatched >= 10) {
-                        android.widget.Toast.makeText(context, "Daily Reward Ad Limit Reached. Come Back Tomorrow.", android.widget.Toast.LENGTH_SHORT).show()
-                    } else if (wallet.lastRewardAdTime != 0L && elapsed < cooldownDuration) {
-                        val remainingSec = (cooldownDuration - elapsed) / 1000
-                        val min = remainingSec / 60
-                        val sec = remainingSec % 60
-                        val timeStr = String.format("%02d:%02d", min, sec)
-                        android.widget.Toast.makeText(context, "Next Reward Ad Available In: $timeStr", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        onWatchAdClick()
-                    }
-                }
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            ActiveTaskRowItem(
-                title = "Claim Today's Daily Check-In",
-                progress = if (isTasksCheckInClaimed) {
-                    "Claimed! Next in $remainingTime"
-                } else {
-                    "Available once per day"
-                },
-                reward = "+5 Coins",
-                modifier = if (isTasksCheckInClaimed) Modifier else Modifier.clickable(onClick = onDailyCheckIn)
-            )
-        } else {
-            tasks.forEach { task ->
-                val isDailyTask = task.type == "daily"
-                val isDailyClaimed = isDailyTask && isTasksCheckInClaimed
-                ActiveTaskRowItem(
-                    title = task.title,
-                    progress = when (task.type) {
-                        "daily" -> if (isDailyClaimed) {
-                            "Claimed! Next in $remainingTime"
-                        } else {
-                            "0/1 check-in claimed"
-                        }
-                        "video" -> "${wallet.dailyAdsWatched}/10 ads watched"
-                        "streak" -> "${wallet.dailyStreak % 7}/7 streak count"
-                        else -> task.progressText
-                    },
-                    reward = task.rewardText,
-                    modifier = if (isDailyClaimed) {
-                        Modifier
-                    } else {
-                        Modifier.clickable {
-                            when (task.type) {
-                                "video" -> {
-                                    val now = System.currentTimeMillis()
-                                    val elapsed = now - wallet.lastRewardAdTime
-                                    val cooldownDuration = 1 * 60 * 1000L
-                                    if (wallet.dailyAdsWatched >= 10) {
-                                        android.widget.Toast.makeText(context, "Daily Reward Ad Limit Reached. Come Back Tomorrow.", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else if (wallet.lastRewardAdTime != 0L && elapsed < cooldownDuration) {
-                                        val remainingSec = (cooldownDuration - elapsed) / 1000
-                                        val min = remainingSec / 60
-                                        val sec = remainingSec % 60
-                                        val timeStr = String.format("%02d:%02d", min, sec)
-                                        android.widget.Toast.makeText(context, "Next Reward Ad Available In: $timeStr", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        onWatchAdClick()
-                                    }
-                                }
-                                "daily" -> onDailyCheckIn()
-                                "spin" -> onNavigateToGame(AppScreen.SpinGame)
-                                "scratch" -> onNavigateToGame(AppScreen.ScratchGame)
-                                "trivia" -> onNavigateToGame(AppScreen.TriviaGame("GK", "set_1"))
-                                "math" -> onNavigateToGame(AppScreen.MathGame)
-                            }
-                        }
-                    }
-                )
-                Spacer(modifier = Modifier.height(10.dp))
+        // Card 2: Complete Quiz
+        PremiumTaskCard(
+            title = "Complete Quiz",
+            desc = "Play quiz and earn rewards",
+            icon = Icons.Default.HelpOutline,
+            color = Color(0xFF00E5FF),
+            onClick = {
+                onTabSelected(AppTab.Quiz)
             }
-        }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Card 3: Spin Wheel
+        PremiumTaskCard(
+            title = "Spin Wheel",
+            desc = "Spin and win exciting prizes",
+            icon = Icons.Default.Refresh,
+            color = Color(0xFF00C853),
+            onClick = {
+                onNavigateToGame(AppScreen.SpinGame)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Card 4: Scratch Card
+        PremiumTaskCard(
+            title = "Scratch Card",
+            desc = "Scratch and win rewards",
+            icon = Icons.Default.Star,
+            color = Color(0xFFFF9100),
+            onClick = {
+                onNavigateToGame(AppScreen.ScratchGame)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Card 5: Refer 2 Friends
+        PremiumTaskCard(
+            title = "Refer 2 Friends",
+            desc = "Invite friends and earn rewards",
+            icon = Icons.Default.Person,
+            color = Color(0xFFFF4081),
+            onClick = {
+                onNavigateToGame(AppScreen.Referral)
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Bottom AdMob Native Ad (Policy Compliant with Loading Shimmer & Fail Collapse)
+        PolicyCompliantNativeAd(
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(80.dp)) // Safe area spacing before bottom navigation
     }
 }
 
@@ -5567,48 +6646,51 @@ fun CouponsScreen(
         }
 
         // --- SUB-SCREEN CONTENT ---
-        when (activeTopTab) {
-            "Store" -> {
-                StoreTabContent(
-                    allCoupons = allCoupons,
-                    wallet = wallet,
-                    couponSearchQuery = couponSearchQuery,
-                    onSearchQueryChange = { couponSearchQuery = it },
-                    selectedCategory = selectedCategory,
-                    onCategoryChange = { selectedCategory = it },
-                    onCouponClick = { coupon ->
-                        android.util.Log.d("PlayWin_StoreScreen", "Coupon Clicked (onCouponClick):")
-                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
-                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
-                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
-                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
-                        selectedCouponDetails = coupon
-                    },
-                    onRedeemClick = { coupon ->
-                        android.util.Log.d("PlayWin_StoreScreen", "Redeem Clicked (onRedeemClick):")
-                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
-                        android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
-                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
-                        android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
-                        if (wallet.coins < coupon.cost) {
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("Insufficient Coins")
+        Box(modifier = Modifier.weight(1f)) {
+            when (activeTopTab) {
+                "Store" -> {
+                    StoreTabContent(
+                        allCoupons = allCoupons,
+                        wallet = wallet,
+                        couponSearchQuery = couponSearchQuery,
+                        onSearchQueryChange = { couponSearchQuery = it },
+                        selectedCategory = selectedCategory,
+                        onCategoryChange = { selectedCategory = it },
+                        onCouponClick = { coupon ->
+                            android.util.Log.d("PlayWin_StoreScreen", "Coupon Clicked (onCouponClick):")
+                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
+                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
+                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
+                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
+                            selectedCouponDetails = coupon
+                        },
+                        onRedeemClick = { coupon ->
+                            android.util.Log.d("PlayWin_StoreScreen", "Redeem Clicked (onRedeemClick):")
+                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
+                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
+                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
+                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
+                            if (wallet.coins < coupon.cost) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Insufficient Coins")
+                                }
+                            } else {
+                                showRedemptionFormCoupon = coupon
                             }
-                        } else {
-                            showRedemptionFormCoupon = coupon
                         }
-                    }
-                )
-            }
-            "My Coupons" -> {
-                MyCouponsTabContent(
-                    redemptions = mappedRedemptions,
-                    selectedFilter = selectedMyCouponFilter,
-                    onFilterChange = { selectedMyCouponFilter = it },
-                    onRedemptionClick = { selectedRedemptionDetails = it }
-                )
+                    )
+                }
+                "My Coupons" -> {
+                    MyCouponsTabContent(
+                        redemptions = mappedRedemptions,
+                        selectedFilter = selectedMyCouponFilter,
+                        onFilterChange = { selectedMyCouponFilter = it },
+                        onRedemptionClick = { selectedRedemptionDetails = it }
+                    )
+                }
             }
         }
+        com.playwin.ads.BannerManager.BannerAd()
     }
 }
 
@@ -5723,13 +6805,16 @@ fun StoreTabContent(
                 contentPadding = PaddingValues(bottom = 24.dp, start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(filteredCoupons) { coupon ->
+                itemsIndexed(filteredCoupons) { index, coupon ->
                     CouponCardItem(
                         coupon = coupon,
                         wallet = wallet,
                         onClick = { onCouponClick(coupon) },
                         onRedeemClick = { onRedeemClick(coupon) }
                     )
+                    if (index > 0 && (index + 1) % 4 == 0) {
+                        com.playwin.ads.NativeManager.NativeAd()
+                    }
                 }
             }
         }
@@ -5944,11 +7029,14 @@ fun MyCouponsTabContent(
                 contentPadding = PaddingValues(bottom = 24.dp, start = 16.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(filteredHistory) { r ->
+                itemsIndexed(filteredHistory) { index, r ->
                     RedemptionRowItem(
                         redemption = r,
                         onClick = { onRedemptionClick(r) }
                     )
+                    if (index > 0 && (index + 1) % 5 == 0) {
+                        com.playwin.ads.NativeManager.NativeAd()
+                    }
                 }
             }
         }
@@ -8190,14 +9278,15 @@ fun ProfileScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Avatar circle
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 70.dp, start = 16.dp, end = 16.dp, top = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Avatar circle
         Box(
             modifier = Modifier
                 .padding(top = 16.dp, bottom = 12.dp)
@@ -8333,6 +9422,10 @@ fun ProfileScreen(
                 showLogoutConfirm = true
             }
         )
+        }
+        com.playwin.ads.BannerManager.BannerAd(
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 }
 
@@ -8376,52 +9469,74 @@ fun VideoAdSimulatorDialog(
     snackbarHostState: SnackbarHostState
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var stage by remember { mutableStateOf("LOADING") } // "LOADING", "PLAYING", "ERROR", "REWARDED"
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? android.app.Activity
+    
+    var stage by remember { mutableStateOf("LOADING") } // "LOADING", "ERROR", "REWARDED"
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var countSeconds by remember { mutableIntStateOf(5) }
 
-    // Check reset of ad watch count to make sure our UI limit values are fresh
     LaunchedEffect(Unit) {
         viewModel.checkAdCountReset()
     }
 
-    // 1. Loading screen simulation (1.5 seconds) with a beautiful progress loader
     LaunchedEffect(Unit) {
-        delay(1500)
-        // Check Daily Limit
         val todayWatched = wallet.dailyAdsWatched
         if (todayWatched >= 10) {
             errorMessage = "Daily Reward Ad Limit Reached. Come back tomorrow."
             stage = "ERROR"
-        } else {
-            // Simulated 10% chance of "No ad availability" to test error screen properly
-            val isAdAvailable = (1..100).random() > 10
-            if (!isAdAvailable) {
-                errorMessage = "No ads available at the moment. Please try again later!"
-                stage = "ERROR"
-            } else {
-                stage = "PLAYING"
-            }
+            return@LaunchedEffect
         }
-    }
 
-    // 2. Video Playing screen simulation with countdown and close button
-    LaunchedEffect(stage) {
-        if (stage == "PLAYING") {
-            while (countSeconds > 0) {
-                delay(1000)
-                countSeconds--
-            }
-            // Once watching is fully completed, claim reward automatically in Firebase via Transaction
-            viewModel.claimVideoAdReward { success, error ->
-                if (success) {
-                    stage = "REWARDED"
-                } else {
-                    errorMessage = error ?: "Network error. Failed to add reward."
+        val act = activity
+        if (act == null) {
+            errorMessage = "System error: Activity not found."
+            stage = "ERROR"
+            return@LaunchedEffect
+        }
+
+        // Play the real AdMob Rewarded Ad
+        com.playwin.ads.RewardedManager.showAd(
+            activity = act,
+            rewardType = com.playwin.ads.RewardType.BONUS_COINS,
+            callbacks = object : com.playwin.ads.RewardCallback {
+                override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                    com.playwin.ads.RewardController.grantReward(
+                        viewModel = viewModel,
+                        rewardType = rewardType,
+                        token = token,
+                        callback = object : com.playwin.ads.RewardController.RewardGrantCallback {
+                            override fun onSuccess(message: String) {
+                                stage = "REWARDED"
+                            }
+
+                            override fun onFailure(error: String) {
+                                errorMessage = error
+                                stage = "ERROR"
+                            }
+                        }
+                    )
+                }
+
+                override fun onAdFailedToLoad(errorCode: Int, errorMessageStr: String) {
+                    errorMessage = "Failed to load ad: $errorMessageStr"
                     stage = "ERROR"
                 }
+
+                override fun onAdFailedToShow(errorMessageStr: String) {
+                    errorMessage = errorMessageStr
+                    stage = "ERROR"
+                }
+
+                override fun onAdClosed(userEarnedReward: Boolean) {
+                    if (!userEarnedReward) {
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Ad closed early. No reward earned.")
+                        }
+                        onDismiss()
+                    }
+                }
             }
-        }
+        )
     }
 
     LaunchedEffect(stage) {
@@ -8460,17 +9575,9 @@ fun VideoAdSimulatorDialog(
                     )
                 }
 
-                // Close (X) button is visible during video playback, allowing user to cancel/early close
-                if (stage == "PLAYING" || stage == "LOADING") {
+                if (stage == "LOADING") {
                     IconButton(
-                        onClick = {
-                            if (stage == "PLAYING") {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Ad closed early. No reward earned.")
-                                }
-                            }
-                            onDismiss()
-                        },
+                        onClick = onDismiss,
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
@@ -8508,37 +9615,6 @@ fun VideoAdSimulatorDialog(
                             text = "Ads loaded today: ${wallet.dailyAdsWatched}/10",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 12.sp
-                        )
-                    }
-                    "PLAYING" -> {
-                        Text(
-                            text = "Sponsor advertisement playback in progress...",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF00E5FF).copy(alpha = 0.1f))
-                                .border(1.5.dp, Color(0xFF00E5FF), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "$countSeconds s",
-                                color = Color.White,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 24.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = "Watch till end for +50 Coins reward!",
-                            color = Color.White.copy(alpha = 0.6f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
                         )
                     }
                     "ERROR" -> {

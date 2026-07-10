@@ -97,6 +97,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val watchAdsConfigState: StateFlow<com.playwin.app.data.model.FirebaseWatchAdsConfig>
     val userRewardAdsState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserRewardAds>(com.playwin.app.data.model.FirebaseUserRewardAds())
     private var firebaseUserRewardAdsJob: kotlinx.coroutines.Job? = null
+    private var watchAdResetObserverJob: kotlinx.coroutines.Job? = null
 
     var serverTimeOffset = 0L
 
@@ -1720,11 +1721,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                 var bonusClaimed = rewardAdsNode.child("bonusClaimed").getValue(Int::class.java) ?: 0
                                 val lastRewardTimestamp = rewardAdsNode.child("lastRewardTimestamp").getValue(Long::class.java) ?: 0L
                                 val lastResetDate = rewardAdsNode.child("lastResetDate").getValue(String::class.java) ?: ""
+                                var lastResetTimestamp = rewardAdsNode.child("lastResetTimestamp").getValue(Long::class.java) ?: 0L
 
                                 // Check for day reset
                                 if (lastResetDate != todayDateStr || lastResetDate.isEmpty()) {
                                     todayCount = 0
                                     todayCoins = 0
+                                    lastResetTimestamp = 0L
                                 }
 
                                 // 2. Validate Limits & Cooldowns
@@ -1747,6 +1750,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                 lifetimeCount += 1
                                 todayCoins += rewardAmt
                                 lifetimeCoins += rewardAmt
+
+                                if (todayCount >= config.maxAdsPerDay) {
+                                    lastResetTimestamp = txNow
+                                }
 
                                 // Check Bonus Rules
                                 bonusProgress = todayCount
@@ -1782,6 +1789,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                 rewardAdsNode.child("bonusClaimed").value = bonusClaimed
                                 rewardAdsNode.child("lastRewardTimestamp").value = txNow
                                 rewardAdsNode.child("lastResetDate").value = todayDateStr
+                                rewardAdsNode.child("lastResetTimestamp").value = lastResetTimestamp
                                 rewardAdsNode.child("status").value = "Ready"
 
                                 newTodayCount = todayCount
@@ -1994,6 +2002,58 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun resetWatchAdEngine() {
+        val userId = walletState.value.userId.ifEmpty {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        }
+        if (userId.isEmpty()) return
+        android.util.Log.d("AdReset", "Resetting Watch Ad Engine for $userId")
+
+        viewModelScope.launch {
+            try {
+                val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+                val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                val userRef = db.getReference("users").child(userId)
+
+                userRef.runTransaction(object : com.google.firebase.database.Transaction.Handler {
+                    override fun doTransaction(mutableData: com.google.firebase.database.MutableData): com.google.firebase.database.Transaction.Result {
+                        if (mutableData.value == null) {
+                            return com.google.firebase.database.Transaction.abort()
+                        }
+
+                        mutableData.child("dailyAdsWatched").value = 0
+                        mutableData.child("lastAdResetTime").value = System.currentTimeMillis() + serverTimeOffset
+
+                        val rewardAdsNode = mutableData.child("reward_ads")
+                        rewardAdsNode.child("todayCount").value = 0
+                        rewardAdsNode.child("todayCoins").value = 0
+                        rewardAdsNode.child("bonusProgress").value = 0
+                        rewardAdsNode.child("bonusClaimed").value = 0
+                        rewardAdsNode.child("lastResetTimestamp").value = 0L
+                        rewardAdsNode.child("status").value = "Ready"
+
+                        return com.google.firebase.database.Transaction.success(mutableData)
+                    }
+
+                    override fun onComplete(
+                        error: com.google.firebase.database.DatabaseError?,
+                        committed: Boolean,
+                        currentData: com.google.firebase.database.DataSnapshot?
+                    ) {
+                        if (committed && error == null) {
+                            android.util.Log.d("AdReset", "Watch Ad Engine reset completed successfully")
+                            refreshUserData()
+                        } else {
+                            android.util.Log.e("AdReset", "Watch Ad Engine reset failed: ${error?.message}")
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                android.util.Log.e("AdReset", "Exception in resetWatchAdEngine", e)
+            }
+        }
+    }
+
     fun claimRewardedAdReward(onResult: (Boolean, String?) -> Unit) {
         claimRewardedAdRewardInternal("video_ad", "Watch Ads Reward", onResult)
     }
@@ -2027,6 +2087,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             try {
                 if (com.playwin.app.data.repository.DailyResetManager.isResetRequired()) {
                     com.playwin.app.data.repository.DailyResetManager.performDailyReset(userId)
+                }
+
+                // Also check and execute watch ad engine reset if 24 hours have passed since lastResetTimestamp
+                val userAds = userRewardAdsState.value
+                val serverTime = com.playwin.app.data.repository.DailyResetManager.currentServerTime.value
+                if (userAds.lastResetTimestamp != 0L && serverTime >= userAds.lastResetTimestamp + 24 * 3600 * 1000L) {
+                    resetWatchAdEngine()
                 }
 
                 val dbUser = repository.getFirebaseUser(userId)
@@ -2716,6 +2783,16 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         // Start observing the centralized daily system node for this user
         com.playwin.app.data.repository.DailyResetManager.observeUserDailySystem(userId, viewModelScope)
 
+        watchAdResetObserverJob = viewModelScope.launch {
+            com.playwin.app.data.repository.DailyResetManager.currentServerTime.collect { serverTime ->
+                val userAds = userRewardAdsState.value
+                if (userAds.lastResetTimestamp != 0L && serverTime >= userAds.lastResetTimestamp + 24 * 3600 * 1000L) {
+                    android.util.Log.d("AdReset", "Background observer triggering Watch Ad Engine reset. serverTime=$serverTime, lastReset=${userAds.lastResetTimestamp}")
+                    resetWatchAdEngine()
+                }
+            }
+        }
+
         val context = getApplication<Application>()
         val deviceId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -3127,6 +3204,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         firebaseUserScratchCardJob = null
         firebaseUserRewardAdsJob?.cancel()
         firebaseUserRewardAdsJob = null
+        watchAdResetObserverJob?.cancel()
+        watchAdResetObserverJob = null
         dailyQuizJob?.cancel()
         dailyQuizJob = null
         dailyQuizState.value = null

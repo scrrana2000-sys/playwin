@@ -576,6 +576,7 @@ data class FirebaseUserRewardAds(
     val bonusClaimed: Int = 0,
     val lastRewardTimestamp: Long = 0L,
     val lastResetDate: String = "",
+    val lastResetTimestamp: Long = 0L,
     val status: String = "Ready"
 )
 
