@@ -9166,39 +9166,61 @@ Get +50 coins instantly after signup.
 }
 
 // --- PROFILE SCREEN ---
-private const val GAME_RULES_URL = "https://example.com/game-rules"
-private const val PRIVACY_POLICY_URL = "https://example.com/privacy-policy"
-private const val TERMS_URL = "https://example.com/terms"
-private const val FAQ_URL = "https://example.com/faq"
-private const val CONTACT_URL = "https://example.com/contact"
+private const val GAME_RULES_URL = "https://scrrana2000-sys.github.io/playwin-docs/game-rules.html"
+private const val PRIVACY_POLICY_URL = "https://scrrana2000-sys.github.io/playwin-docs/privacy-policy.html"
+private const val TERMS_URL = "https://scrrana2000-sys.github.io/playwin-docs/terms-and-conditions.html"
+private const val FAQ_URL = "https://scrrana2000-sys.github.io/playwin-docs/faq.html"
+private const val CONTACT_URL = "https://scrrana2000-sys.github.io/playwin-docs/contact.html"
+private const val HELP_URL = "https://scrrana2000-sys.github.io/playwin-docs/help.html"
+
+private fun isNetworkAvailable(context: android.content.Context): Boolean {
+    val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+    if (connectivityManager != null) {
+        val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+        if (capabilities != null) {
+            return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+    }
+    return false
+}
+
+private suspend fun checkPageReachability(urlStr: String): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    var connection: java.net.HttpURLConnection? = null
+    try {
+        val url = java.net.URL(urlStr)
+        connection = url.openConnection() as java.net.HttpURLConnection
+        connection.requestMethod = "HEAD"
+        connection.connectTimeout = 5000
+        connection.readTimeout = 5000
+        val responseCode = connection.responseCode
+        if (responseCode in 200..399) {
+            return@withContext true
+        }
+        
+        connection.disconnect()
+        connection = url.openConnection() as java.net.HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 5000
+        connection.readTimeout = 5000
+        connection.responseCode in 200..399
+    } catch (e: Exception) {
+        android.util.Log.e("PlayWinScreens", "Reachability check failed for: $urlStr", e)
+        false
+    } finally {
+        connection?.disconnect()
+    }
+}
 
 @Composable
 fun ProfileMenuItem(
     title: String,
     icon: ImageVector,
-    url: String,
-    context: android.content.Context,
-    coroutineScope: kotlinx.coroutines.CoroutineScope,
-    snackbarHostState: SnackbarHostState
+    onClick: () -> Unit
 ) {
     ProfileMenuRowItem(
         title = title,
         icon = icon,
-        onClick = {
-            try {
-                val customTabsIntent = androidx.browser.customtabs.CustomTabsIntent.Builder().build()
-                customTabsIntent.launchUrl(context, android.net.Uri.parse(url))
-            } catch (e: Exception) {
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                    context.startActivity(intent)
-                } catch (ex: Exception) {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar("Unable to open link.")
-                    }
-                }
-            }
-        }
+        onClick = onClick
     )
 }
 
@@ -9210,8 +9232,54 @@ fun ProfileScreen(
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var showClearProgressConfirm by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    var loadingUrlTitle by remember { mutableStateOf<String?>(null) }
+    var errorUrlType by remember { mutableStateOf<String?>(null) } // null, "NO_INTERNET", "LOAD_FAILED"
+    var pendingUrl by remember { mutableStateOf<String?>(null) }
+    var pendingTitle by remember { mutableStateOf<String?>(null) }
+    var activeLoadingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    val handleUrlOpen = { title: String, url: String ->
+        loadingUrlTitle = title
+        errorUrlType = null
+        pendingUrl = url
+        pendingTitle = title
+        
+        activeLoadingJob?.cancel()
+        activeLoadingJob = coroutineScope.launch {
+            if (!isNetworkAvailable(context)) {
+                loadingUrlTitle = null
+                errorUrlType = "NO_INTERNET"
+                return@launch
+            }
+            
+            val reachable = checkPageReachability(url)
+            loadingUrlTitle = null
+            if (reachable) {
+                try {
+                    val builder = androidx.browser.customtabs.CustomTabsIntent.Builder()
+                    builder.setToolbarColor(android.graphics.Color.parseColor("#7C4DFF"))
+                    builder.setStartAnimations(context, android.R.anim.fade_in, android.R.anim.fade_out)
+                    builder.setExitAnimations(context, android.R.anim.fade_in, android.R.anim.fade_out)
+                    builder.setShowTitle(true)
+                    val customTabsIntent = builder.build()
+                    customTabsIntent.launchUrl(context, android.net.Uri.parse(url))
+                } catch (e: Exception) {
+                    try {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                        context.startActivity(intent)
+                    } catch (ex: Exception) {
+                        errorUrlType = "LOAD_FAILED"
+                    }
+                }
+            } else {
+                errorUrlType = "LOAD_FAILED"
+            }
+        }
+    }
 
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
@@ -9334,10 +9402,7 @@ fun ProfileScreen(
         ProfileMenuItem(
             title = "Game Rules & How to Play",
             icon = Icons.Default.MenuBook,
-            url = GAME_RULES_URL,
-            context = context,
-            coroutineScope = coroutineScope,
-            snackbarHostState = snackbarHostState
+            onClick = { handleUrlOpen("Game Rules & How to Play", GAME_RULES_URL) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -9346,10 +9411,7 @@ fun ProfileScreen(
         ProfileMenuItem(
             title = "Privacy Policy",
             icon = Icons.Default.Lock,
-            url = PRIVACY_POLICY_URL,
-            context = context,
-            coroutineScope = coroutineScope,
-            snackbarHostState = snackbarHostState
+            onClick = { handleUrlOpen("Privacy Policy", PRIVACY_POLICY_URL) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -9358,10 +9420,7 @@ fun ProfileScreen(
         ProfileMenuItem(
             title = "Terms & Conditions",
             icon = Icons.Default.Description,
-            url = TERMS_URL,
-            context = context,
-            coroutineScope = coroutineScope,
-            snackbarHostState = snackbarHostState
+            onClick = { handleUrlOpen("Terms & Conditions", TERMS_URL) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -9370,10 +9429,7 @@ fun ProfileScreen(
         ProfileMenuItem(
             title = "FAQ",
             icon = Icons.Default.Help,
-            url = FAQ_URL,
-            context = context,
-            coroutineScope = coroutineScope,
-            snackbarHostState = snackbarHostState
+            onClick = { handleUrlOpen("FAQ", FAQ_URL) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -9382,23 +9438,16 @@ fun ProfileScreen(
         ProfileMenuItem(
             title = "Contact Support",
             icon = Icons.Default.Email,
-            url = CONTACT_URL,
-            context = context,
-            coroutineScope = coroutineScope,
-            snackbarHostState = snackbarHostState
+            onClick = { handleUrlOpen("Contact Support", CONTACT_URL) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Profile Menu settings
-        ProfileMenuRowItem(
+        // 6. Help & Application Guidelines
+        ProfileMenuItem(
             title = "Help & Application Guidelines",
             icon = Icons.Default.Info,
-            onClick = {
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("Guidelines: Play games, complete daily checks to earn coins, exchange them for vouchers instantly!")
-                }
-            }
+            onClick = { handleUrlOpen("Help & Application Guidelines", HELP_URL) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -9425,6 +9474,140 @@ fun ProfileScreen(
         }
         com.playwin.ads.BannerManager.BannerAd(
             modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+
+    // --- Loading Overlay Dialog ---
+    if (loadingUrlTitle != null) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = {
+                activeLoadingJob?.cancel()
+                loadingUrlTitle = null
+            }
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.2f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = Color(0xFF7C4DFF),
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = "Connecting to $loadingUrlTitle...",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Please wait...",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    TextButton(
+                        onClick = {
+                            activeLoadingJob?.cancel()
+                            loadingUrlTitle = null
+                        }
+                    ) {
+                        Text("Cancel", color = Color.Red, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // --- No Internet Overlay Dialog ---
+    if (errorUrlType == "NO_INTERNET") {
+        AlertDialog(
+            onDismissRequest = { errorUrlType = null },
+            title = {
+                Text(
+                    text = "No Internet Connection",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "We couldn't connect. Please check your network connection and try again.",
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val t = pendingTitle ?: ""
+                        val u = pendingUrl ?: ""
+                        errorUrlType = null
+                        handleUrlOpen(t, u)
+                    }
+                ) {
+                    Text("Retry", color = Color(0xFF7C4DFF), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { errorUrlType = null }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF13111C),
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // --- Unable to Load Page Overlay Dialog ---
+    if (errorUrlType == "LOAD_FAILED") {
+        AlertDialog(
+            onDismissRequest = { errorUrlType = null },
+            title = {
+                Text(
+                    text = "Connection Failed",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Unable to load page. Please try again.",
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val t = pendingTitle ?: ""
+                        val u = pendingUrl ?: ""
+                        errorUrlType = null
+                        handleUrlOpen(t, u)
+                    }
+                ) {
+                    Text("Retry", color = Color(0xFF7C4DFF), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { errorUrlType = null }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF13111C),
+            shape = RoundedCornerShape(16.dp)
         )
     }
 }
