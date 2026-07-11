@@ -5375,105 +5375,6 @@ fun WalletScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1437)),
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f))
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "AVAILABLE COIN BALANCE",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "🪙 ${wallet.coins}",
-                                    color = Color(0xFFFCD116),
-                                    fontSize = 32.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "$${String.format(java.util.Locale.US, "%.2f", wallet.coins * 0.005)} USD",
-                                    color = Color(0xFF00C853),
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Secure Wallet",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp)
-                                .height(1.dp)
-                                .background(Color.White.copy(alpha = 0.1f))
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("💸 Total Earned", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
-                                Text("${totalEarned} Coins", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("💰 Total Redeemed", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
-                                Text("${totalRedeemed} Coins", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                                Text("📈 Lifetime", color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
-                                Text("${lifetimeEarnings} Coins", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = onWithdrawClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB300)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("withdraw_via_upi_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AccountBalanceWallet,
-                                contentDescription = null,
-                                tint = Color(0xFF0F0C1B),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "WITHDRAW VIA UPI",
-                                color = Color(0xFF0F0C1B),
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -9170,7 +9071,7 @@ private const val GAME_RULES_URL = "https://scrrana2000-sys.github.io/playwin-do
 private const val PRIVACY_POLICY_URL = "https://scrrana2000-sys.github.io/playwin-docs/privacy-policy.html"
 private const val TERMS_URL = "https://scrrana2000-sys.github.io/playwin-docs/terms-and-conditions.html"
 private const val FAQ_URL = "https://scrrana2000-sys.github.io/playwin-docs/faq.html"
-private const val CONTACT_URL = "https://scrrana2000-sys.github.io/playwin-docs/contact.html"
+private const val CONTACT_URL = "https://scrrana2000-sys.github.io/playwin-docs/contact-support.html"
 private const val HELP_URL = "https://scrrana2000-sys.github.io/playwin-docs/help.html"
 
 private fun isNetworkAvailable(context: android.content.Context): Boolean {
@@ -9233,7 +9134,6 @@ fun ProfileScreen(
     snackbarHostState: SnackbarHostState
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var showClearProgressConfirm by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     var loadingUrlTitle by remember { mutableStateOf<String?>(null) }
@@ -9292,34 +9192,6 @@ fun ProfileScreen(
 
     // Add debug log for loaded display name
     android.util.Log.d("PlayWinVM", "Display Name Loaded: $userName")
-
-    if (showClearProgressConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearProgressConfirm = false },
-            title = { Text("Reset Progress?", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to reset your coins, daily streak, task progress, and reward history? This action is irreversible, but your Google authentication session will remain active.", color = Color.White.copy(alpha = 0.8f)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearCurrentAccountProgress()
-                        showClearProgressConfirm = false
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("Success! Account progress reset successfully.")
-                        }
-                    }
-                ) {
-                    Text("Reset", color = Color.Red, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearProgressConfirm = false }) {
-                    Text("Cancel", color = Color.White)
-                }
-            },
-            containerColor = Color(0xFF13111C),
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
 
     if (showLogoutConfirm) {
         AlertDialog(
@@ -9448,17 +9320,6 @@ fun ProfileScreen(
             title = "Help & Application Guidelines",
             icon = Icons.Default.Info,
             onClick = { handleUrlOpen("Help & Application Guidelines", HELP_URL) }
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        ProfileMenuRowItem(
-            title = "Clear Current Account Progress",
-            icon = Icons.Default.Refresh,
-            color = Color.Red,
-            onClick = {
-                showClearProgressConfirm = true
-            }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
