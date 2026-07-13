@@ -1,16 +1,16 @@
-package com.playwin.app.data.repository
+package com.myplaywin.app.data.repository
 
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
-import com.playwin.app.data.model.FirebaseCoupon
-import com.playwin.app.data.model.FirebaseRedemption
-import com.playwin.app.data.model.FirebaseReferral
-import com.playwin.app.data.model.FirebaseTask
-import com.playwin.app.data.model.FirebaseTransaction
-import com.playwin.app.data.model.FirebaseUser
-import com.playwin.app.data.model.Quiz
+import com.myplaywin.app.data.model.FirebaseCoupon
+import com.myplaywin.app.data.model.FirebaseRedemption
+import com.myplaywin.app.data.model.FirebaseReferral
+import com.myplaywin.app.data.model.FirebaseTask
+import com.myplaywin.app.data.model.FirebaseTransaction
+import com.myplaywin.app.data.model.FirebaseUser
+import com.myplaywin.app.data.model.Quiz
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -309,13 +309,13 @@ class FirebaseDbManager {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists() || snapshot.childrenCount == 0L) {
                     val initialSpinRewards = listOf(
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, probabilityWeight = 35, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, probabilityWeight = 25, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, probabilityWeight = 20, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, probabilityWeight = 10, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, probabilityWeight = 7, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, probabilityWeight = 2, active = true),
-                        com.playwin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, probabilityWeight = 1, active = true)
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, probabilityWeight = 35, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, probabilityWeight = 25, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, probabilityWeight = 20, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, probabilityWeight = 10, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, probabilityWeight = 7, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, probabilityWeight = 2, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, probabilityWeight = 1, active = true)
                     )
                     for (reward in initialSpinRewards) {
                         spinWheelRewardsRef.child(reward.id).setValue(reward)
@@ -708,7 +708,7 @@ class FirebaseDbManager {
         awaitClose { couponsRef.removeEventListener(listener) }
     }
 
-    fun observeSpinRewards(): Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = callbackFlow {
+    fun observeSpinRewards(): Flow<List<com.myplaywin.app.data.model.FirebaseSpinReward>> = callbackFlow {
         android.util.Log.d("PlayWinDebug", "Firebase connected")
         android.util.Log.d("PlayWinDebug", "Reading configs/spinWheel")
         android.util.Log.d("PlayWinDebug", "Reading game_config/spinWheel")
@@ -780,7 +780,7 @@ class FirebaseDbManager {
         }
     }
 
-    fun observeSpinWheelConfig(): Flow<com.playwin.app.data.model.FirebaseSpinWheelConfig> = callbackFlow {
+    fun observeSpinWheelConfig(): Flow<com.myplaywin.app.data.model.FirebaseSpinWheelConfig> = callbackFlow {
         android.util.Log.d("PlayWinDebug", "Firebase connected")
         android.util.Log.d("PlayWinDebug", "Reading configs/spinWheel")
         android.util.Log.d("PlayWinDebug", "Reading game_config/spinWheel")
@@ -868,7 +868,7 @@ class FirebaseDbManager {
                 android.util.Log.d("PlayWinDebug", "Config loaded: title=$title, enabled=$enabled, dailyFreeSpins=$dailyFreeSpins, dailySpinLimit=$dailySpinLimit, maxRewardedAdSpinsPerDay=$maxRewardedAdSpinsPerDay, lastUpdated=$lastUpdated")
                 android.util.Log.d("PlayWinDebug", "wheelRewards count: ${segments.size}")
 
-                val config = com.playwin.app.data.model.FirebaseSpinWheelConfig(
+                val config = com.myplaywin.app.data.model.FirebaseSpinWheelConfig(
                     enabled = enabled,
                     dailySpins = dailySpins,
                     title = title,
@@ -883,7 +883,7 @@ class FirebaseDbManager {
                 trySend(config)
             } catch (e: Exception) {
                 android.util.Log.e("FirebaseDbManager", "Error parsing spin wheel config: ${e.message}", e)
-                trySend(com.playwin.app.data.model.FirebaseSpinWheelConfig(segments = emptyList()))
+                trySend(com.myplaywin.app.data.model.FirebaseSpinWheelConfig(segments = emptyList()))
             }
         }
 
@@ -918,8 +918,8 @@ class FirebaseDbManager {
         }
     }
 
-    private fun parseSegmentsFromSnapshot(snapshot: DataSnapshot): List<com.playwin.app.data.model.FirebaseSpinReward> {
-        val list = mutableListOf<com.playwin.app.data.model.FirebaseSpinReward>()
+    private fun parseSegmentsFromSnapshot(snapshot: DataSnapshot): List<com.myplaywin.app.data.model.FirebaseSpinReward> {
+        val list = mutableListOf<com.myplaywin.app.data.model.FirebaseSpinReward>()
         for (child in snapshot.children) {
             try {
                 val id = child.child("id").getValue(String::class.java) ?: child.key ?: ""
@@ -970,7 +970,7 @@ class FirebaseDbManager {
                 val description = child.child("description").getValue(String::class.java) ?: ""
                 
                 list.add(
-                    com.playwin.app.data.model.FirebaseSpinReward(
+                    com.myplaywin.app.data.model.FirebaseSpinReward(
                         id = id,
                         name = title,
                         title = title,
@@ -1005,7 +1005,7 @@ class FirebaseDbManager {
         val userRef = usersRef.child(userId)
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                com.playwin.app.data.model.verifyAndLogBooleans(snapshot)
+                com.myplaywin.app.data.model.verifyAndLogBooleans(snapshot)
                 val user = snapshot.getValue(FirebaseUser::class.java)
                 trySend(user)
             }
@@ -1024,7 +1024,7 @@ class FirebaseDbManager {
         }
         usersRef.child(userId).addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                com.playwin.app.data.model.verifyAndLogBooleans(snapshot)
+                com.myplaywin.app.data.model.verifyAndLogBooleans(snapshot)
                 val user = snapshot.getValue(FirebaseUser::class.java)
                 continuation.resume(user) {}
             }
@@ -1164,7 +1164,7 @@ class FirebaseDbManager {
                     val txRef = database.getReference("transactions").child(uid).push()
                     val txId = txRef.key ?: ""
                     
-                    val request = com.playwin.app.data.model.FirebaseWithdrawRequest(
+                    val request = com.myplaywin.app.data.model.FirebaseWithdrawRequest(
                         id = reqId,
                         uid = uid,
                         userName = userName,
@@ -1326,7 +1326,7 @@ class FirebaseDbManager {
         })
     }
 
-    fun observeWithdrawRequests(userId: String): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseWithdrawRequest>> = callbackFlow {
+    fun observeWithdrawRequests(userId: String): kotlinx.coroutines.flow.Flow<List<com.myplaywin.app.data.model.FirebaseWithdrawRequest>> = callbackFlow {
         if (userId.isEmpty()) {
             trySend(emptyList())
             close()
@@ -1335,9 +1335,9 @@ class FirebaseDbManager {
         val ref = database.getReference("withdrawRequests")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseWithdrawRequest>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseWithdrawRequest>()
                 for (child in snapshot.children) {
-                    val req = child.getValue(com.playwin.app.data.model.FirebaseWithdrawRequest::class.java)
+                    val req = child.getValue(com.myplaywin.app.data.model.FirebaseWithdrawRequest::class.java)
                     if (req != null && req.uid == userId) {
                         list.add(req)
                     }
@@ -1353,13 +1353,13 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeAllWithdrawRequests(): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseWithdrawRequest>> = callbackFlow {
+    fun observeAllWithdrawRequests(): kotlinx.coroutines.flow.Flow<List<com.myplaywin.app.data.model.FirebaseWithdrawRequest>> = callbackFlow {
         val ref = database.getReference("withdrawRequests")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseWithdrawRequest>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseWithdrawRequest>()
                 for (child in snapshot.children) {
-                    child.getValue(com.playwin.app.data.model.FirebaseWithdrawRequest::class.java)?.let { list.add(it) }
+                    child.getValue(com.myplaywin.app.data.model.FirebaseWithdrawRequest::class.java)?.let { list.add(it) }
                 }
                 list.sortByDescending { it.timestamp }
                 trySend(list)
@@ -1375,7 +1375,7 @@ class FirebaseDbManager {
     fun observeAllUsers(): kotlinx.coroutines.flow.Flow<List<FirebaseUser>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                com.playwin.app.data.model.verifyAndLogBooleans(snapshot)
+                com.myplaywin.app.data.model.verifyAndLogBooleans(snapshot)
                 val list = mutableListOf<FirebaseUser>()
                 for (child in snapshot.children) {
                     try {
@@ -1416,15 +1416,15 @@ class FirebaseDbManager {
         awaitClose { referralsRef.removeEventListener(listener) }
     }
 
-    fun observeAllRedemptions(): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseRedemption>> = callbackFlow {
+    fun observeAllRedemptions(): kotlinx.coroutines.flow.Flow<List<com.myplaywin.app.data.model.FirebaseRedemption>> = callbackFlow {
         val ref = database.getReference("redemptions")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseRedemption>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseRedemption>()
                 for (userNode in snapshot.children) {
                     for (redemptionNode in userNode.children) {
                         try {
-                            redemptionNode.getValue(com.playwin.app.data.model.FirebaseRedemption::class.java)?.let {
+                            redemptionNode.getValue(com.myplaywin.app.data.model.FirebaseRedemption::class.java)?.let {
                                 list.add(it)
                             }
                         } catch (e: Exception) {
@@ -1471,7 +1471,7 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeQuizProgress(userId: String): kotlinx.coroutines.flow.Flow<com.playwin.app.data.model.FirebaseQuizProgress?> = callbackFlow {
+    fun observeQuizProgress(userId: String): kotlinx.coroutines.flow.Flow<com.myplaywin.app.data.model.FirebaseQuizProgress?> = callbackFlow {
         if (userId.isEmpty()) {
             trySend(null)
             close()
@@ -1481,7 +1481,7 @@ class FirebaseDbManager {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val progress = try {
-                    snapshot.getValue(com.playwin.app.data.model.FirebaseQuizProgress::class.java)
+                    snapshot.getValue(com.myplaywin.app.data.model.FirebaseQuizProgress::class.java)
                 } catch (e: Exception) {
                     null
                 }
@@ -1495,12 +1495,12 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun saveQuizProgress(userId: String, progress: com.playwin.app.data.model.FirebaseQuizProgress) {
+    fun saveQuizProgress(userId: String, progress: com.myplaywin.app.data.model.FirebaseQuizProgress) {
         if (userId.isEmpty()) return
         database.getReference("users/$userId/quizProgress").setValue(progress)
     }
 
-    fun observeCompletedQuizzes(userId: String): kotlinx.coroutines.flow.Flow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>> = callbackFlow {
+    fun observeCompletedQuizzes(userId: String): kotlinx.coroutines.flow.Flow<Map<String, com.myplaywin.app.data.model.FirebaseCompletedQuiz>> = callbackFlow {
         if (userId.isEmpty()) {
             trySend(emptyMap())
             close()
@@ -1509,11 +1509,11 @@ class FirebaseDbManager {
         val ref = database.getReference("users/$userId/completedQuizzes")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val completed = mutableMapOf<String, com.playwin.app.data.model.FirebaseCompletedQuiz>()
+                val completed = mutableMapOf<String, com.myplaywin.app.data.model.FirebaseCompletedQuiz>()
                 for (child in snapshot.children) {
                     val key = child.key ?: continue
                     val valObj = try {
-                        child.getValue(com.playwin.app.data.model.FirebaseCompletedQuiz::class.java)
+                        child.getValue(com.myplaywin.app.data.model.FirebaseCompletedQuiz::class.java)
                     } catch (e: Exception) {
                         null
                     }
@@ -1531,12 +1531,12 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun saveCompletedQuiz(userId: String, quizId: String, completedQuiz: com.playwin.app.data.model.FirebaseCompletedQuiz) {
+    fun saveCompletedQuiz(userId: String, quizId: String, completedQuiz: com.myplaywin.app.data.model.FirebaseCompletedQuiz) {
         if (userId.isEmpty() || quizId.isEmpty()) return
         database.getReference("users/$userId/completedQuizzes/$quizId").setValue(completedQuiz)
     }
 
-    fun observeWeeklyQuizProgress(userId: String): kotlinx.coroutines.flow.Flow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>> = callbackFlow {
+    fun observeWeeklyQuizProgress(userId: String): kotlinx.coroutines.flow.Flow<Map<String, com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress>> = callbackFlow {
         if (userId.isEmpty()) {
             trySend(emptyMap())
             close()
@@ -1545,11 +1545,11 @@ class FirebaseDbManager {
         val ref = database.getReference("users/$userId/weeklyQuizProgress")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val progressMap = mutableMapOf<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>()
+                val progressMap = mutableMapOf<String, com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress>()
                 for (child in snapshot.children) {
                     val key = child.key ?: continue
                     val valObj = try {
-                        child.getValue(com.playwin.app.data.model.FirebaseWeeklyQuizProgress::class.java)
+                        child.getValue(com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress::class.java)
                     } catch (e: Exception) {
                         null
                     }
@@ -1567,19 +1567,19 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun saveWeeklyQuizProgress(userId: String, dayOfWeek: String, progress: com.playwin.app.data.model.FirebaseWeeklyQuizProgress) {
+    fun saveWeeklyQuizProgress(userId: String, dayOfWeek: String, progress: com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress) {
         if (userId.isEmpty() || dayOfWeek.isEmpty()) return
         database.getReference("users/$userId/weeklyQuizProgress/$dayOfWeek").setValue(progress)
     }
 
-    fun getQuestionsForCategory(category: String, onResult: (List<com.playwin.app.data.model.Quiz>) -> Unit) {
+    fun getQuestionsForCategory(category: String, onResult: (List<com.myplaywin.app.data.model.Quiz>) -> Unit) {
         val ref = database.getReference("questions/$category")
         ref.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val questions = mutableListOf<com.playwin.app.data.model.Quiz>()
+                val questions = mutableListOf<com.myplaywin.app.data.model.Quiz>()
                 for (child in snapshot.children) {
                     try {
-                        val q = child.getValue(com.playwin.app.data.model.Quiz::class.java)
+                        val q = child.getValue(com.myplaywin.app.data.model.Quiz::class.java)
                         if (q != null) {
                             questions.add(q)
                         }
@@ -1595,14 +1595,14 @@ class FirebaseDbManager {
         })
     }
 
-    fun observeAllCouponRedemptions(): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseCouponRedemption>> = callbackFlow {
+    fun observeAllCouponRedemptions(): kotlinx.coroutines.flow.Flow<List<com.myplaywin.app.data.model.FirebaseCouponRedemption>> = callbackFlow {
         val ref = database.getReference("couponRedemptions")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseCouponRedemption>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseCouponRedemption>()
                 for (child in snapshot.children) {
                     try {
-                        child.getValue(com.playwin.app.data.model.FirebaseCouponRedemption::class.java)?.let {
+                        child.getValue(com.myplaywin.app.data.model.FirebaseCouponRedemption::class.java)?.let {
                             list.add(it)
                         }
                     } catch (e: Exception) {
@@ -1620,14 +1620,14 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeUserCouponRedemptions(userId: String): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseCouponRedemption>> = callbackFlow {
+    fun observeUserCouponRedemptions(userId: String): kotlinx.coroutines.flow.Flow<List<com.myplaywin.app.data.model.FirebaseCouponRedemption>> = callbackFlow {
         val ref = database.getReference("couponRedemptions")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseCouponRedemption>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseCouponRedemption>()
                 for (child in snapshot.children) {
                     try {
-                        val r = child.getValue(com.playwin.app.data.model.FirebaseCouponRedemption::class.java)
+                        val r = child.getValue(com.myplaywin.app.data.model.FirebaseCouponRedemption::class.java)
                         if (r != null && r.userUid == userId) {
                             list.add(r)
                         }
@@ -1647,7 +1647,7 @@ class FirebaseDbManager {
     }
 
     fun submitCouponRedemptionTransaction(
-        redemption: com.playwin.app.data.model.FirebaseCouponRedemption,
+        redemption: com.myplaywin.app.data.model.FirebaseCouponRedemption,
         couponId: String,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
@@ -1815,7 +1815,7 @@ class FirebaseDbManager {
     }
 
     private fun deductUserCoins(
-        redemption: com.playwin.app.data.model.FirebaseCouponRedemption,
+        redemption: com.myplaywin.app.data.model.FirebaseCouponRedemption,
         couponId: String,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
@@ -1872,7 +1872,7 @@ class FirebaseDbManager {
     }
 
     private fun createRedemptionRecords(
-        redemption: com.playwin.app.data.model.FirebaseCouponRedemption,
+        redemption: com.myplaywin.app.data.model.FirebaseCouponRedemption,
         couponId: String,
         coinsBefore: Int,
         coinsAfter: Int,
@@ -2025,11 +2025,11 @@ class FirebaseDbManager {
         }
     }
 
-    fun observeQuizzes(): kotlinx.coroutines.flow.Flow<List<com.playwin.app.data.model.FirebaseQuiz>> = callbackFlow {
+    fun observeQuizzes(): kotlinx.coroutines.flow.Flow<List<com.myplaywin.app.data.model.FirebaseQuiz>> = callbackFlow {
         val ref = database.getReference("quizzes")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseQuiz>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseQuiz>()
                 if (!snapshot.exists()) {
                     trySend(emptyList())
                     return
@@ -2077,7 +2077,7 @@ class FirebaseDbManager {
                         val revVal = child.child("allowReview").value ?: child.child("reviewEnabled").value ?: true
                         val allowReview = if (revVal is Boolean) revVal else revVal.toString().toBoolean()
 
-                        val questionsList = mutableListOf<com.playwin.app.data.model.Quiz>()
+                        val questionsList = mutableListOf<com.myplaywin.app.data.model.Quiz>()
                         val questionsSnap = child.child("questions")
                         if (questionsSnap.exists()) {
                             for (qChild in questionsSnap.children) {
@@ -2133,7 +2133,7 @@ class FirebaseDbManager {
                                     val explanation = (qChild.child("explanation").value ?: "").toString()
                                     
                                     if (qText.isNotEmpty()) {
-                                        questionsList.add(com.playwin.app.data.model.Quiz(qId, qText, options, correctIdx, explanation))
+                                        questionsList.add(com.myplaywin.app.data.model.Quiz(qId, qText, options, correctIdx, explanation))
                                     }
                                 } catch (e: Exception) {
                                     android.util.Log.e("FirebaseDbManager", "Error parsing dynamic question", e)
@@ -2146,7 +2146,7 @@ class FirebaseDbManager {
                             continue
                         }
 
-                        val quizItem = com.playwin.app.data.model.FirebaseQuiz(
+                        val quizItem = com.myplaywin.app.data.model.FirebaseQuiz(
                             id = id,
                             title = title,
                             categoryId = categoryId,
@@ -2184,12 +2184,12 @@ class FirebaseDbManager {
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeScratchCardSettings(): Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = callbackFlow {
+    fun observeScratchCardSettings(): Flow<com.myplaywin.app.data.model.FirebaseScratchCardSettings> = callbackFlow {
         val ref = database.getReference("admin/gameSettings/scratchCard")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
-                    val defaultSettings = com.playwin.app.data.model.FirebaseScratchCardSettings()
+                    val defaultSettings = com.myplaywin.app.data.model.FirebaseScratchCardSettings()
                     trySend(defaultSettings)
                     return
                 }
@@ -2245,7 +2245,7 @@ class FirebaseDbManager {
                         is String -> minimumUserLevelVal.toIntOrNull() ?: 1
                         else -> 1
                     }
-                    val settings = com.playwin.app.data.model.FirebaseScratchCardSettings(
+                    val settings = com.myplaywin.app.data.model.FirebaseScratchCardSettings(
                         enabled = enabled,
                         dailyScratchLimit = dailyScratchLimit,
                         dailyFreeScratch = dailyFreeScratch,
@@ -2257,20 +2257,20 @@ class FirebaseDbManager {
                     )
                     trySend(settings)
                 } catch (e: Exception) {
-                    trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
+                    trySend(com.myplaywin.app.data.model.FirebaseScratchCardSettings())
                 }
             }
             override fun onCancelled(error: DatabaseError) {
-                trySend(com.playwin.app.data.model.FirebaseScratchCardSettings())
+                trySend(com.myplaywin.app.data.model.FirebaseScratchCardSettings())
             }
         }
         ref.addValueEventListener(listener)
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeUserScratchCardState(userId: String): Flow<com.playwin.app.data.model.FirebaseUserScratchCardState> = callbackFlow {
+    fun observeUserScratchCardState(userId: String): Flow<com.myplaywin.app.data.model.FirebaseUserScratchCardState> = callbackFlow {
         if (userId.isEmpty()) {
-            trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+            trySend(com.myplaywin.app.data.model.FirebaseUserScratchCardState())
             close()
             return@callbackFlow
         }
@@ -2278,58 +2278,58 @@ class FirebaseDbManager {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
-                    trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                    trySend(com.myplaywin.app.data.model.FirebaseUserScratchCardState())
                     return
                 }
                 try {
-                    val state = snapshot.getValue(com.playwin.app.data.model.FirebaseUserScratchCardState::class.java)
+                    val state = snapshot.getValue(com.myplaywin.app.data.model.FirebaseUserScratchCardState::class.java)
                     if (state != null) {
                         trySend(state)
                     } else {
-                        trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                        trySend(com.myplaywin.app.data.model.FirebaseUserScratchCardState())
                     }
                 } catch (e: Exception) {
-                    trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                    trySend(com.myplaywin.app.data.model.FirebaseUserScratchCardState())
                 }
             }
             override fun onCancelled(error: DatabaseError) {
-                trySend(com.playwin.app.data.model.FirebaseUserScratchCardState())
+                trySend(com.myplaywin.app.data.model.FirebaseUserScratchCardState())
             }
         }
         ref.addValueEventListener(listener)
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeWatchAdsConfig(): Flow<com.playwin.app.data.model.FirebaseWatchAdsConfig> = callbackFlow {
+    fun observeWatchAdsConfig(): Flow<com.myplaywin.app.data.model.FirebaseWatchAdsConfig> = callbackFlow {
         val ref = database.getReference("config/watch_ads")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
-                    trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                    trySend(com.myplaywin.app.data.model.FirebaseWatchAdsConfig())
                     return
                 }
                 try {
-                    val config = snapshot.getValue(com.playwin.app.data.model.FirebaseWatchAdsConfig::class.java)
+                    val config = snapshot.getValue(com.myplaywin.app.data.model.FirebaseWatchAdsConfig::class.java)
                     if (config != null) {
                         trySend(config)
                     } else {
-                        trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                        trySend(com.myplaywin.app.data.model.FirebaseWatchAdsConfig())
                     }
                 } catch (e: Exception) {
-                    trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                    trySend(com.myplaywin.app.data.model.FirebaseWatchAdsConfig())
                 }
             }
             override fun onCancelled(error: DatabaseError) {
-                trySend(com.playwin.app.data.model.FirebaseWatchAdsConfig())
+                trySend(com.myplaywin.app.data.model.FirebaseWatchAdsConfig())
             }
         }
         ref.addValueEventListener(listener)
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeUserRewardAds(userId: String): Flow<com.playwin.app.data.model.FirebaseUserRewardAds> = callbackFlow {
+    fun observeUserRewardAds(userId: String): Flow<com.myplaywin.app.data.model.FirebaseUserRewardAds> = callbackFlow {
         if (userId.isEmpty()) {
-            trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+            trySend(com.myplaywin.app.data.model.FirebaseUserRewardAds())
             close()
             return@callbackFlow
         }
@@ -2337,55 +2337,55 @@ class FirebaseDbManager {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
-                    trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                    trySend(com.myplaywin.app.data.model.FirebaseUserRewardAds())
                     return
                 }
                 try {
-                    val state = snapshot.getValue(com.playwin.app.data.model.FirebaseUserRewardAds::class.java)
+                    val state = snapshot.getValue(com.myplaywin.app.data.model.FirebaseUserRewardAds::class.java)
                     if (state != null) {
                         trySend(state)
                     } else {
-                        trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                        trySend(com.myplaywin.app.data.model.FirebaseUserRewardAds())
                     }
                 } catch (e: Exception) {
-                    trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                    trySend(com.myplaywin.app.data.model.FirebaseUserRewardAds())
                 }
             }
             override fun onCancelled(error: DatabaseError) {
-                trySend(com.playwin.app.data.model.FirebaseUserRewardAds())
+                trySend(com.myplaywin.app.data.model.FirebaseUserRewardAds())
             }
         }
         ref.addValueEventListener(listener)
         awaitClose { ref.removeEventListener(listener) }
     }
 
-    fun observeScratchCardRewards(): Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = callbackFlow {
+    fun observeScratchCardRewards(): Flow<List<com.myplaywin.app.data.model.FirebaseScratchCardReward>> = callbackFlow {
         val ref = database.getReference("scratchCardRewards")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists() || snapshot.childrenCount == 0L) {
                     val initialRewards = listOf(
-                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                        com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_1", name = "+10 Coins", type = "Coins", value = "10",
                             probabilityWeight = 40, status = "Active", displayOrder = 1, active = true, icon = "🪙", color = "#FFD700"
                         ),
-                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                        com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_2", name = "+50 Coins", type = "Coins", value = "50",
                             probabilityWeight = 20, status = "Active", displayOrder = 2, active = true, icon = "💎", color = "#00E5FF"
                         ),
-                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                        com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_3", name = "+100 Coins", type = "Coins", value = "100",
                             probabilityWeight = 10, status = "Active", displayOrder = 3, active = true, icon = "🎁", color = "#E040FB"
                         ),
-                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                        com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_4", name = "Retry Scratch", type = "Retry Scratch", value = "0",
                             probabilityWeight = 15, status = "Active", displayOrder = 4, active = true, icon = "🔄", color = "#00E676"
                         ),
-                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                        com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_5", name = "Amazon Coupon", type = "Coupon", value = "AMZ-PW-100",
                             probabilityWeight = 5, status = "Active", displayOrder = 5, active = true, icon = "🛍️", color = "#FF9100"
                         ),
-                        com.playwin.app.data.model.FirebaseScratchCardReward(
+                        com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = "reward_6", name = "Better Luck Next Time", type = "Better Luck Next Time", value = "0",
                             probabilityWeight = 10, status = "Active", displayOrder = 6, active = true, icon = "😢", color = "#90A4AE"
                         )
@@ -2397,7 +2397,7 @@ class FirebaseDbManager {
                     return
                 }
 
-                val list = mutableListOf<com.playwin.app.data.model.FirebaseScratchCardReward>()
+                val list = mutableListOf<com.myplaywin.app.data.model.FirebaseScratchCardReward>()
                 android.util.Log.d("PlayWinScratchDebug", "--- [STEP 1] LOADING REWARDS FROM FIREBASE ---")
                 for (child in snapshot.children) {
                     try {
@@ -2449,7 +2449,7 @@ class FirebaseDbManager {
                             else -> System.currentTimeMillis()
                         }
 
-                        val reward = com.playwin.app.data.model.FirebaseScratchCardReward(
+                        val reward = com.myplaywin.app.data.model.FirebaseScratchCardReward(
                             id = id,
                             name = name,
                             type = type,
@@ -2497,7 +2497,7 @@ class FirebaseDbManager {
 
     fun performScratchCardDbTransaction(
         userId: String,
-        reward: com.playwin.app.data.model.FirebaseScratchCardReward,
+        reward: com.myplaywin.app.data.model.FirebaseScratchCardReward,
         transactionId: String,
         isAdScratch: Boolean,
         onComplete: (Boolean, String?, Int, Int) -> Unit
@@ -2640,7 +2640,7 @@ class FirebaseDbManager {
                     
                     val historyId = database.getReference("users").child(userId).child("scratchHistory").push().key ?: "sc_$timestamp"
                     val deviceTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                    val history = com.playwin.app.data.model.FirebaseScratchHistory(
+                    val history = com.myplaywin.app.data.model.FirebaseScratchHistory(
                         id = historyId,
                         timestamp = timestamp,
                         rewardId = reward.id,

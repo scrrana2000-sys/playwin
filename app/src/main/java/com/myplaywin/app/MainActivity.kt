@@ -1,4 +1,4 @@
-package com.playwin.app
+package com.myplaywin.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -20,9 +20,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.playwin.app.ui.screens.PlayWinApp
-import com.playwin.app.ui.theme.PlayWinTheme
-import com.playwin.app.ui.viewmodel.PlayWinViewModel
+import com.myplaywin.app.ui.screens.PlayWinApp
+import com.myplaywin.app.ui.theme.PlayWinTheme
+import com.myplaywin.app.ui.viewmodel.PlayWinViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel: PlayWinViewModel by viewModels()

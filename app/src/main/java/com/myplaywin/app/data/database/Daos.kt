@@ -1,11 +1,11 @@
-package com.playwin.app.data.database
+package com.myplaywin.app.data.database
 
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.playwin.app.data.model.RewardTransaction
-import com.playwin.app.data.model.UserWallet
+import com.myplaywin.app.data.model.RewardTransaction
+import com.myplaywin.app.data.model.UserWallet
 import kotlinx.coroutines.flow.Flow
 
 @Dao

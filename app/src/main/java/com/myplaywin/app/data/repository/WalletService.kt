@@ -1,4 +1,4 @@
-package com.playwin.app.data.repository
+package com.myplaywin.app.data.repository
 
 import android.util.Log
 import com.google.firebase.database.DataSnapshot
@@ -6,7 +6,7 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.MutableData
 import com.google.firebase.database.Transaction
-import com.playwin.app.data.model.FirebaseTransaction
+import com.myplaywin.app.data.model.FirebaseTransaction
 
 object WalletService {
     private const val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"

@@ -1,4 +1,4 @@
-package com.playwin.app.ui.theme
+package com.myplaywin.app.ui.theme
 
 import android.app.Activity
 import androidx.compose.material3.MaterialTheme

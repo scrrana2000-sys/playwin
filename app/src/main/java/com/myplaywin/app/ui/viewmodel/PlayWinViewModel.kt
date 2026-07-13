@@ -1,12 +1,12 @@
-package com.playwin.app.ui.viewmodel
+package com.myplaywin.app.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.playwin.app.data.database.PlayWinDatabase
-import com.playwin.app.data.model.*
-import com.playwin.app.data.repository.PlayWinRepository
+import com.myplaywin.app.data.database.PlayWinDatabase
+import com.myplaywin.app.data.model.*
+import com.myplaywin.app.data.repository.PlayWinRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,10 +32,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     val transactionsState: StateFlow<List<FirebaseTransaction>>
     val tasksState: StateFlow<List<FirebaseTask>>
     val couponsState: StateFlow<List<FirebaseCoupon>>
-    val spinRewardsState: StateFlow<List<com.playwin.app.data.model.FirebaseSpinReward>>
-    val spinWheelConfigState: StateFlow<com.playwin.app.data.model.FirebaseSpinWheelConfig>
-    val scratchCardSettingsState: StateFlow<com.playwin.app.data.model.FirebaseScratchCardSettings>
-    val scratchCardRewardsState: StateFlow<List<com.playwin.app.data.model.FirebaseScratchCardReward>>
+    val spinRewardsState: StateFlow<List<com.myplaywin.app.data.model.FirebaseSpinReward>>
+    val spinWheelConfigState: StateFlow<com.myplaywin.app.data.model.FirebaseSpinWheelConfig>
+    val scratchCardSettingsState: StateFlow<com.myplaywin.app.data.model.FirebaseScratchCardSettings>
+    val scratchCardRewardsState: StateFlow<List<com.myplaywin.app.data.model.FirebaseScratchCardReward>>
 
     val searchQuery = MutableStateFlow("")
     val selectedFilter = MutableStateFlow("All")
@@ -50,16 +50,16 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var firebaseUserScratchCardJob: kotlinx.coroutines.Job? = null
     private var dailyQuizJob: kotlinx.coroutines.Job? = null
 
-    val redemptionsState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseRedemption>>(emptyList())
+    val redemptionsState = MutableStateFlow<List<com.myplaywin.app.data.model.FirebaseRedemption>>(emptyList())
     private val _isRedeeming = MutableStateFlow(false)
     val isRedeeming: StateFlow<Boolean> = _isRedeeming.asStateFlow()
 
     // UPI WITHDRAWAL AND GLOBAL STATE FLOWS
-    val withdrawRequestsState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseWithdrawRequest>>(emptyList())
-    val allUsersState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseUser>>(emptyList())
-    val couponRedemptionsState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseCouponRedemption>>(emptyList())
+    val withdrawRequestsState = MutableStateFlow<List<com.myplaywin.app.data.model.FirebaseWithdrawRequest>>(emptyList())
+    val allUsersState = MutableStateFlow<List<com.myplaywin.app.data.model.FirebaseUser>>(emptyList())
+    val couponRedemptionsState = MutableStateFlow<List<com.myplaywin.app.data.model.FirebaseCouponRedemption>>(emptyList())
     val currentUserBlockedState = MutableStateFlow(false)
-    val currentUserState = MutableStateFlow<com.playwin.app.data.model.FirebaseUser?>(null)
+    val currentUserState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseUser?>(null)
 
     private val _isSubmittingWithdraw = MutableStateFlow(false)
     val isSubmittingWithdraw: StateFlow<Boolean> = _isSubmittingWithdraw.asStateFlow()
@@ -74,7 +74,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var quizzesJob: kotlinx.coroutines.Job? = null
     private var firebaseQuizResetTimestampJob: kotlinx.coroutines.Job? = null
 
-    val quizProgressState = MutableStateFlow<com.playwin.app.data.model.FirebaseQuizProgress?>(null)
+    val quizProgressState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseQuizProgress?>(null)
     
     // Realtime listeners for direct Firebase synchronization
     private var firebaseWalletListener: com.google.firebase.database.ValueEventListener? = null
@@ -82,20 +82,20 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     private var firebaseTransactionsListener: com.google.firebase.database.ValueEventListener? = null
     private var firebaseHistoryListener: com.google.firebase.database.ValueEventListener? = null
     private var firebaseScratchHistoryListener: com.google.firebase.database.ValueEventListener? = null
-    val completedQuizzesState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>>(emptyMap())
-    val weeklyQuizProgressState = MutableStateFlow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>>(emptyMap())
+    val completedQuizzesState = MutableStateFlow<Map<String, com.myplaywin.app.data.model.FirebaseCompletedQuiz>>(emptyMap())
+    val weeklyQuizProgressState = MutableStateFlow<Map<String, com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress>>(emptyMap())
     val referralHistoryState = MutableStateFlow<List<FirebaseReferralRecord>>(emptyList())
-    val quizzesState = MutableStateFlow<List<com.playwin.app.data.model.FirebaseQuiz>>(emptyList())
+    val quizzesState = MutableStateFlow<List<com.myplaywin.app.data.model.FirebaseQuiz>>(emptyList())
     val nextQuizResetTimestampState = MutableStateFlow<Long>(0L)
     
-    val dailyCheckInSettingsState = MutableStateFlow<com.playwin.app.data.model.FirebaseDailyCheckInSettings?>(null)
+    val dailyCheckInSettingsState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseDailyCheckInSettings?>(null)
     val dailyCheckInLoadingState = MutableStateFlow(true)
-    val userDailyCheckInState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserDailyCheckIn?>(null)
-    val userScratchCardStateState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserScratchCardState>(com.playwin.app.data.model.FirebaseUserScratchCardState())
-    val dailyQuizState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserDailyQuiz?>(null)
+    val userDailyCheckInState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseUserDailyCheckIn?>(null)
+    val userScratchCardStateState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseUserScratchCardState>(com.myplaywin.app.data.model.FirebaseUserScratchCardState())
+    val dailyQuizState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseUserDailyQuiz?>(null)
     
-    val watchAdsConfigState: StateFlow<com.playwin.app.data.model.FirebaseWatchAdsConfig>
-    val userRewardAdsState = MutableStateFlow<com.playwin.app.data.model.FirebaseUserRewardAds>(com.playwin.app.data.model.FirebaseUserRewardAds())
+    val watchAdsConfigState: StateFlow<com.myplaywin.app.data.model.FirebaseWatchAdsConfig>
+    val userRewardAdsState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseUserRewardAds>(com.myplaywin.app.data.model.FirebaseUserRewardAds())
     private var firebaseUserRewardAdsJob: kotlinx.coroutines.Job? = null
     private var watchAdResetObserverJob: kotlinx.coroutines.Job? = null
 
@@ -183,7 +183,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = com.playwin.app.data.model.FirebaseSpinWheelConfig()
+                initialValue = com.myplaywin.app.data.model.FirebaseSpinWheelConfig()
             )
 
         spinRewardsState = spinWheelConfigState
@@ -204,7 +204,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = com.playwin.app.data.model.FirebaseScratchCardSettings()
+                initialValue = com.myplaywin.app.data.model.FirebaseScratchCardSettings()
             )
 
         scratchCardRewardsState = repository.firebaseScratchCardRewardsFlow
@@ -218,11 +218,11 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = com.playwin.app.data.model.FirebaseWatchAdsConfig()
+                initialValue = com.myplaywin.app.data.model.FirebaseWatchAdsConfig()
             )
 
         // Start centralized daily countdown
-        com.playwin.app.data.repository.DailyResetManager.startRealtimeCountdown(viewModelScope)
+        com.myplaywin.app.data.repository.DailyResetManager.startRealtimeCountdown(viewModelScope)
 
         // Observe auth state changes to start/stop live Firebase sync
         try {
@@ -241,7 +241,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             checkInSettingsRef.addValueEventListener(object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                     if (snapshot.exists()) {
-                        val settings = snapshot.getValue(com.playwin.app.data.model.FirebaseDailyCheckInSettings::class.java)
+                        val settings = snapshot.getValue(com.myplaywin.app.data.model.FirebaseDailyCheckInSettings::class.java)
                         if (settings != null) {
                             dailyCheckInSettingsState.value = settings
                             val r = settings.rewards
@@ -252,7 +252,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                             }
                         }
                     } else {
-                        val defaultSettings = com.playwin.app.data.model.FirebaseDailyCheckInSettings(
+                        val defaultSettings = com.myplaywin.app.data.model.FirebaseDailyCheckInSettings(
                             enabled = true,
                             rewards = listOf(20, 30, 40, 50, 60, 80, 120),
                             maxRewardLimit = 500
@@ -872,7 +872,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         extraUpdate: ((com.google.firebase.database.MutableData) -> Unit)? = null,
         onComplete: (Boolean, Int, Int, String?) -> Unit
     ) {
-        com.playwin.app.data.repository.WalletService.updateWallet(
+        com.myplaywin.app.data.repository.WalletService.updateWallet(
             userId = userId,
             coinsDelta = amount,
             source = source,
@@ -962,7 +962,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun getServerTimeMs(): Long {
-        return com.playwin.app.data.repository.DailyResetManager.currentServerTime.value
+        return com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.value
     }
 
     fun getLocalDateString(): String {
@@ -980,7 +980,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     fun getQuizSetStatus(setIndex: Int): String {
         val todayIndex = getDayOfWeek()
         if (setIndex < todayIndex) {
-            val progress = quizProgressState.value ?: com.playwin.app.data.model.FirebaseQuizProgress()
+            val progress = quizProgressState.value ?: com.myplaywin.app.data.model.FirebaseQuizProgress()
             if (progress.completedQuizIds.contains("set_$setIndex")) {
                 return "COMPLETED"
             }
@@ -988,7 +988,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         } else if (setIndex > todayIndex) {
             return "LOCKED"
         } else {
-            val progress = quizProgressState.value ?: com.playwin.app.data.model.FirebaseQuizProgress()
+            val progress = quizProgressState.value ?: com.myplaywin.app.data.model.FirebaseQuizProgress()
             val todayDate = getLocalDateString()
             if (progress.lastQuizDate == todayDate && progress.dailyQuizCompletedBool) {
                 return "COMPLETED"
@@ -997,14 +997,14 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun generateQuizForCategory(category: String, onComplete: (List<com.playwin.app.data.model.Quiz>) -> Unit) {
+    fun generateQuizForCategory(category: String, onComplete: (List<com.myplaywin.app.data.model.Quiz>) -> Unit) {
         val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
         repository.getQuestionsForCategory(category) { allQuestions ->
             if (allQuestions.isEmpty()) {
                 onComplete(emptyList())
                 return@getQuestionsForCategory
             }
-            val progress = quizProgressState.value ?: com.playwin.app.data.model.FirebaseQuizProgress()
+            val progress = quizProgressState.value ?: com.myplaywin.app.data.model.FirebaseQuizProgress()
             val completedIds = progress.completedQuestionIds.toSet()
 
             var available = allQuestions.filter { !completedIds.contains(it.id) }
@@ -1035,7 +1035,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     ) {
         val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: return
         
-        val progress = quizProgressState.value ?: com.playwin.app.data.model.FirebaseQuizProgress()
+        val progress = quizProgressState.value ?: com.myplaywin.app.data.model.FirebaseQuizProgress()
         val today = getLocalDateString()
         val currentDayName = getTodayDayOfWeekName()
         val quizDayOfWeek = if (dayOfWeek.isNotEmpty()) {
@@ -1171,7 +1171,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                             var friendName = ""
                             var friendEmail = ""
 
-                            com.playwin.app.data.repository.WalletService.updateWallet(
+                            com.myplaywin.app.data.repository.WalletService.updateWallet(
                                 userId = friendUid,
                                 coinsDelta = 100,
                                 source = "Referral Reward (Completed First Quiz)",
@@ -1202,7 +1202,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
                                         // Reward Referrer
                                         viewModelScope.launch {
-                                            com.playwin.app.data.repository.WalletService.updateWallet(
+                                            com.myplaywin.app.data.repository.WalletService.updateWallet(
                                                 userId = referredByUid,
                                                 coinsDelta = 500,
                                                 source = "Referral Bonus",
@@ -1336,7 +1336,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             if (task.isSuccessful) {
                 val snapshot = task.result
                 if (snapshot != null && snapshot.exists()) {
-                    val settings = snapshot.getValue(com.playwin.app.data.model.FirebaseDailyCheckInSettings::class.java)
+                    val settings = snapshot.getValue(com.myplaywin.app.data.model.FirebaseDailyCheckInSettings::class.java)
                     dailyCheckInSettingsState.value = settings
                     if (settings != null) {
                         val r = settings.rewards
@@ -1345,7 +1345,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                         }
                     }
                 } else {
-                    val defaultSettings = com.playwin.app.data.model.FirebaseDailyCheckInSettings(
+                    val defaultSettings = com.myplaywin.app.data.model.FirebaseDailyCheckInSettings(
                         enabled = true,
                         rewards = listOf(20, 30, 40, 50, 60, 80, 120),
                         maxRewardLimit = 500
@@ -1387,13 +1387,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             return false
         }
 
-        val serverTime = com.playwin.app.data.repository.DailyResetManager.currentServerTime.value
-        val startOfToday = com.playwin.app.data.repository.DailyResetManager.getStartOfTodayUtc(serverTime)
-        val userCheckIn = userDailyCheckInState.value ?: com.playwin.app.data.model.FirebaseUserDailyCheckIn()
+        val serverTime = com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.value
+        val startOfToday = com.myplaywin.app.data.repository.DailyResetManager.getStartOfTodayUtc(serverTime)
+        val userCheckIn = userDailyCheckInState.value ?: com.myplaywin.app.data.model.FirebaseUserDailyCheckIn()
         
         val lastClaim = userCheckIn.lastClaimTimestamp
         if (lastClaim >= startOfToday) {
-            val countdown = com.playwin.app.data.repository.DailyResetManager.remainingTime.value
+            val countdown = com.myplaywin.app.data.repository.DailyResetManager.remainingTime.value
             onResult?.invoke(false, "Daily reward already claimed today. Next reset in $countdown")
             return false
         }
@@ -1574,7 +1574,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                         var dbAdsWatched = 0
                         val rewardAmount = 50
 
-                        com.playwin.app.data.repository.WalletService.updateWallet(
+                        com.myplaywin.app.data.repository.WalletService.updateWallet(
                             userId = userId,
                             coinsDelta = rewardAmount,
                             source = "Watch Ads Reward",
@@ -1832,7 +1832,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
                                             // Save main wallet transactions compatibility
                                             val mainTxRef = db.getReference("transactions").child(userId).push()
-                                            val mainTx = com.playwin.app.data.model.FirebaseTransaction(
+                                            val mainTx = com.myplaywin.app.data.model.FirebaseTransaction(
                                                 id = mainTxRef.key ?: "",
                                                 userId = userId,
                                                 type = "video_ad",
@@ -1865,7 +1865,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
                                             // Save history
                                             val historyId = db.getReference("users").child(userId).child("reward_ads/reward_history").push().key ?: "h_${System.currentTimeMillis()}"
-                                            val historyEntry = com.playwin.app.data.model.FirebaseUserRewardHistoryEntry(
+                                            val historyEntry = com.myplaywin.app.data.model.FirebaseUserRewardHistoryEntry(
                                                 id = historyId,
                                                 timestamp = txNow,
                                                 coinsEarned = config.rewardCoins,
@@ -1880,7 +1880,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                             if (gotBonus) {
                                                 // Bonus history
                                                 val bonusHistoryId = db.getReference("users").child(userId).child("reward_ads/reward_history").push().key ?: "hb_${System.currentTimeMillis()}"
-                                                val bonusHistoryEntry = com.playwin.app.data.model.FirebaseUserRewardHistoryEntry(
+                                                val bonusHistoryEntry = com.myplaywin.app.data.model.FirebaseUserRewardHistoryEntry(
                                                     id = bonusHistoryId,
                                                     timestamp = txNow,
                                                     coinsEarned = config.bonusCoins,
@@ -1891,7 +1891,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
                                                 // Bonus transaction compatibility
                                                 val bonusTxRef = db.getReference("transactions").child(userId).push()
-                                                val bonusTx = com.playwin.app.data.model.FirebaseTransaction(
+                                                val bonusTx = com.myplaywin.app.data.model.FirebaseTransaction(
                                                     id = bonusTxRef.key ?: "",
                                                     userId = userId,
                                                     type = "ad_bonus",
@@ -1989,7 +1989,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
                 val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
                 val logId = db.getReference("users").child(userId).child("reward_ads/reward_logs").push().key ?: "log_${System.currentTimeMillis()}"
-                val entry = com.playwin.app.data.model.FirebaseUserRewardLogEntry(
+                val entry = com.myplaywin.app.data.model.FirebaseUserRewardLogEntry(
                     logId = logId,
                     timestamp = System.currentTimeMillis() + serverTimeOffset,
                     event = event,
@@ -2085,13 +2085,13 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         if (userId.isEmpty()) return
         viewModelScope.launch {
             try {
-                if (com.playwin.app.data.repository.DailyResetManager.isResetRequired()) {
-                    com.playwin.app.data.repository.DailyResetManager.performDailyReset(userId)
+                if (com.myplaywin.app.data.repository.DailyResetManager.isResetRequired()) {
+                    com.myplaywin.app.data.repository.DailyResetManager.performDailyReset(userId)
                 }
 
                 // Also check and execute watch ad engine reset if 24 hours have passed since lastResetTimestamp
                 val userAds = userRewardAdsState.value
-                val serverTime = com.playwin.app.data.repository.DailyResetManager.currentServerTime.value
+                val serverTime = com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.value
                 if (userAds.lastResetTimestamp != 0L && serverTime >= userAds.lastResetTimestamp + 24 * 3600 * 1000L) {
                     resetWatchAdEngine()
                 }
@@ -2514,7 +2514,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                 val dName = currentUser?.displayName ?: "Player"
                                 val emailVal = currentUser?.email ?: ""
                                 val couponCodeVal = "SPIN-" + selectedReward.name.take(4).uppercase() + "-" + (100000..999999).random()
-                                val couponRedemption = com.playwin.app.data.model.FirebaseCouponRedemption(
+                                val couponRedemption = com.myplaywin.app.data.model.FirebaseCouponRedemption(
                                     requestId = requestId,
                                     userUid = userId,
                                     displayName = dName,
@@ -2781,10 +2781,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         stopFirebaseSync()
 
         // Start observing the centralized daily system node for this user
-        com.playwin.app.data.repository.DailyResetManager.observeUserDailySystem(userId, viewModelScope)
+        com.myplaywin.app.data.repository.DailyResetManager.observeUserDailySystem(userId, viewModelScope)
 
         watchAdResetObserverJob = viewModelScope.launch {
-            com.playwin.app.data.repository.DailyResetManager.currentServerTime.collect { serverTime ->
+            com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.collect { serverTime ->
                 val userAds = userRewardAdsState.value
                 if (userAds.lastResetTimestamp != 0L && serverTime >= userAds.lastResetTimestamp + 24 * 3600 * 1000L) {
                     android.util.Log.d("AdReset", "Background observer triggering Watch Ad Engine reset. serverTime=$serverTime, lastReset=${userAds.lastResetTimestamp}")
@@ -2897,10 +2897,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 val listener = object : com.google.firebase.database.ValueEventListener {
                     override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                         if (snapshot.exists()) {
-                            val userCheckIn = snapshot.getValue(com.playwin.app.data.model.FirebaseUserDailyCheckIn::class.java)
+                            val userCheckIn = snapshot.getValue(com.myplaywin.app.data.model.FirebaseUserDailyCheckIn::class.java)
                             userDailyCheckInState.value = userCheckIn
                         } else {
-                            userDailyCheckInState.value = com.playwin.app.data.model.FirebaseUserDailyCheckIn()
+                            userDailyCheckInState.value = com.myplaywin.app.data.model.FirebaseUserDailyCheckIn()
                         }
                     }
                     override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
@@ -2924,10 +2924,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 val listener = object : com.google.firebase.database.ValueEventListener {
                     override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                         if (snapshot.exists()) {
-                            val userDailyQuiz = snapshot.getValue(com.playwin.app.data.model.FirebaseUserDailyQuiz::class.java)
+                            val userDailyQuiz = snapshot.getValue(com.myplaywin.app.data.model.FirebaseUserDailyQuiz::class.java)
                             dailyQuizState.value = userDailyQuiz
                         } else {
-                            dailyQuizState.value = com.playwin.app.data.model.FirebaseUserDailyQuiz()
+                            dailyQuizState.value = com.myplaywin.app.data.model.FirebaseUserDailyQuiz()
                         }
                     }
                     override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
@@ -3126,9 +3126,9 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 // 3. transactions listener: transactions/{userId}
                 firebaseTransactionsListener = object : com.google.firebase.database.ValueEventListener {
                     override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
-                        val txList = mutableListOf<com.playwin.app.data.model.FirebaseTransaction>()
+                        val txList = mutableListOf<com.myplaywin.app.data.model.FirebaseTransaction>()
                         for (child in snapshot.children) {
-                            val tx = child.getValue(com.playwin.app.data.model.FirebaseTransaction::class.java)
+                            val tx = child.getValue(com.myplaywin.app.data.model.FirebaseTransaction::class.java)
                             if (tx != null) {
                                 txList.add(tx.copy(id = child.key ?: tx.id))
                             }
@@ -3269,7 +3269,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 val ok = spendCoins(coupon.requiredCoins, purpose)
                 if (ok) {
                     val redemptionId = "red_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                    val redemption = com.playwin.app.data.model.FirebaseRedemption(
+                    val redemption = com.myplaywin.app.data.model.FirebaseRedemption(
                         id = redemptionId,
                         userId = userId,
                         couponId = coupon.couponId,
@@ -3339,7 +3339,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val requestId = "req_" + System.currentTimeMillis() + "_" + (1000..9999).random()
-                val redemption = com.playwin.app.data.model.FirebaseCouponRedemption(
+                val redemption = com.myplaywin.app.data.model.FirebaseCouponRedemption(
                     requestId = requestId,
                     userUid = userId,
                     displayName = fullName,
@@ -3426,7 +3426,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    fun rollScratchRewardFromFirebase(): com.playwin.app.data.model.FirebaseScratchCardReward {
+    fun rollScratchRewardFromFirebase(): com.myplaywin.app.data.model.FirebaseScratchCardReward {
         android.util.Log.d("PlayWinScratchDebug", "--- [STEP 4 & 5 & 6] ROLLING SCRATCH REWARD FROM FIREBASE ---")
         val activeRewards = scratchCardRewardsState.value.filter { it.active }
         android.util.Log.d("PlayWinScratchDebug", "Active rewards available for roll: ${activeRewards.size}")
@@ -3434,7 +3434,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         // 10. Remove every fallback that automatically returns "Better Luck Next Time"
         // 11. Show "Better Luck Next Time" ONLY if the selected Firebase reward type is exactly "Better Luck Next Time".
         val selectedReward = if (activeRewards.isEmpty()) {
-            com.playwin.app.data.model.FirebaseScratchCardReward(
+            com.myplaywin.app.data.model.FirebaseScratchCardReward(
                 id = "empty_error",
                 name = "Error: No active rewards configured in database",
                 type = "Error",
@@ -3449,7 +3449,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 val randomVal = (0 until totalWeight).random()
                 var currentSum = 0
-                var rolled: com.playwin.app.data.model.FirebaseScratchCardReward? = null
+                var rolled: com.myplaywin.app.data.model.FirebaseScratchCardReward? = null
                 for (reward in activeRewards) {
                     currentSum += reward.probabilityWeight
                     if (randomVal < currentSum) {
@@ -3486,10 +3486,10 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun performScratchCardTransactionSecure(
-        rolledReward: com.playwin.app.data.model.FirebaseScratchCardReward,
+        rolledReward: com.myplaywin.app.data.model.FirebaseScratchCardReward,
         transactionId: String,
         isAdScratch: Boolean,
-        onResult: (Boolean, com.playwin.app.data.model.FirebaseScratchCardReward?, String?) -> Unit
+        onResult: (Boolean, com.myplaywin.app.data.model.FirebaseScratchCardReward?, String?) -> Unit
     ) {
         val userId = walletState.value.userId
         if (userId.isEmpty()) {
@@ -3571,7 +3571,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    fun adminUpdateDailyCheckInSettings(settings: com.playwin.app.data.model.FirebaseDailyCheckInSettings, onComplete: (Boolean) -> Unit) {
+    fun adminUpdateDailyCheckInSettings(settings: com.myplaywin.app.data.model.FirebaseDailyCheckInSettings, onComplete: (Boolean) -> Unit) {
         val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
         val db = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
         db.getReference("dailyCheckIn").setValue(settings).addOnCompleteListener { task ->

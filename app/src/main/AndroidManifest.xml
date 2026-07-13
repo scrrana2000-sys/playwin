@@ -23,7 +23,7 @@
             android:value="ca-app-pub-9239068235254084~6062725909" />
 
         <activity
-            android:name="com.playwin.app.MainActivity"
+            android:name="com.myplaywin.app.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.MyApplication">

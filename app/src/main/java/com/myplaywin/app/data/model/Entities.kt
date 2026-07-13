@@ -1,4 +1,4 @@
-package com.playwin.app.data.model
+package com.myplaywin.app.data.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey

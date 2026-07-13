@@ -1,6 +1,6 @@
-package com.playwin.app.ui.screens
+package com.myplaywin.app.ui.screens
 
-import com.playwin.app.data.model.Quiz
+import com.myplaywin.app.data.model.Quiz
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,8 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.playwin.app.ui.theme.*
-import com.playwin.app.ui.viewmodel.PlayWinViewModel
+import com.myplaywin.app.ui.theme.*
+import com.myplaywin.app.ui.viewmodel.PlayWinViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -54,7 +54,7 @@ import kotlin.random.Random
 @Composable
 fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val wallet by viewModel.walletState.collectAsStateWithLifecycle()
-    val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
+    val remainingTime by com.myplaywin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
     var rotationAngle by remember { mutableStateOf(0f) }
     var isSpinning by remember { mutableStateOf(false) }
     var needleBounceAngle by remember { mutableStateOf(0f) }
@@ -1634,12 +1634,12 @@ object ScratchSoundPlayer {
 @Composable
 fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     val wallet by viewModel.walletState.collectAsStateWithLifecycle()
-    val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
+    val remainingTime by com.myplaywin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val settings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
     val rewards by viewModel.scratchCardRewardsState.collectAsStateWithLifecycle()
     val scratchState by viewModel.userScratchCardStateState.collectAsStateWithLifecycle()
-    val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+    val currentServerTime by com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val activity = context as? android.app.Activity
@@ -1660,7 +1660,7 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
     var scratchTxId by remember { mutableStateOf("") }
     
     // Result reward tracking
-    var wonReward by remember { mutableStateOf<com.playwin.app.data.model.FirebaseScratchCardReward?>(null) }
+    var wonReward by remember { mutableStateOf<com.myplaywin.app.data.model.FirebaseScratchCardReward?>(null) }
     var showResultDialog by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -3788,7 +3788,7 @@ fun TriviaQuizScreen(
     val rewardCoinsPerCorrect = if (currentQuiz != null && currentQuiz.rewardPerQuestion > 0) currentQuiz.rewardPerQuestion else currentQuiz?.rewardCoins ?: 50
     val completionBonus = if (currentQuiz != null && currentQuiz.passBonus > 0) currentQuiz.passBonus else currentQuiz?.completionBonus ?: 50
 
-    var quizQuestions by remember { mutableStateOf<List<com.playwin.app.data.model.Quiz>>(emptyList()) }
+    var quizQuestions by remember { mutableStateOf<List<com.myplaywin.app.data.model.Quiz>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
     val today = viewModel.getLocalDateString()

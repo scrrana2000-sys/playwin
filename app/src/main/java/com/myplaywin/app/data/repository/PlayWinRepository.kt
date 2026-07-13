@@ -1,11 +1,11 @@
-package com.playwin.app.data.repository
+package com.myplaywin.app.data.repository
 
-import com.playwin.app.data.database.PlayWinDao
-import com.playwin.app.data.model.FirebaseCoupon
-import com.playwin.app.data.model.FirebaseTask
-import com.playwin.app.data.model.FirebaseTransaction
-import com.playwin.app.data.model.RewardTransaction
-import com.playwin.app.data.model.UserWallet
+import com.myplaywin.app.data.database.PlayWinDao
+import com.myplaywin.app.data.model.FirebaseCoupon
+import com.myplaywin.app.data.model.FirebaseTask
+import com.myplaywin.app.data.model.FirebaseTransaction
+import com.myplaywin.app.data.model.RewardTransaction
+import com.myplaywin.app.data.model.UserWallet
 import kotlinx.coroutines.flow.Flow
 
 class PlayWinRepository(private val dao: PlayWinDao) {
@@ -16,23 +16,23 @@ class PlayWinRepository(private val dao: PlayWinDao) {
 
     val firebaseTasksFlow: Flow<List<FirebaseTask>> = firebaseDbManager.observeTasks()
     val firebaseCouponsFlow: Flow<List<FirebaseCoupon>> = firebaseDbManager.observeCoupons()
-    val firebaseSpinRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseSpinReward>> = firebaseDbManager.observeSpinRewards()
-    val firebaseSpinWheelConfigFlow: Flow<com.playwin.app.data.model.FirebaseSpinWheelConfig> = firebaseDbManager.observeSpinWheelConfig()
-    val firebaseScratchCardSettingsFlow: Flow<com.playwin.app.data.model.FirebaseScratchCardSettings> = firebaseDbManager.observeScratchCardSettings()
-    val firebaseScratchCardRewardsFlow: Flow<List<com.playwin.app.data.model.FirebaseScratchCardReward>> = firebaseDbManager.observeScratchCardRewards()
-    val firebaseWatchAdsConfigFlow: Flow<com.playwin.app.data.model.FirebaseWatchAdsConfig> = firebaseDbManager.observeWatchAdsConfig()
+    val firebaseSpinRewardsFlow: Flow<List<com.myplaywin.app.data.model.FirebaseSpinReward>> = firebaseDbManager.observeSpinRewards()
+    val firebaseSpinWheelConfigFlow: Flow<com.myplaywin.app.data.model.FirebaseSpinWheelConfig> = firebaseDbManager.observeSpinWheelConfig()
+    val firebaseScratchCardSettingsFlow: Flow<com.myplaywin.app.data.model.FirebaseScratchCardSettings> = firebaseDbManager.observeScratchCardSettings()
+    val firebaseScratchCardRewardsFlow: Flow<List<com.myplaywin.app.data.model.FirebaseScratchCardReward>> = firebaseDbManager.observeScratchCardRewards()
+    val firebaseWatchAdsConfigFlow: Flow<com.myplaywin.app.data.model.FirebaseWatchAdsConfig> = firebaseDbManager.observeWatchAdsConfig()
 
-    fun getFirebaseUserRewardAdsFlow(userId: String): Flow<com.playwin.app.data.model.FirebaseUserRewardAds> {
+    fun getFirebaseUserRewardAdsFlow(userId: String): Flow<com.myplaywin.app.data.model.FirebaseUserRewardAds> {
         return firebaseDbManager.observeUserRewardAds(userId)
     }
 
-    fun getFirebaseUserScratchCardStateFlow(userId: String): Flow<com.playwin.app.data.model.FirebaseUserScratchCardState> {
+    fun getFirebaseUserScratchCardStateFlow(userId: String): Flow<com.myplaywin.app.data.model.FirebaseUserScratchCardState> {
         return firebaseDbManager.observeUserScratchCardState(userId)
     }
 
     fun performScratchCardDbTransaction(
         userId: String,
-        reward: com.playwin.app.data.model.FirebaseScratchCardReward,
+        reward: com.myplaywin.app.data.model.FirebaseScratchCardReward,
         transactionId: String,
         isAdScratch: Boolean,
         onComplete: (Boolean, String?, Int, Int) -> Unit
@@ -44,26 +44,26 @@ class PlayWinRepository(private val dao: PlayWinDao) {
         return firebaseDbManager.observeTransactions(userId)
     }
 
-    fun getFirebaseUserFlow(userId: String): Flow<com.playwin.app.data.model.FirebaseUser?> {
+    fun getFirebaseUserFlow(userId: String): Flow<com.myplaywin.app.data.model.FirebaseUser?> {
         return firebaseDbManager.observeFirebaseUser(userId)
     }
 
-    fun getFirebaseRedemptionsFlow(userId: String): Flow<List<com.playwin.app.data.model.FirebaseRedemption>> {
+    fun getFirebaseRedemptionsFlow(userId: String): Flow<List<com.myplaywin.app.data.model.FirebaseRedemption>> {
         return firebaseDbManager.observeRedemptions(userId)
     }
 
-    fun addFirebaseRedemption(userId: String, redemption: com.playwin.app.data.model.FirebaseRedemption) {
+    fun addFirebaseRedemption(userId: String, redemption: com.myplaywin.app.data.model.FirebaseRedemption) {
         firebaseDbManager.addFirebaseRedemption(userId, redemption)
     }
 
 
 
-    fun getFirebaseCouponRedemptionsFlow(userId: String): Flow<List<com.playwin.app.data.model.FirebaseCouponRedemption>> {
+    fun getFirebaseCouponRedemptionsFlow(userId: String): Flow<List<com.myplaywin.app.data.model.FirebaseCouponRedemption>> {
         return firebaseDbManager.observeUserCouponRedemptions(userId)
     }
 
     fun submitCouponRedemptionTransaction(
-        redemption: com.playwin.app.data.model.FirebaseCouponRedemption,
+        redemption: com.myplaywin.app.data.model.FirebaseCouponRedemption,
         couponId: String,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
@@ -135,7 +135,7 @@ class PlayWinRepository(private val dao: PlayWinDao) {
 
     fun resetUserDataInFirebase(userId: String) = firebaseDbManager.resetUserDataInFirebase(userId)
 
-    fun saveNewUserInFirebase(user: com.playwin.app.data.model.FirebaseUser) = firebaseDbManager.saveNewUserInFirebase(user)
+    fun saveNewUserInFirebase(user: com.myplaywin.app.data.model.FirebaseUser) = firebaseDbManager.saveNewUserInFirebase(user)
 
     fun createOriginalUserInFirebase(
         uid: String,
@@ -144,31 +144,31 @@ class PlayWinRepository(private val dao: PlayWinDao) {
         onComplete: (Boolean) -> Unit
     ) = firebaseDbManager.createOriginalUserInFirebase(uid, email, displayName, onComplete)
 
-    fun getFirebaseQuizProgressFlow(userId: String): Flow<com.playwin.app.data.model.FirebaseQuizProgress?> {
+    fun getFirebaseQuizProgressFlow(userId: String): Flow<com.myplaywin.app.data.model.FirebaseQuizProgress?> {
         return firebaseDbManager.observeQuizProgress(userId)
     }
 
-    fun saveFirebaseQuizProgress(userId: String, progress: com.playwin.app.data.model.FirebaseQuizProgress) {
+    fun saveFirebaseQuizProgress(userId: String, progress: com.myplaywin.app.data.model.FirebaseQuizProgress) {
         firebaseDbManager.saveQuizProgress(userId, progress)
     }
 
-    fun getFirebaseCompletedQuizzesFlow(userId: String): Flow<Map<String, com.playwin.app.data.model.FirebaseCompletedQuiz>> {
+    fun getFirebaseCompletedQuizzesFlow(userId: String): Flow<Map<String, com.myplaywin.app.data.model.FirebaseCompletedQuiz>> {
         return firebaseDbManager.observeCompletedQuizzes(userId)
     }
 
-    fun saveFirebaseCompletedQuiz(userId: String, quizId: String, completedQuiz: com.playwin.app.data.model.FirebaseCompletedQuiz) {
+    fun saveFirebaseCompletedQuiz(userId: String, quizId: String, completedQuiz: com.myplaywin.app.data.model.FirebaseCompletedQuiz) {
         firebaseDbManager.saveCompletedQuiz(userId, quizId, completedQuiz)
     }
 
-    fun getFirebaseWeeklyQuizProgressFlow(userId: String): Flow<Map<String, com.playwin.app.data.model.FirebaseWeeklyQuizProgress>> {
+    fun getFirebaseWeeklyQuizProgressFlow(userId: String): Flow<Map<String, com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress>> {
         return firebaseDbManager.observeWeeklyQuizProgress(userId)
     }
 
-    fun saveFirebaseWeeklyQuizProgress(userId: String, dayOfWeek: String, progress: com.playwin.app.data.model.FirebaseWeeklyQuizProgress) {
+    fun saveFirebaseWeeklyQuizProgress(userId: String, dayOfWeek: String, progress: com.myplaywin.app.data.model.FirebaseWeeklyQuizProgress) {
         firebaseDbManager.saveWeeklyQuizProgress(userId, dayOfWeek, progress)
     }
 
-    fun getQuestionsForCategory(category: String, onResult: (List<com.playwin.app.data.model.Quiz>) -> Unit) {
+    fun getQuestionsForCategory(category: String, onResult: (List<com.myplaywin.app.data.model.Quiz>) -> Unit) {
         firebaseDbManager.getQuestionsForCategory(category, onResult)
     }
 
@@ -177,11 +177,11 @@ class PlayWinRepository(private val dao: PlayWinDao) {
     }
 
     // --- UPI WITHDRAW & ADMIN PANELS STREAMS ---
-    fun getFirebaseWithdrawRequestsFlow(userId: String): Flow<List<com.playwin.app.data.model.FirebaseWithdrawRequest>> {
+    fun getFirebaseWithdrawRequestsFlow(userId: String): Flow<List<com.myplaywin.app.data.model.FirebaseWithdrawRequest>> {
         return firebaseDbManager.observeWithdrawRequests(userId)
     }
 
-    val firebaseAllUsersFlow: Flow<List<com.playwin.app.data.model.FirebaseUser>> =
+    val firebaseAllUsersFlow: Flow<List<com.myplaywin.app.data.model.FirebaseUser>> =
         firebaseDbManager.observeAllUsers()
 
     fun submitWithdrawRequest(
@@ -196,7 +196,7 @@ class PlayWinRepository(private val dao: PlayWinDao) {
         firebaseDbManager.submitWithdrawRequest(uid, userName, email, upiId, amount, coinsSpent, onComplete)
     }
 
-    fun getFirebaseQuizzesFlow(): Flow<List<com.playwin.app.data.model.FirebaseQuiz>> {
+    fun getFirebaseQuizzesFlow(): Flow<List<com.myplaywin.app.data.model.FirebaseQuiz>> {
         return firebaseDbManager.observeQuizzes()
     }
 }

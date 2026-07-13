@@ -1,11 +1,11 @@
-package com.playwin.app.data.database
+package com.myplaywin.app.data.database
 
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import com.playwin.app.data.model.RewardTransaction
-import com.playwin.app.data.model.UserWallet
+import com.myplaywin.app.data.model.RewardTransaction
+import com.myplaywin.app.data.model.UserWallet
 
 @Database(entities = [UserWallet::class, RewardTransaction::class], version = 9, exportSchema = false)
 abstract class PlayWinDatabase : RoomDatabase() {

@@ -1,4 +1,4 @@
-package com.playwin.app
+package com.myplaywin.app
 
 import android.app.Application
 import com.playwin.ads.AdManager

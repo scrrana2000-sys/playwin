@@ -1,6 +1,6 @@
 package com.playwin.ads
 
-import com.playwin.app.ui.viewmodel.PlayWinViewModel
+import com.myplaywin.app.ui.viewmodel.PlayWinViewModel
 
 object RewardController {
     

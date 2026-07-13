@@ -1,4 +1,4 @@
-package com.playwin.app.ui.screens
+package com.myplaywin.app.ui.screens
 
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.*
@@ -43,14 +43,14 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.activity.compose.BackHandler
-import com.playwin.app.data.model.FirebaseCoupon
-import com.playwin.app.data.model.FirebaseRedemption
-import com.playwin.app.data.model.FirebaseReferralRecord
-import com.playwin.app.data.model.FirebaseTransaction
-import com.playwin.app.data.model.RewardTransaction
-import com.playwin.app.ui.theme.*
-import com.playwin.app.ui.viewmodel.PlayWinViewModel
-import com.playwin.app.ui.viewmodel.AuthState
+import com.myplaywin.app.data.model.FirebaseCoupon
+import com.myplaywin.app.data.model.FirebaseRedemption
+import com.myplaywin.app.data.model.FirebaseReferralRecord
+import com.myplaywin.app.data.model.FirebaseTransaction
+import com.myplaywin.app.data.model.RewardTransaction
+import com.myplaywin.app.ui.theme.*
+import com.myplaywin.app.ui.viewmodel.PlayWinViewModel
+import com.myplaywin.app.ui.viewmodel.AuthState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -1273,13 +1273,13 @@ fun QuizArenaScreen(
     val todayDate = viewModel.getLocalDateString()
 
     // 1. Reactive Server Time & Countdown
-    val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+    val currentServerTime by com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
     val nextQuizResetTimestamp by viewModel.nextQuizResetTimestampState.collectAsStateWithLifecycle()
 
     val nextResetVal = if (nextQuizResetTimestamp > 0L) {
         nextQuizResetTimestamp
     } else {
-        com.playwin.app.data.repository.DailyResetManager.getNextResetUtc(currentServerTime)
+        com.myplaywin.app.data.repository.DailyResetManager.getNextResetUtc(currentServerTime)
     }
 
     val diffMs = nextResetVal - currentServerTime
@@ -1305,7 +1305,7 @@ fun QuizArenaScreen(
         if (diffMs <= 0) {
             val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
             if (currentUserId.isNotEmpty()) {
-                com.playwin.app.data.repository.DailyResetManager.performDailyReset(currentUserId)
+                com.myplaywin.app.data.repository.DailyResetManager.performDailyReset(currentUserId)
             }
         }
     }
@@ -1317,7 +1317,7 @@ fun QuizArenaScreen(
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
                 if (currentUserId.isNotEmpty()) {
-                    com.playwin.app.data.repository.DailyResetManager.performDailyReset(currentUserId)
+                    com.myplaywin.app.data.repository.DailyResetManager.performDailyReset(currentUserId)
                 }
             }
         }
@@ -1876,7 +1876,7 @@ fun AchievementRow(
 
 @Composable
 fun PodiumPedestal(
-    user: com.playwin.app.data.model.FirebaseUser,
+    user: com.myplaywin.app.data.model.FirebaseUser,
     rank: Int,
     height: androidx.compose.ui.unit.Dp,
     width: androidx.compose.ui.unit.Dp,
@@ -2028,8 +2028,8 @@ fun PodiumPedestal(
 
 @Composable
 fun LeaderboardScreen(
-    allUsers: List<com.playwin.app.data.model.FirebaseUser>,
-    currentUser: com.playwin.app.data.model.FirebaseUser?
+    allUsers: List<com.myplaywin.app.data.model.FirebaseUser>,
+    currentUser: com.myplaywin.app.data.model.FirebaseUser?
 ) {
     val sortedUsers = remember(allUsers) {
         allUsers.sortedByDescending { it.coins }
@@ -2037,7 +2037,7 @@ fun LeaderboardScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf("All Time") }
-    var clickedPlayer by remember { mutableStateOf<com.playwin.app.data.model.FirebaseUser?>(null) }
+    var clickedPlayer by remember { mutableStateOf<com.myplaywin.app.data.model.FirebaseUser?>(null) }
 
     val tabs = listOf("Today", "Weekly", "Monthly", "All Time")
 
@@ -2670,7 +2670,7 @@ data class PlayWinNavigationItem(val tab: AppTab, val title: String, val icon: I
 // --- HOME SCREEN ---
 @Composable
 fun HomeScreen(
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
@@ -2688,7 +2688,7 @@ fun HomeScreen(
     val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
     val scratchSettings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
     val scratchState by viewModel.userScratchCardStateState.collectAsStateWithLifecycle()
-    val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+    val currentServerTime by com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
     
     val adConfig by viewModel.watchAdsConfigState.collectAsStateWithLifecycle()
     val userRewardAds by viewModel.userRewardAdsState.collectAsStateWithLifecycle()
@@ -3353,12 +3353,12 @@ fun HomeScreen(
             val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
             val checkInSettings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
             
-            val currentServerTime by com.playwin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
-            val remainingTime by com.playwin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
+            val currentServerTime by com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
+            val remainingTime by com.myplaywin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
 
             val isEligibleToClaim = remember(userCheckIn?.lastClaimTimestamp, currentServerTime) {
                 val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                val startOfToday = com.playwin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
+                val startOfToday = com.myplaywin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
                 lastClaim < startOfToday
             }
             val countdownText = if (isEligibleToClaim) "" else "$remainingTime remaining."
@@ -4886,7 +4886,7 @@ fun QuizChoiceDialog(
 
 @Composable
 fun LeaderboardDialog(
-    allUsers: List<com.playwin.app.data.model.FirebaseUser>,
+    allUsers: List<com.myplaywin.app.data.model.FirebaseUser>,
     onDismiss: () -> Unit
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
@@ -5262,8 +5262,8 @@ fun ActiveTaskRowItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WalletScreen(
-    wallet: com.playwin.app.data.model.UserWallet,
-    transactions: List<com.playwin.app.data.model.FirebaseTransaction>,
+    wallet: com.myplaywin.app.data.model.UserWallet,
+    transactions: List<com.myplaywin.app.data.model.FirebaseTransaction>,
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
@@ -5637,7 +5637,7 @@ fun SummaryCard(
 }
 
 @Composable
-fun TransactionItemRow(tx: com.playwin.app.data.model.FirebaseTransaction) {
+fun TransactionItemRow(tx: com.myplaywin.app.data.model.FirebaseTransaction) {
     val formattedDate = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(tx.timestamp))
     
     val icon = when {
@@ -6166,7 +6166,7 @@ fun PremiumTaskCard(
 // --- TASKS SCREEN ---
 @Composable
 fun TasksScreen(
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
@@ -6344,7 +6344,7 @@ fun TaskGameItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CouponsScreen(
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState
@@ -6357,7 +6357,7 @@ fun CouponsScreen(
 
     val mappedRedemptions = remember(couponRedemptions) {
         couponRedemptions.map { r ->
-            com.playwin.app.data.model.FirebaseRedemption(
+            com.myplaywin.app.data.model.FirebaseRedemption(
                 id = r.requestId,
                 userId = r.userUid,
                 couponId = r.requestId,
@@ -6378,7 +6378,7 @@ fun CouponsScreen(
 
     // Dialog/Detail states
     var selectedCouponDetails by remember { mutableStateOf<FirebaseCoupon?>(null) }
-    var selectedRedemptionDetails by remember { mutableStateOf<com.playwin.app.data.model.FirebaseRedemption?>(null) }
+    var selectedRedemptionDetails by remember { mutableStateOf<com.myplaywin.app.data.model.FirebaseRedemption?>(null) }
     var successCouponAnimation by remember { mutableStateOf<FirebaseCoupon?>(null) }
 
     var showRedemptionFormCoupon by remember { mutableStateOf<FirebaseCoupon?>(null) }
@@ -6599,7 +6599,7 @@ fun CouponsScreen(
 @Composable
 fun StoreTabContent(
     allCoupons: List<FirebaseCoupon>,
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     couponSearchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     selectedCategory: String,
@@ -6726,7 +6726,7 @@ fun StoreTabContent(
 @Composable
 fun CouponCardItem(
     coupon: FirebaseCoupon,
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     onClick: () -> Unit,
     onRedeemClick: () -> Unit
 ) {
@@ -6860,10 +6860,10 @@ fun CouponCardItem(
 // --- MY COUPONS TAB CONTENT ---
 @Composable
 fun MyCouponsTabContent(
-    redemptions: List<com.playwin.app.data.model.FirebaseRedemption>,
+    redemptions: List<com.myplaywin.app.data.model.FirebaseRedemption>,
     selectedFilter: String,
     onFilterChange: (String) -> Unit,
-    onRedemptionClick: (com.playwin.app.data.model.FirebaseRedemption) -> Unit
+    onRedemptionClick: (com.myplaywin.app.data.model.FirebaseRedemption) -> Unit
 ) {
     val filters = listOf("Pending", "Approved", "Rejected", "Completed")
     val filteredHistory = redemptions.filter { it.status.trim().equals(selectedFilter, ignoreCase = true) }
@@ -6947,7 +6947,7 @@ fun MyCouponsTabContent(
 // --- REDEMPTION LIST ROW ---
 @Composable
 fun RedemptionRowItem(
-    redemption: com.playwin.app.data.model.FirebaseRedemption,
+    redemption: com.myplaywin.app.data.model.FirebaseRedemption,
     onClick: () -> Unit
 ) {
     val dateText = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(redemption.timestamp))
@@ -7048,12 +7048,12 @@ fun AdminTabContent(
     val coroutineScope = rememberCoroutineScope()
 
     // Dialog state for UPI Withdraw approval/rejection
-    var activeWithdrawRequestForAction by remember { mutableStateOf<com.playwin.app.data.model.FirebaseWithdrawRequest?>(null) }
+    var activeWithdrawRequestForAction by remember { mutableStateOf<com.myplaywin.app.data.model.FirebaseWithdrawRequest?>(null) }
     var withdrawActionType by remember { mutableStateOf("") } // "Approve" or "Reject"
     var withdrawRemarksText by remember { mutableStateOf("") }
 
     // Dialog state for User coin manual modifications
-    var activeUserForCoinsMod by remember { mutableStateOf<com.playwin.app.data.model.FirebaseUser?>(null) }
+    var activeUserForCoinsMod by remember { mutableStateOf<com.myplaywin.app.data.model.FirebaseUser?>(null) }
     var modificationCoinAmount by remember { mutableStateOf("") }
     var isAdditionAction by remember { mutableStateOf(true) }
 
@@ -7727,7 +7727,7 @@ fun RedemptionSuccessDialog(
 @Composable
 fun CouponDetailsDialog(
     coupon: FirebaseCoupon,
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     isRedeeming: Boolean,
     onDismiss: () -> Unit,
     onRedeem: () -> Unit
@@ -7857,7 +7857,7 @@ fun CouponDetailsDialog(
 @Composable
 fun CouponRedemptionFormDialog(
     coupon: FirebaseCoupon,
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     userEmail: String,
     onDismiss: () -> Unit,
     onSubmit: (fullName: String, mobileNumber: String, email: String, rechargeNumber: String, additionalNotes: String) -> Unit
@@ -8094,7 +8094,7 @@ fun CouponRedemptionFormDialog(
 // --- REDEMPTION DETAILS SCREEN ---
 @Composable
 fun RedemptionDetailsDialog(
-    redemption: com.playwin.app.data.model.FirebaseRedemption,
+    redemption: com.myplaywin.app.data.model.FirebaseRedemption,
     onDismiss: () -> Unit,
     onCopyCode: (String) -> Unit
 ) {
@@ -8396,7 +8396,7 @@ fun AdminCouponFormDialog(
 // --- REFERRAL SCREEN ---
 @Composable
 fun ReferralScreen(
-    wallet: com.playwin.app.data.model.UserWallet,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
@@ -8410,7 +8410,7 @@ fun ReferralScreen(
     } else {
         "PLAYWIN99"
     }
-    val appLink = "https://play.google.com/store/apps/details?id=com.playwin.app"
+    val appLink = "https://play.google.com/store/apps/details?id=com.myplaywin.app"
     val shareMessage = """
 🎮 Join Play Win and earn rewards!
 Use my referral code:
@@ -9127,8 +9127,8 @@ fun ProfileMenuItem(
 
 @Composable
 fun ProfileScreen(
-    wallet: com.playwin.app.data.model.UserWallet,
-    transactions: List<com.playwin.app.data.model.FirebaseTransaction>,
+    wallet: com.myplaywin.app.data.model.UserWallet,
+    transactions: List<com.myplaywin.app.data.model.FirebaseTransaction>,
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState
@@ -9507,8 +9507,8 @@ fun ProfileMenuRowItem(
 
 @Composable
 fun VideoAdSimulatorDialog(
-    viewModel: com.playwin.app.ui.viewmodel.PlayWinViewModel,
-    wallet: com.playwin.app.data.model.UserWallet,
+    viewModel: com.myplaywin.app.ui.viewmodel.PlayWinViewModel,
+    wallet: com.myplaywin.app.data.model.UserWallet,
     onDismiss: () -> Unit,
     snackbarHostState: SnackbarHostState
 ) {
@@ -10266,7 +10266,7 @@ fun UPIWithdrawScreen(
 
 @Composable
 fun AdminDailyCheckInSection(
-    viewModel: com.playwin.app.ui.viewmodel.PlayWinViewModel,
+    viewModel: com.myplaywin.app.ui.viewmodel.PlayWinViewModel,
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
@@ -10518,7 +10518,7 @@ fun AdminDailyCheckInSection(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = {
-                        val finalSettings = com.playwin.app.data.model.FirebaseDailyCheckInSettings(
+                        val finalSettings = com.myplaywin.app.data.model.FirebaseDailyCheckInSettings(
                             enabled = localEnabled,
                             rewards = listOf(
                                 localDay1.toIntOrNull() ?: 20,

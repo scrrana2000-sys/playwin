@@ -1,6 +1,6 @@
 package com.playwin.ads
 
-import com.playwin.app.BuildConfig
+import com.myplaywin.app.BuildConfig
 
 object AdConstants {
     // AdMob App ID: ca-app-pub-9239068235254084~6062725909

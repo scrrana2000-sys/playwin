@@ -1,4 +1,4 @@
-package com.playwin.app.data.repository
+package com.myplaywin.app.data.repository
 
 import android.util.Log
 import com.google.firebase.database.DataSnapshot

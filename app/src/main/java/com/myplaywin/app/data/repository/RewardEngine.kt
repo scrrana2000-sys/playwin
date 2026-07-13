@@ -1,7 +1,7 @@
-package com.playwin.app.data.repository
+package com.myplaywin.app.data.repository
 
-import com.playwin.app.data.model.FirebaseSpinReward
-import com.playwin.app.data.model.FirebaseScratchCardReward
+import com.myplaywin.app.data.model.FirebaseSpinReward
+import com.myplaywin.app.data.model.FirebaseScratchCardReward
 import kotlin.random.Random
 
 object RewardEngine {
