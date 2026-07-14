@@ -5764,7 +5764,7 @@ fun PolicyCompliantNativeAd(
     var isFailed by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
-        val adLoader = com.google.android.gms.ads.AdLoader.Builder(context.applicationContext, "ca-app-pub-9239068235254084/9818138085")
+        val adLoader = com.google.android.gms.ads.AdLoader.Builder(context.applicationContext, com.playwin.ads.AdConstants.NATIVE_AD_UNIT_ID)
             .forNativeAd { nativeAd ->
                 nativeAdState?.destroy()
                 nativeAdState = nativeAd

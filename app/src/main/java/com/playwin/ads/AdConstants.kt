@@ -3,12 +3,12 @@ package com.playwin.ads
 import com.myplaywin.app.BuildConfig
 
 object AdConstants {
-    // AdMob App ID: ca-app-pub-9239068235254084~6062725909
+    // AdMob App ID: ca-app-pub-9239068235254084~5723386922
     
     // Production Unit IDs
-    private const val PROD_BANNER = "ca-app-pub-9239068235254084/4206718758"
-    private const val PROD_NATIVE = "ca-app-pub-9239068235254084/9818138085"
-    private const val PROD_REWARDED = "ca-app-pub-9239068235254084/9611088675"
+    private const val PROD_BANNER = "ca-app-pub-9239068235254084/1438998304"
+    private const val PROD_NATIVE = "ca-app-pub-9239068235254084/8826533738"
+    private const val PROD_REWARDED = "ca-app-pub-9239068235254084/4695717036"
 
     // standard Google AdMob Test Unit IDs
     private const val TEST_BANNER = "ca-app-pub-3940256099942544/6300978111"
