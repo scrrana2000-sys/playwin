@@ -1,21 +1,33 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ProGuard & R8 Optimization Rules for Release Build
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep app data and model classes
+-keep class com.myplaywin.app.data.** { *; }
+-keepclassmembers class com.myplaywin.app.data.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Firebase Realtime Database & Auth
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keepclassmembers class * {
+    @com.google.firebase.database.PropertyName <fields>;
+    @com.google.firebase.database.IgnoreExtraProperties <fields>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Google Play Services & AdMob
+-keep class com.google.android.gms.ads.** { *; }
+-keep class com.google.ads.** { *; }
+
+# Moshi & Retrofit
+-keep class com.squareup.moshi.** { *; }
+-keepclassmembers class * {
+    @com.squareup.moshi.* <fields>;
+    @com.squareup.moshi.* <methods>;
+}
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations
+
+# Room Database
+-keepclassmembers class * extends androidx.room.RoomDatabase {
+    <init>(...);
+}
+
+# Preserve line numbers for crash reports
+-keepattributes SourceFile,LineNumberTable
+
