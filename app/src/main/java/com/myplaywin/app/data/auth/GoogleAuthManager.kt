@@ -89,26 +89,8 @@ object GoogleAuthManager {
                 GoogleSignInResult.Cancelled
             } catch (e: GetCredentialException) {
                 Log.e(TAG, "Credential Manager Exception", e)
-                val isNoCredentials = e is androidx.credentials.exceptions.NoCredentialException || 
-                        e.message?.contains("No credentials available", ignoreCase = true) == true ||
-                        e.message?.contains("No accounts", ignoreCase = true) == true
-
-                if (isNoCredentials) {
-                    try {
-                        val intent = android.content.Intent(android.provider.Settings.ACTION_ADD_ACCOUNT).apply {
-                            putExtra(android.provider.Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(intent)
-                        GoogleSignInResult.Cancelled
-                    } catch (activityException: Exception) {
-                        Log.e(TAG, "Failed to start Add Account activity", activityException)
-                        GoogleSignInResult.Error("No Google account found on this device. Failed to open system settings to add one.")
-                    }
-                } else {
-                    val msg = e.localizedMessage ?: "Google Sign-In failed. Please try again."
-                    GoogleSignInResult.Error(msg)
-                }
+                val msg = e.localizedMessage ?: "Google Sign-In failed. Please try again."
+                GoogleSignInResult.Error(msg)
             } catch (e: Exception) {
                 Log.e(TAG, "Unexpected Google Sign-In Exception", e)
                 GoogleSignInResult.Error(e.localizedMessage ?: "An unexpected error occurred during Google Sign-In.")
