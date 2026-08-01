@@ -433,7 +433,7 @@ fun verifyAndLogBooleans(snapshot: com.google.firebase.database.DataSnapshot) {
         if (value != null && KNOWN_BOOLEAN_FIELDS.contains(key)) {
             val actualType = value::class.java.simpleName
             if (value is Number) {
-                val path = try { snapshot.ref.path.toString() } catch (e: Exception) { key }
+                val path = try { snapshot.ref.toString() } catch (e: Exception) { key }
                 android.util.Log.e("FirebaseTypeCheck", """
                     Field Name: $key
                     Expected Type: Boolean
@@ -485,7 +485,7 @@ fun com.google.firebase.database.DataSnapshot.getSafeBoolean(fieldName: String, 
         if (rawValue is Boolean) {
             return rawValue
         }
-        val path = try { child.ref.path.toString() } catch (e: Exception) { fieldName }
+        val path = try { child.ref.toString() } catch (e: Exception) { fieldName }
         if (rawValue is Number) {
             val boolVal = rawValue.toLong() != 0L
             android.util.Log.e("FirebaseTypeCheck", """
