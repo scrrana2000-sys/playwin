@@ -408,6 +408,7 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
     var isResending by remember { mutableStateOf(false) }
     var showErrorDialog by remember { mutableStateOf(false) }
     var errorDialogMsg by remember { mutableStateOf("") }
+    var showVerificationSentDialog by remember { mutableStateOf(false) }
     
     var showResetDialog by remember { mutableStateOf(false) }
     var resetEmail by remember { mutableStateOf("") }
@@ -751,6 +752,7 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
                                         isResending = false
                                         if (success) {
                                             successMessage = msg ?: "Verification email resent successfully!"
+                                            showVerificationSentDialog = true
                                         } else {
                                             val errorMsg = msg ?: "Failed to resend email."
                                             errorMessage = errorMsg
@@ -1121,6 +1123,98 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
             },
             containerColor = Color(0xFF13111C),
             shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showVerificationSentDialog) {
+        AlertDialog(
+            onDismissRequest = { showVerificationSentDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Email,
+                    contentDescription = "Verification Email Sent",
+                    tint = Color(0xFF00E5FF),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "📧 Verification Email Sent",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "We've sent a verification email to your registered email address.",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
+                    )
+                    Text(
+                        text = "If you don't see it in your Inbox within a few minutes, please check your Spam, Junk, or Promotions folder.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    Text(
+                        text = "If you find the email there, open it and click \"Verify Email\". You can also mark it as \"Not Spam\" so future emails arrive in your Inbox.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showVerificationSentDialog = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF7C4DFF),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("verification_dialog_ok_button")
+                ) {
+                    Text("OK", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showVerificationSentDialog = false
+                        isResending = true
+                        successMessage = null
+                        errorMessage = null
+                        viewModel.resendVerificationEmail(email, password) { success, msg ->
+                            isResending = false
+                            if (success) {
+                                successMessage = msg ?: "Verification email resent successfully!"
+                                showVerificationSentDialog = true
+                            } else {
+                                val errorMsg = msg ?: "Failed to resend email."
+                                errorMessage = errorMsg
+                                errorDialogMsg = errorMsg
+                                showErrorDialog = true
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFF00E5FF)
+                    ),
+                    border = BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("verification_dialog_resend_button")
+                ) {
+                    Text("Resend Email", fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF13111C),
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }
@@ -5778,6 +5872,13 @@ fun ShimmerPlaceholder(modifier: Modifier = Modifier) {
 
 @Composable
 fun PolicyCompliantNativeAd(
+    modifier: Modifier = Modifier
+) {
+    com.playwin.ads.NativeManager.NativeAd(modifier = modifier)
+}
+
+@Composable
+fun PolicyCompliantNativeAdOld(
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
