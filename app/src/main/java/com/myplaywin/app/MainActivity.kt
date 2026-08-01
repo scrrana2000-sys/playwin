@@ -30,6 +30,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        com.myplaywin.app.util.FingerprintHelper.logAppSignature(this)
+        
         // Pre-create WebView default directories to prevent chromium opendir errors from polluting logcat
         try {
             val cacheDir = this.cacheDir

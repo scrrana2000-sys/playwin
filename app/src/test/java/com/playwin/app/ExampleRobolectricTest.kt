@@ -1,4 +1,4 @@
-package com.playwin.app
+package com.myplaywin.app
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider

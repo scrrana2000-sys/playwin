@@ -965,7 +965,7 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
                                 if (!success) {
                                     if (err != null) {
                                         errorMessage = err
-                                        errorDialogMsg = err
+                                        errorDialogMsg = "Google Sign-In failed:\n\n$err"
                                         showErrorDialog = true
                                     }
                                 }
