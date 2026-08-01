@@ -222,11 +222,17 @@ object NativeManager {
                         .fillMaxWidth()
                         .wrapContentHeight(),
                     factory = { ctx ->
+                        val density = ctx.resources.displayMetrics.density
                         val nativeAdView = NativeAdView(ctx)
                         
                         val mainLayout = LinearLayout(ctx).apply {
                             orientation = LinearLayout.VERTICAL
-                            setPadding(24, 24, 24, 24)
+                            setPadding(
+                                (16 * density).toInt(),
+                                (16 * density).toInt(),
+                                (16 * density).toInt(),
+                                (16 * density).toInt()
+                            )
                             layoutParams = FrameLayout.LayoutParams(
                                 FrameLayout.LayoutParams.MATCH_PARENT,
                                 FrameLayout.LayoutParams.WRAP_CONTENT
@@ -248,13 +254,18 @@ object NativeManager {
                             textSize = 10f
                             setTextColor(android.graphics.Color.WHITE)
                             setBackgroundColor(android.graphics.Color.parseColor("#E0A900"))
-                            setPadding(8, 2, 8, 2)
+                            setPadding(
+                                (6 * density).toInt(),
+                                (2 * density).toInt(),
+                                (6 * density).toInt(),
+                                (2 * density).toInt()
+                            )
                             gravity = android.view.Gravity.CENTER
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
                             ).apply {
-                                rightMargin = 12
+                                rightMargin = (8 * density).toInt()
                             }
                         }
 
@@ -262,6 +273,10 @@ object NativeManager {
                             textSize = 11f
                             setTextColor(android.graphics.Color.GRAY)
                             setTypeface(null, android.graphics.Typeface.BOLD)
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
                         }
 
                         headerRow.addView(adBadge)
@@ -271,17 +286,21 @@ object NativeManager {
                         // Content row (Icon + Headline/Body)
                         val contentRow = LinearLayout(ctx).apply {
                             orientation = LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
                             ).apply {
-                                topMargin = 12
+                                topMargin = (8 * density).toInt()
                             }
                         }
 
                         val adIconView = ImageView(ctx).apply {
-                            layoutParams = LinearLayout.LayoutParams(96, 96).apply {
-                                rightMargin = 12
+                            layoutParams = LinearLayout.LayoutParams(
+                                (40 * density).toInt(),
+                                (40 * density).toInt()
+                            ).apply {
+                                rightMargin = (12 * density).toInt()
                             }
                             scaleType = ImageView.ScaleType.CENTER_CROP
                         }
@@ -317,9 +336,9 @@ object NativeManager {
                         val mediaView = com.google.android.gms.ads.nativead.MediaView(ctx).apply {
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
-                                250
+                                (180 * density).toInt()
                             ).apply {
-                                topMargin = 12
+                                topMargin = (12 * density).toInt()
                             }
                         }
                         mainLayout.addView(mediaView)
@@ -332,7 +351,7 @@ object NativeManager {
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
                             ).apply {
-                                topMargin = 12
+                                topMargin = (12 * density).toInt()
                             }
                         }
 
@@ -343,7 +362,18 @@ object NativeManager {
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
                             ).apply {
-                                rightMargin = 8
+                                rightMargin = (8 * density).toInt()
+                            }
+                        }
+
+                        val storeView = TextView(ctx).apply {
+                            textSize = 11f
+                            setTextColor(android.graphics.Color.WHITE)
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                rightMargin = (8 * density).toInt()
                             }
                         }
 
@@ -354,7 +384,7 @@ object NativeManager {
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
                             ).apply {
-                                rightMargin = 8
+                                rightMargin = (8 * density).toInt()
                             }
                         }
 
@@ -368,10 +398,16 @@ object NativeManager {
                             setTextColor(android.graphics.Color.WHITE)
                             textSize = 11f
                             setAllCaps(false)
-                            setPadding(12, 6, 12, 6)
+                            setPadding(
+                                (12 * density).toInt(),
+                                (6 * density).toInt(),
+                                (12 * density).toInt(),
+                                (6 * density).toInt()
+                            )
                         }
 
                         bottomRow.addView(priceView)
+                        bottomRow.addView(storeView)
                         bottomRow.addView(ratingView)
                         bottomRow.addView(callToActionView)
                         mainLayout.addView(bottomRow)
@@ -387,9 +423,11 @@ object NativeManager {
                         nativeAdView.advertiserView = advertiserText
                         nativeAdView.priceView = priceView
                         nativeAdView.starRatingView = ratingView
+                        nativeAdView.storeView = storeView
 
-                        // Populate fields
-                        headlineView.text = ad.headline
+                        // Populate fields (Headline is required)
+                        headlineView.text = ad.headline ?: ""
+                        headlineView.visibility = if (ad.headline.isNullOrEmpty()) View.GONE else View.VISIBLE
                         
                         if (ad.body != null) {
                             bodyView.text = ad.body
@@ -419,6 +457,13 @@ object NativeManager {
                             priceView.visibility = View.GONE
                         }
 
+                        if (ad.store != null) {
+                            storeView.text = ad.store
+                            storeView.visibility = View.VISIBLE
+                        } else {
+                            storeView.visibility = View.GONE
+                        }
+
                         if (ad.starRating != null) {
                             ratingView.text = "★ ${ad.starRating}"
                             ratingView.visibility = View.VISIBLE
@@ -431,6 +476,13 @@ object NativeManager {
                             callToActionView.visibility = View.VISIBLE
                         } else {
                             callToActionView.visibility = View.GONE
+                        }
+
+                        if (ad.mediaContent != null) {
+                            mediaView.setMediaContent(ad.mediaContent)
+                            mediaView.visibility = View.VISIBLE
+                        } else {
+                            mediaView.visibility = View.GONE
                         }
 
                         nativeAdView.setNativeAd(ad)
