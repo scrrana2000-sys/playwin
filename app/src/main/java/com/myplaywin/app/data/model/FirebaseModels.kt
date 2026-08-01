@@ -107,6 +107,7 @@ data class FirebaseUser(
     val uid: String = "",
     val email: String = "",
     val displayName: String = "",
+    val photoUrl: String = "",
     val coins: Int = 0,
     val level: Int = 1,
     val streak: Int = 0,

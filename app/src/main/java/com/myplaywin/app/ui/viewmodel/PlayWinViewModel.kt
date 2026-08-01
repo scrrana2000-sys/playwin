@@ -300,7 +300,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     firebaseUser.reload().addOnCompleteListener { reloadTask ->
                         val updatedUser = auth.currentUser
                         if (updatedUser != null) {
-                            if (!updatedUser.isEmailVerified) {
+                            val isGoogleUser = updatedUser.providerData.any { it.providerId == com.google.firebase.auth.GoogleAuthProvider.PROVIDER_ID }
+                            if (!updatedUser.isEmailVerified && !isGoogleUser) {
                                 auth.signOut()
                                 sharedPrefs.edit().putBoolean("session_active", false).apply()
                                 _authState.value = AuthState.Unauthenticated
@@ -820,8 +821,125 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun signInWithGoogleSimulated(email: String, onResult: (Boolean, String?) -> Unit) {
-        signInWithEmailAndPassword(email, "Google_${email.hashCode()}_PlayWin!1", true, onResult)
+    fun signInWithGoogle(context: Context, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            when (val result = com.myplaywin.app.data.auth.GoogleAuthManager.getGoogleIdToken(context)) {
+                is com.myplaywin.app.data.auth.GoogleSignInResult.Success -> {
+                    handleGoogleSignInCredential(
+                        idToken = result.idToken,
+                        googleName = result.displayName,
+                        googleEmail = result.email,
+                        googlePhoto = result.profilePictureUrl,
+                        onResult = onResult
+                    )
+                }
+                is com.myplaywin.app.data.auth.GoogleSignInResult.Cancelled -> {
+                    android.util.Log.d("PlayWinVM", "User cancelled Google Sign-In flow")
+                    onResult(false, null)
+                }
+                is com.myplaywin.app.data.auth.GoogleSignInResult.Error -> {
+                    android.util.Log.e("PlayWinVM", "Google Sign-In error: ${result.message}")
+                    onResult(false, result.message)
+                }
+            }
+        }
+    }
+
+    private fun handleGoogleSignInCredential(
+        idToken: String,
+        googleName: String,
+        googleEmail: String,
+        googlePhoto: String,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                android.util.Log.d("PlayWinVM", "Starting handleGoogleSignInCredential with Firebase Auth")
+                val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
+                val authResult = auth.signInWithCredential(credential).awaitTask()
+                val firebaseUser = authResult.user
+                    ?: throw Exception("Failed to obtain user session after Google sign in.")
+
+                val uid = firebaseUser.uid
+                val email = firebaseUser.email?.ifBlank { googleEmail } ?: googleEmail
+                val displayName = firebaseUser.displayName?.ifBlank { googleName } ?: googleName.ifBlank { "User" }
+                val photoUrl = firebaseUser.photoUrl?.toString() ?: googlePhoto
+
+                android.util.Log.d("PlayWinVM", "Google Sign-In successful for UID: $uid, Name: $displayName, Email: $email")
+
+                // Save session in SharedPreferences
+                val sharedPrefs = getApplication<Application>().getSharedPreferences("playwin_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.edit()
+                    .putBoolean("session_active", true)
+                    .putBoolean("remember_me", true)
+                    .putString("user_uid", uid)
+                    .putString("user_email", email)
+                    .putString("user_display_name", displayName)
+                    .putString("user_photo_url", photoUrl)
+                    .apply()
+
+                // Fetch or create user in Realtime DB
+                val dbUser = repository.getFirebaseUser(uid)
+                if (dbUser != null) {
+                    val updatedDbUser = dbUser.copy(
+                        displayName = if (dbUser.displayName.isNotBlank()) dbUser.displayName else displayName,
+                        email = if (dbUser.email.isNotBlank()) dbUser.email else email,
+                        photoUrl = if (dbUser.photoUrl.isNotBlank()) dbUser.photoUrl else photoUrl
+                    )
+                    repository.saveNewUserInFirebase(updatedDbUser)
+
+                    val syncWallet = UserWallet(
+                        id = 1,
+                        coins = updatedDbUser.coins,
+                        dailyStreak = updatedDbUser.streak,
+                        lastCheckInTime = updatedDbUser.lastCheckInTime,
+                        userId = uid,
+                        dailyAdsWatched = updatedDbUser.dailyAdsWatched,
+                        lastAdResetTime = updatedDbUser.lastAdResetTime,
+                        referredBy = updatedDbUser.referredBy,
+                        hasUsedReferralCode = updatedDbUser.hasUsedReferralCodeBool,
+                        totalReferrals = updatedDbUser.totalReferrals,
+                        remainingSpins = updatedDbUser.remainingSpins,
+                        totalSpinRewards = updatedDbUser.totalSpinRewards,
+                        remainingScratchCards = updatedDbUser.remainingScratchCards,
+                        lastScratchResetTime = updatedDbUser.lastScratchResetTime,
+                        totalScratchRewards = updatedDbUser.totalScratchRewards,
+                        lastSpinDate = updatedDbUser.lastSpinDate,
+                        freeSpinUsed = updatedDbUser.freeSpinUsedBool,
+                        rewardAdSpinUsed = updatedDbUser.rewardAdSpinUsedBool,
+                        dailySpinCount = updatedDbUser.dailySpinCount,
+                        rewardedSpinCount = updatedDbUser.rewardedSpinCount,
+                        lastCheckInDate = updatedDbUser.lastCheckInDate,
+                        totalCheckInRewards = updatedDbUser.totalCheckInRewards,
+                        lastRewardAdTime = updatedDbUser.lastRewardAdTime,
+                        pendingRewards = updatedDbUser.pendingRewards,
+                        referralsCoinsEarned = updatedDbUser.referralsCoinsEarned
+                    )
+                    repository.saveWalletLocally(syncWallet)
+                } else {
+                    val newUser = com.myplaywin.app.data.model.FirebaseUser(
+                        uid = uid,
+                        email = email,
+                        displayName = displayName,
+                        photoUrl = photoUrl,
+                        coins = 0,
+                        level = 1,
+                        streak = 0,
+                        joinedAt = System.currentTimeMillis()
+                    )
+                    repository.saveNewUserInFirebase(newUser)
+                    repository.saveWalletLocally(UserWallet(id = 1, coins = 0, userId = uid))
+                }
+
+                _authState.value = AuthState.Authenticated(uid)
+                onResult(true, null)
+            } catch (e: Exception) {
+                android.util.Log.e("PlayWinVM", "Google Auth Error", e)
+                val msg = formatFirebaseErrorCode(e).ifBlank { e.localizedMessage ?: "Google Authentication failed." }
+                onResult(false, msg)
+            }
+        }
     }
 
     fun logout() {

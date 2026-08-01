@@ -954,21 +954,33 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Disabled temporarily Google Sign In Button
+                    // Active Google Sign In Button
                     Button(
                         onClick = {
-                            // Intentionally disabled temporarily for SHA-1 setup
+                            errorMessage = null
+                            successMessage = null
+                            isAuthenticating = true
+                            viewModel.signInWithGoogle(context) { success, err ->
+                                isAuthenticating = false
+                                if (!success) {
+                                    if (err != null) {
+                                        errorMessage = err
+                                        errorDialogMsg = err
+                                        showErrorDialog = true
+                                    }
+                                }
+                            }
                         },
-                        enabled = false, // Google Sign-In button should remain visible but disabled for now.
+                        enabled = !isAuthenticating,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)
                             .testTag("google_sign_in_button"),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.15f),
-                            disabledContainerColor = Color.White.copy(alpha = 0.08f),
-                            contentColor = Color.White.copy(alpha = 0.4f),
-                            disabledContentColor = Color.White.copy(alpha = 0.25f)
+                            containerColor = Color.White,
+                            contentColor = Color.Black,
+                            disabledContainerColor = Color.White.copy(alpha = 0.6f),
+                            disabledContentColor = Color.Black.copy(alpha = 0.5f)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -978,18 +990,19 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(16.dp)
+                                    .size(24.dp)
                                     .clip(CircleShape)
-                                    .background(Color.Gray.copy(alpha = 0.3f)),
+                                    .background(Color(0xFF4285F4)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("G", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                Text("G", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "Continue with Google (Disabled)",
+                                text = "Continue with Google",
+                                color = Color.Black,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontSize = 14.sp
                             )
                         }
                     }
@@ -4153,11 +4166,20 @@ fun HomeTopSection(
                             .clip(CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        // Illustrated character emoji (a cool boy profile)
-                        Text(
-                            text = "👦",
-                            fontSize = 38.sp
-                        )
+                        if (!profilePhotoUrl.isNullOrEmpty()) {
+                            coil.compose.AsyncImage(
+                                model = profilePhotoUrl,
+                                contentDescription = "Profile Photo",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            // Illustrated character emoji (a cool boy profile)
+                            Text(
+                                text = "👦",
+                                fontSize = 38.sp
+                            )
+                        }
                     }
                     
                     // Edit pen badge at bottom right
@@ -9190,6 +9212,9 @@ fun ProfileScreen(
         ?: firebaseUser?.displayName?.ifEmpty { null }
         ?: "Player"
 
+    val profilePhotoUrl = currentUser?.photoUrl?.ifEmpty { null }
+        ?: firebaseUser?.photoUrl?.toString()?.ifEmpty { null }
+
     // Add debug log for loaded display name
     android.util.Log.d("PlayWinVM", "Display Name Loaded: $userName")
 
@@ -9236,7 +9261,16 @@ fun ProfileScreen(
                 .border(2.dp, Color(0xFF7C4DFF), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(userName.first().uppercaseChar().toString(), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            if (!profilePhotoUrl.isNullOrEmpty()) {
+                coil.compose.AsyncImage(
+                    model = profilePhotoUrl,
+                    contentDescription = "Profile Photo",
+                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            } else {
+                Text(userName.first().uppercaseChar().toString(), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            }
         }
 
         Text(userName, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
