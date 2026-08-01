@@ -6485,157 +6485,327 @@ fun CouponsScreen(
         )
     }
 
+    val categories = listOf("All", "Shopping", "OTT", "Recharge", "Gift Cards", "Special Offers")
+    val filters = listOf("Pending", "Approved", "Rejected", "Completed")
+
+    val filteredCoupons = remember(allCoupons, selectedCategory, couponSearchQuery) {
+        allCoupons.filter { coupon ->
+            val matchesCategory = selectedCategory == "All" || coupon.category == selectedCategory
+            val matchesSearch = coupon.title.contains(couponSearchQuery, ignoreCase = true) ||
+                    coupon.description.contains(couponSearchQuery, ignoreCase = true)
+            val isEnabled = coupon.isEnabled
+            matchesCategory && matchesSearch && isEnabled
+        }
+    }
+
+    val filteredHistory = remember(mappedRedemptions, selectedMyCouponFilter) {
+        mappedRedemptions.filter { it.status.trim().equals(selectedMyCouponFilter, ignoreCase = true) }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0B1326))
     ) {
-        // --- COIN BALANCE CARD ---
-        Card(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF222A3D)),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(2.dp, Color(0xFFFFE083).copy(alpha = 0.4f))
+                .weight(1f)
         ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(
-                        text = "COIN BALANCE FOR REDEEM",
-                        color = Color(0xFFFFE083),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+            // --- COIN BALANCE CARD ---
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF222A3D)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(2.dp, Color(0xFFFFE083).copy(alpha = 0.4f))
+                ) {
                     Row(
+                        modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        Column {
+                            Text(
+                                text = "COIN BALANCE FOR REDEEM",
+                                color = Color(0xFFFFE083),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .background(Color(0xFFFFE083), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MonetizationOn,
+                                        contentDescription = null,
+                                        tint = Color(0xFF3C2F00),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "${wallet.coins}",
+                                    color = Color(0xFFFFE083),
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFE083),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         Box(
                             modifier = Modifier
-                                .size(28.dp)
-                                .background(Color(0xFFFFE083), CircleShape),
+                                .size(44.dp)
+                                .background(Color(0xFFD0BCFF).copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.MonetizationOn,
+                                imageVector = Icons.Default.LocalActivity,
                                 contentDescription = null,
-                                tint = Color(0xFF3C2F00),
-                                modifier = Modifier.size(18.dp)
+                                tint = Color(0xFFD0BCFF),
+                                modifier = Modifier.size(22.dp)
                             )
                         }
-                        Text(
-                            text = "${wallet.coins}",
-                            color = Color(0xFFFFE083),
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color(0xFFFFE083),
-                            modifier = Modifier.size(20.dp)
-                        )
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(Color(0xFFD0BCFF).copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LocalActivity,
-                        contentDescription = null,
-                        tint = Color(0xFFD0BCFF),
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
             }
-        }
 
-        // --- TOP NAVIGATION TABS ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-                .background(Color(0xFF131B2E), RoundedCornerShape(12.dp))
-                .padding(4.dp)
-        ) {
-            val tabs = listOf("Store", "My Coupons")
-            tabs.forEach { tab ->
-                val isSelected = tab == activeTopTab
-                Box(
+            // --- TOP NAVIGATION TABS ---
+            item {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSelected) Color(0xFFA078FF) else Color.Transparent)
-                        .clickable { activeTopTab = tab }
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .background(Color(0xFF131B2E), RoundedCornerShape(12.dp))
+                        .padding(4.dp)
                 ) {
-                    Text(
-                        text = tab,
-                        color = if (isSelected) Color(0xFF340080) else Color(0xFFCBC3D7),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
+                    val tabs = listOf("Store", "My Coupons")
+                    tabs.forEach { tab ->
+                        val isSelected = tab == activeTopTab
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) Color(0xFFA078FF) else Color.Transparent)
+                                .clickable { activeTopTab = tab }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = tab,
+                                color = if (isSelected) Color(0xFF340080) else Color(0xFFCBC3D7),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
             }
-        }
 
-        // --- SUB-SCREEN CONTENT ---
-        Box(modifier = Modifier.weight(1f)) {
-            when (activeTopTab) {
-                "Store" -> {
-                    StoreTabContent(
-                        allCoupons = allCoupons,
-                        wallet = wallet,
-                        couponSearchQuery = couponSearchQuery,
-                        onSearchQueryChange = { couponSearchQuery = it },
-                        selectedCategory = selectedCategory,
-                        onCategoryChange = { selectedCategory = it },
-                        onCouponClick = { coupon ->
-                            android.util.Log.d("PlayWin_StoreScreen", "Coupon Clicked (onCouponClick):")
-                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
-                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
-                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
-                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
-                            selectedCouponDetails = coupon
-                        },
-                        onRedeemClick = { coupon ->
-                            android.util.Log.d("PlayWin_StoreScreen", "Redeem Clicked (onRedeemClick):")
-                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.id: ${coupon.id}")
-                            android.util.Log.d("PlayWin_StoreScreen", "  coupon.couponId: ${coupon.couponId}")
-                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase node key: ${coupon.couponId}")
-                            android.util.Log.d("PlayWin_StoreScreen", "  Firebase path used for lookup: /coupons/${coupon.id}")
-                            if (wallet.coins < coupon.cost) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Insufficient Coins")
+            // --- SUB-SCREEN CONTENT ---
+            if (activeTopTab == "Store") {
+                // --- SEARCH BAR ---
+                item {
+                    TextField(
+                        value = couponSearchQuery,
+                        onValueChange = { couponSearchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .testTag("coupon_search_field"),
+                        placeholder = { Text("Search specific vouchers...", color = Color(0xFF958EA0).copy(alpha = 0.6f)) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF958EA0)) },
+                        trailingIcon = {
+                            if (couponSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { couponSearchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = null, tint = Color(0xFF958EA0))
                                 }
-                            } else {
-                                showRedemptionFormCoupon = coupon
+                            }
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF2D3449),
+                            unfocusedContainerColor = Color(0xFF2D3449),
+                            disabledContainerColor = Color(0xFF2D3449),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedTextColor = Color(0xFFDAE2FD),
+                            unfocusedTextColor = Color(0xFFDAE2FD)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                // --- CATEGORIES BAR ---
+                item {
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(categories) { cat ->
+                            val isSelected = cat == selectedCategory
+                            Surface(
+                                onClick = { selectedCategory = cat },
+                                shape = RoundedCornerShape(50.dp),
+                                color = if (isSelected) Color(0xFFD0BCFF) else Color(0xFF222A3D),
+                                border = if (isSelected) null else BorderStroke(1.dp, Color(0xFF494454).copy(alpha = 0.3f)),
+                                modifier = Modifier.minimumInteractiveComponentSize()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = getCategoryIcon(cat),
+                                        contentDescription = null,
+                                        tint = if (isSelected) Color(0xFF3C0091) else Color(0xFFCBC3D7),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = cat,
+                                        color = if (isSelected) Color(0xFF3C0091) else Color(0xFFCBC3D7),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
-                    )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                "My Coupons" -> {
-                    MyCouponsTabContent(
-                        redemptions = mappedRedemptions,
-                        selectedFilter = selectedMyCouponFilter,
-                        onFilterChange = { selectedMyCouponFilter = it },
-                        onRedemptionClick = { selectedRedemptionDetails = it }
-                    )
+
+                // --- COUPONS GRID/LIST ---
+                if (filteredCoupons.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🛍️", fontSize = 48.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("No vouchers match your requirements.", color = Color.Gray, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                } else {
+                    itemsIndexed(filteredCoupons) { index, coupon ->
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                            Column {
+                                CouponCardItem(
+                                    coupon = coupon,
+                                    wallet = wallet,
+                                    onClick = { selectedCouponDetails = coupon },
+                                    onRedeemClick = {
+                                        if (wallet.coins < coupon.cost) {
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar("Insufficient Coins")
+                                            }
+                                        } else {
+                                            showRedemptionFormCoupon = coupon
+                                        }
+                                    }
+                                )
+                                if (index > 0 && (index + 1) % 4 == 0) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    com.playwin.ads.NativeManager.NativeAd()
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // --- MY COUPONS TAB CONTENT ---
+                item {
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filters) { f ->
+                            val isSelected = f == selectedMyCouponFilter
+                            val chipColor = when (f) {
+                                "Approved" -> Color(0xFF00C853)
+                                "Rejected" -> Color(0xFFD50000)
+                                "Completed" -> Color(0xFF757575)
+                                else -> Color(0xFF7C4DFF)
+                            }
+
+                            Surface(
+                                onClick = { selectedMyCouponFilter = f },
+                                shape = RoundedCornerShape(50.dp),
+                                color = if (isSelected) chipColor.copy(alpha = 0.15f) else Color(0xFF171F33),
+                                border = BorderStroke(1.dp, if (isSelected) chipColor else Color.White.copy(alpha = 0.1f)),
+                                modifier = Modifier.minimumInteractiveComponentSize()
+                            ) {
+                                Text(
+                                    text = f,
+                                    color = if (isSelected) Color.White else Color.Gray,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                if (filteredHistory.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🎟️", fontSize = 48.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("No redemptions found in $selectedMyCouponFilter.", color = Color.Gray, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                } else {
+                    itemsIndexed(filteredHistory) { index, r ->
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) {
+                            Column {
+                                RedemptionRowItem(
+                                    redemption = r,
+                                    onClick = { selectedRedemptionDetails = r }
+                                )
+                                if (index > 0 && (index + 1) % 5 == 0) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    com.playwin.ads.NativeManager.NativeAd()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-        com.playwin.ads.BannerManager.BannerAd()
     }
 }
 
@@ -9328,7 +9498,7 @@ fun ProfileScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = 70.dp, start = 16.dp, end = 16.dp, top = 16.dp),
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Avatar circle
@@ -9447,9 +9617,6 @@ fun ProfileScreen(
             }
         )
         }
-        com.playwin.ads.BannerManager.BannerAd(
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 
     // --- Loading Overlay Dialog ---
