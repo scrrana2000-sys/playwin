@@ -4299,11 +4299,6 @@ fun TriviaQuizScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = scaffoldState) },
-        bottomBar = {
-            com.playwin.ads.BannerManager.BannerAd(
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
         containerColor = DarkBg
     ) { paddingValues ->
         Column(
@@ -4328,6 +4323,18 @@ fun TriviaQuizScreen(
                     color = TextWhite,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+
+            // Center-aligned AdMob Banner Ad directly below the category title (AppBar)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                com.playwin.ads.BannerManager.BannerAd(
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 

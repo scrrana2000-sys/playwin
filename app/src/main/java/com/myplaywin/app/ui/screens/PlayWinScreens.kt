@@ -6485,21 +6485,19 @@ fun CouponsScreen(
         )
     }
 
-
-
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F0C1B))
+            .background(Color(0xFF0B1326))
     ) {
         // --- COIN BALANCE CARD ---
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1437)),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f))
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF222A3D)),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(2.dp, Color(0xFFFFE083).copy(alpha = 0.4f))
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
@@ -6509,30 +6507,54 @@ fun CouponsScreen(
                 Column {
                     Text(
                         text = "COIN BALANCE FOR REDEEM",
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = Color(0xFFFFE083),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "🪙 ${wallet.coins}",
-                        color = Color(0xFFFCD116),
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Black
-                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color(0xFFFFE083), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MonetizationOn,
+                                contentDescription = null,
+                                tint = Color(0xFF3C2F00),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Text(
+                            text = "${wallet.coins}",
+                            color = Color(0xFFFFE083),
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color(0xFFFFE083),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .background(Color(0xFF7C4DFF).copy(alpha = 0.15f), CircleShape),
+                        .size(44.dp)
+                        .background(Color(0xFFD0BCFF).copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.LocalActivity,
                         contentDescription = null,
-                        tint = Color(0xFF7C4DFF),
-                        modifier = Modifier.size(26.dp)
+                        tint = Color(0xFFD0BCFF),
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -6543,7 +6565,7 @@ fun CouponsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 4.dp)
-                .background(Color(0xFF12111A), RoundedCornerShape(12.dp))
+                .background(Color(0xFF131B2E), RoundedCornerShape(12.dp))
                 .padding(4.dp)
         ) {
             val tabs = listOf("Store", "My Coupons")
@@ -6553,16 +6575,16 @@ fun CouponsScreen(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSelected) Color(0xFF7C4DFF) else Color.Transparent)
+                        .background(if (isSelected) Color(0xFFA078FF) else Color.Transparent)
                         .clickable { activeTopTab = tab }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = tab,
-                        color = if (isSelected) Color.White else Color.Gray,
+                        color = if (isSelected) Color(0xFF340080) else Color(0xFFCBC3D7),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -6617,6 +6639,17 @@ fun CouponsScreen(
     }
 }
 
+private fun getCategoryIcon(cat: String): ImageVector {
+    return when(cat) {
+        "All" -> Icons.Default.List
+        "Shopping" -> Icons.Default.ShoppingCart
+        "OTT" -> Icons.Default.Tv
+        "Recharge" -> Icons.Default.LocalActivity
+        "Gift Cards" -> Icons.Default.CardGiftcard
+        else -> Icons.Default.Star
+    }
+}
+
 // --- STORE CONTENT COMPOSTABLE ---
 @Composable
 fun StoreTabContent(
@@ -6653,23 +6686,23 @@ fun StoreTabContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .testTag("coupon_search_field"),
-            placeholder = { Text("Search specific vouchers...", color = Color.Gray) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+            placeholder = { Text("Search specific vouchers...", color = Color(0xFF958EA0).copy(alpha = 0.6f)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF958EA0)) },
             trailingIcon = {
                 if (couponSearchQuery.isNotEmpty()) {
                     IconButton(onClick = { onSearchQueryChange("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = null, tint = Color.Gray)
+                        Icon(Icons.Default.Clear, contentDescription = null, tint = Color(0xFF958EA0))
                     }
                 }
             },
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF12111A),
-                unfocusedContainerColor = Color(0xFF12111A),
-                disabledContainerColor = Color(0xFF12111A),
-                focusedIndicatorColor = Color(0xFF7C4DFF),
+                focusedContainerColor = Color(0xFF2D3449),
+                unfocusedContainerColor = Color(0xFF2D3449),
+                disabledContainerColor = Color(0xFF2D3449),
+                focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = Color(0xFFDAE2FD),
+                unfocusedTextColor = Color(0xFFDAE2FD)
             ),
             shape = RoundedCornerShape(12.dp),
             singleLine = true
@@ -6689,17 +6722,28 @@ fun StoreTabContent(
                 Surface(
                     onClick = { onCategoryChange(cat) },
                     shape = RoundedCornerShape(50.dp),
-                    color = if (isSelected) Color(0xFF7C4DFF).copy(alpha = 0.15f) else Color(0xFF12111A),
-                    border = BorderStroke(1.dp, if (isSelected) Color(0xFF7C4DFF) else Color.White.copy(alpha = 0.1f)),
+                    color = if (isSelected) Color(0xFFD0BCFF) else Color(0xFF222A3D),
+                    border = if (isSelected) null else BorderStroke(1.dp, Color(0xFF494454).copy(alpha = 0.3f)),
                     modifier = Modifier.minimumInteractiveComponentSize()
                 ) {
-                    Text(
-                        text = cat,
-                        color = if (isSelected) Color.White else Color.Gray,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = getCategoryIcon(cat),
+                            contentDescription = null,
+                            tint = if (isSelected) Color(0xFF3C0091) else Color(0xFFCBC3D7),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = cat,
+                            color = if (isSelected) Color(0xFF3C0091) else Color(0xFFCBC3D7),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
         }
@@ -6760,9 +6804,9 @@ fun CouponCardItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f))
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF171F33).copy(alpha = 0.6f)),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFF3CDDC7).copy(alpha = 0.4f))
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -6771,12 +6815,12 @@ fun CouponCardItem(
             // Circle Gradient Emblem (Image Slot)
             Box(
                 modifier = Modifier
-                    .size(54.dp)
+                    .size(64.dp)
                     .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.25f), Color.Transparent)
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFFD0BCFF), Color(0xFFFFE083))
                         ),
-                        CircleShape
+                        RoundedCornerShape(8.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -6789,20 +6833,20 @@ fun CouponCardItem(
                             contentDescription = "Coupon Image",
                             modifier = Modifier
                                 .size(40.dp)
-                                .clip(CircleShape),
+                                .clip(RoundedCornerShape(6.dp)),
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             onError = { isError = true }
                         )
                     } else {
                         Text(
                             text = "🎟️",
-                            fontSize = 26.sp
+                            fontSize = 28.sp
                         )
                     }
                 } else {
                     Text(
                         text = "🎟️",
-                        fontSize = 26.sp
+                        fontSize = 28.sp
                     )
                 }
             }
@@ -6814,66 +6858,102 @@ fun CouponCardItem(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        color = Color(0xFF7C4DFF).copy(alpha = 0.15f),
+                        color = Color(0xFF3CDDC7).copy(alpha = 0.1f),
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
                             text = coupon.category.uppercase(),
-                            color = Color(0xFF7C4DFF),
-                            fontSize = 8.sp,
+                            color = Color(0xFF3CDDC7),
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Stock: ${coupon.stock}",
-                        color = if (coupon.stock > 0) Color(0xFF00C853) else Color.Gray,
-                        fontSize = 9.sp,
+                        color = Color(0xFF005047),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = coupon.title,
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 14.sp
-                )
-                Text(
-                    text = coupon.description,
-                    color = Color.Gray,
-                    fontSize = 11.sp,
+                    color = Color(0xFFDAE2FD),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "🪙 ${coupon.cost} Coins",
-                    color = Color(0xFFFCD116),
-                    fontWeight = FontWeight.Black,
-                    fontSize = 12.sp
+                    text = coupon.description,
+                    color = Color(0xFFCBC3D7),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-            }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(Color(0xFFFFE083).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MonetizationOn,
+                            contentDescription = null,
+                            tint = Color(0xFFFFE083),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "${coupon.cost} Coins",
+                            color = Color(0xFFFFE083),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
+                        )
+                    }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onRedeemClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (buttonEnabled) Color(0xFF7C4DFF) else Color(0xFF333045)
-                ),
-                shape = RoundedCornerShape(10.dp),
-                enabled = buttonEnabled,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                modifier = Modifier.height(36.dp)
-            ) {
-                Text(
-                    text = if (isOutOfStock) "OUT OF STOCK" else if (canAfford) "REDEEM" else "LOCKED",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    color = if (buttonEnabled) Color.White else Color.White.copy(alpha = 0.4f)
-                )
+                    if (buttonEnabled) {
+                        Button(
+                            onClick = onRedeemClick,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFD0BCFF)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text(
+                                text = "REDEEM",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF3C0091)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF222A3D).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (isOutOfStock) "OUT OF STOCK" else "LOCKED",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFCBC3D7)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -6914,7 +6994,7 @@ fun MyCouponsTabContent(
                 Surface(
                     onClick = { onFilterChange(f) },
                     shape = RoundedCornerShape(50.dp),
-                    color = if (isSelected) chipColor.copy(alpha = 0.15f) else Color(0xFF12111A),
+                    color = if (isSelected) chipColor.copy(alpha = 0.15f) else Color(0xFF171F33),
                     border = BorderStroke(1.dp, if (isSelected) chipColor else Color.White.copy(alpha = 0.1f)),
                     modifier = Modifier.minimumInteractiveComponentSize()
                 ) {
@@ -6978,7 +7058,7 @@ fun RedemptionRowItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF171F33)),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.05f))
     ) {
