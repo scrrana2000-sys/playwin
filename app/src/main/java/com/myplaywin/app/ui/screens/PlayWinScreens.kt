@@ -6623,62 +6623,47 @@ fun CouponsScreen(
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(2.dp, Color(0xFFFFE083).copy(alpha = 0.4f))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = "COIN BALANCE FOR REDEEM",
-                                color = Color(0xFFFFE083),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Text(
+                            text = "COIN BALANCE FOR REDEEM",
+                            color = Color(0xFFFFE083),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .background(Color(0xFFFFE083), CircleShape),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .background(Color(0xFFFFE083), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.MonetizationOn,
-                                        contentDescription = null,
-                                        tint = Color(0xFF3C2F00),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                                Text(
-                                    text = "${wallet.coins}",
-                                    color = Color(0xFFFFE083),
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Black
-                                )
                                 Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
+                                    imageVector = Icons.Default.MonetizationOn,
                                     contentDescription = null,
-                                    tint = Color(0xFFFFE083),
-                                    modifier = Modifier.size(20.dp)
+                                    tint = Color(0xFF3C2F00),
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(Color(0xFFD0BCFF).copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
+                            Text(
+                                text = "${wallet.coins}",
+                                color = Color(0xFFFFE083),
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Black
+                            )
                             Icon(
-                                imageVector = Icons.Default.LocalActivity,
+                                imageVector = Icons.Default.AutoAwesome,
                                 contentDescription = null,
-                                tint = Color(0xFFD0BCFF),
-                                modifier = Modifier.size(22.dp)
+                                tint = Color(0xFFFFE083),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
