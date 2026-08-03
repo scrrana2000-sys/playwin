@@ -393,6 +393,19 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
     var displayName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var isEmailSectionExpanded by remember { mutableStateOf(false) }
+    
+    val googleInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val googlePressed by googleInteraction.collectIsPressedAsState()
+    val googleScale by androidx.compose.animation.core.animateFloatAsState(if (googlePressed) 0.96f else 1f, label = "google_scale")
+
+    val emailSubmitInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val emailSubmitPressed by emailSubmitInteraction.collectIsPressedAsState()
+    val emailSubmitScale by androidx.compose.animation.core.animateFloatAsState(if (emailSubmitPressed) 0.96f else 1f, label = "email_submit_scale")
+
+    val guestInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val guestPressed by guestInteraction.collectIsPressedAsState()
+    val guestScale by androidx.compose.animation.core.animateFloatAsState(if (guestPressed) 0.96f else 1f, label = "guest_scale")
     
     val context = androidx.compose.ui.platform.LocalContext.current
     val initialRememberMe = remember {
@@ -500,514 +513,623 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            Card(
+            // 1. Primary Action: Continue with Google (largest button, white background, purple glow, more spacing)
+            Button(
+                onClick = {
+                    errorMessage = null
+                    successMessage = null
+                    isAuthenticating = true
+                    viewModel.signInWithGoogle(context) { success, err ->
+                        isAuthenticating = false
+                        if (!success) {
+                            if (err != null) {
+                                errorMessage = err
+                                errorDialogMsg = err
+                                showErrorDialog = true
+                            }
+                        }
+                    }
+                },
+                enabled = !isAuthenticating,
+                interactionSource = googleInteraction,
                 modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = googleScale
+                        scaleY = googleScale
+                    }
                     .fillMaxWidth()
-                    .border(1.dp, Color(0xFF2E2C3D), RoundedCornerShape(20.dp)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A).copy(alpha = 0.9f)),
-                shape = RoundedCornerShape(20.dp)
+                    .height(56.dp)
+                    .shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(28.dp),
+                        spotColor = Color(0xFF7C4DFF),
+                        ambientColor = Color(0xFF7C4DFF)
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))
+                        ),
+                        shape = RoundedCornerShape(28.dp)
+                    )
+                    .testTag("google_sign_in_button"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color.Black,
+                    disabledContainerColor = Color.White.copy(alpha = 0.6f),
+                    disabledContentColor = Color.Black.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(28.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("G", color = Color(0xFF4285F4), fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = if (isSignUp) "Create Account" else "Sign In",
-                        color = Color.White,
+                        text = "Continue with Google",
+                        color = Color.Black,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        textAlign = TextAlign.Center
+                        fontSize = 15.sp,
+                        letterSpacing = 0.5.sp
                     )
+                }
+            }
 
-                    Text(
-                        text = if (isSignUp) 
-                            "Sign up now to start playing and claiming rewards." 
-                            else "To sync your earnings securely, sign in to your profile.",
-                        color = Color.Gray,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
-                    )
+            Spacer(modifier = Modifier.height(24.dp))
 
-                    errorMessage?.let { error ->
+            // 2. OR Divider
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(Color.Gray.copy(alpha = 0.2f))
+                )
+                Text(
+                    text = "OR",
+                    color = Color.Gray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(1.dp)
+                        .background(Color.Gray.copy(alpha = 0.2f))
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 3. Email Section Toggle (collapsed by default, expands smoothly)
+            val isEmailSectionVisible = isSignUp || isEmailSectionExpanded
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { isEmailSectionExpanded = !isEmailSectionExpanded }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .testTag("toggle_email_section"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = if (isSignUp) "Register with Email instead" else "Sign in with Email instead",
+                    color = Color(0xFF00E5FF),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = if (isEmailSectionVisible) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Toggle Email Fields",
+                    tint = Color(0xFF00E5FF),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 4. Compact Email Card with animated visibility
+            AnimatedVisibility(
+                visible = isEmailSectionVisible,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.3f), RoundedCornerShape(20.dp)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF12111A).copy(alpha = 0.9f)),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         Text(
-                            text = error,
-                            color = Color.Red,
-                            fontSize = 11.sp,
+                            text = if (isSignUp) "Create Account" else "Sign In",
+                            color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 12.dp)
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center
                         )
-                    }
 
-                    successMessage?.let { success ->
                         Text(
-                            text = success,
-                            color = Color(0xFF00E5FF),
+                            text = if (isSignUp) 
+                                "Sign up now to start playing and claiming rewards." 
+                                else "To sync your earnings securely, sign in to your profile.",
+                            color = Color.Gray,
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 12.dp)
+                            modifier = Modifier.padding(bottom = 6.dp)
                         )
-                    }
 
-                    if (isSignUp) {
+                        errorMessage?.let { error ->
+                            Text(
+                                text = error,
+                                color = Color.Red,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        successMessage?.let { success ->
+                            Text(
+                                text = success,
+                                color = Color(0xFF00E5FF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        if (isSignUp) {
+                            OutlinedTextField(
+                                value = displayName,
+                                onValueChange = { displayName = sanitizeDoubleInput(displayName, it) },
+                                placeholder = { Text("Display Name", fontSize = 13.sp) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("displayName_field"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF7C4DFF),
+                                    unfocusedBorderColor = Color(0xFF2E2C3D),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    unfocusedPlaceholderColor = Color.Gray,
+                                    focusedPlaceholderColor = Color.Gray
+                                ),
+                                textStyle = TextStyle(fontSize = 13.sp)
+                            )
+                        }
+
                         OutlinedTextField(
-                            value = displayName,
-                            onValueChange = { displayName = sanitizeDoubleInput(displayName, it) },
-                            label = { Text("Display Name") },
-                            placeholder = { Text("John Doe") },
-                            modifier = Modifier.fillMaxWidth().testTag("displayName_field"),
+                            value = email,
+                            onValueChange = { email = sanitizeDoubleInput(email, it) },
+                            placeholder = { Text("Email Address", fontSize = 13.sp) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("email_field"),
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color(0xFF7C4DFF),
                                 unfocusedBorderColor = Color(0xFF2E2C3D),
-                                focusedLabelColor = Color(0xFF7C4DFF),
-                                unfocusedLabelColor = Color.Gray,
                                 focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            )
+                                unfocusedTextColor = Color.White,
+                                unfocusedPlaceholderColor = Color.Gray,
+                                focusedPlaceholderColor = Color.Gray
+                            ),
+                            textStyle = TextStyle(fontSize = 13.sp)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
 
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = sanitizeDoubleInput(email, it) },
-                        label = { Text("Email Address") },
-                        placeholder = { Text("your.email@gmail.com") },
-                        modifier = Modifier.fillMaxWidth().testTag("email_field"),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF7C4DFF),
-                            unfocusedBorderColor = Color(0xFF2E2C3D),
-                            focusedLabelColor = Color(0xFF7C4DFF),
-                            unfocusedLabelColor = Color.Gray,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = sanitizeDoubleInput(password, it) },
-                        label = { Text("Password") },
-                        placeholder = { Text("Min. 6 characters") },
-                        modifier = Modifier.fillMaxWidth().testTag("password_field"),
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF7C4DFF),
-                            unfocusedBorderColor = Color(0xFF2E2C3D),
-                            focusedLabelColor = Color(0xFF7C4DFF),
-                            unfocusedLabelColor = Color.Gray,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        )
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = sanitizeDoubleInput(password, it) },
+                            placeholder = { Text("Password (Min. 6 characters)", fontSize = 13.sp) },
                             modifier = Modifier
-                                .clickable { rememberMe = !rememberMe }
-                                .testTag("remember_me_row")
-                        ) {
-                            Checkbox(
-                                checked = rememberMe,
-                                onCheckedChange = { rememberMe = it },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF7C4DFF),
-                                    uncheckedColor = Color(0xFF2E2C3D),
-                                    checkmarkColor = Color.White
-                                ),
-                                modifier = Modifier.testTag("remember_me_checkbox")
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Remember Me",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("password_field"),
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFF7C4DFF),
+                                unfocusedBorderColor = Color(0xFF2E2C3D),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                unfocusedPlaceholderColor = Color.Gray,
+                                focusedPlaceholderColor = Color.Gray
+                            ),
+                            textStyle = TextStyle(fontSize = 13.sp)
+                        )
 
-                        if (!isSignUp) {
-                            Text(
-                                text = "Forgot Password?",
-                                color = Color(0xFF00E5FF),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clickable {
-                                        errorMessage = null
-                                        resetEmail = email
-                                        resetMessage = null
-                                        showResetDialog = true
-                                    }
-                                    .testTag("forgot_password_button")
-                            )
-                        }
-                    }
+                                    .clickable { rememberMe = !rememberMe }
+                                    .testTag("remember_me_row")
+                            ) {
+                                Checkbox(
+                                    checked = rememberMe,
+                                    onCheckedChange = { rememberMe = it },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = Color(0xFF7C4DFF),
+                                        uncheckedColor = Color(0xFF2E2C3D),
+                                        checkmarkColor = Color.White
+                                    ),
+                                    modifier = Modifier.testTag("remember_me_checkbox").size(32.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Remember Me",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    if (isAuthenticating) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(32.dp))
-                        }
-                    } else {
-                        Button(
-                            onClick = {
-                                if (email.isBlank() || !email.contains("@")) {
-                                    errorMessage = "Please enter a valid email address."
-                                    return@Button
-                                }
-                                if (password.length < 6) {
-                                    errorMessage = "Password must be at least 6 characters."
-                                    return@Button
-                                }
-                                if (isSignUp && displayName.isBlank()) {
-                                    errorMessage = "Please enter a Display Name."
-                                    return@Button
-                                }
-
-                                errorMessage = null
-                                successMessage = null
-                                isAuthenticating = true
-                                if (isSignUp) {
-                                    viewModel.signUpWithEmailAndPassword(email, password, displayName) { success, msg ->
-                                        isAuthenticating = false
-                                        if (success) {
-                                            successMessage = msg ?: "Verification email sent. Please verify your email before signing in."
-                                            isSignUp = false // Auto-switch to Sign In page
-                                            showResendButton = true
-                                        } else {
-                                            val errorMsg = msg ?: "Sign Up failed."
-                                            errorMessage = errorMsg
-                                            errorDialogMsg = errorMsg
-                                            showErrorDialog = true
+                            if (!isSignUp) {
+                                Text(
+                                    text = "Forgot Password?",
+                                    color = Color(0xFF00E5FF),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier
+                                        .clickable {
+                                            errorMessage = null
+                                            resetEmail = email
+                                            resetMessage = null
+                                            showResetDialog = true
                                         }
+                                        .testTag("forgot_password_button")
+                                )
+                            }
+                        }
+
+                        if (isAuthenticating) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(28.dp))
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    if (email.isBlank() || !email.contains("@")) {
+                                        errorMessage = "Please enter a valid email address."
+                                        return@Button
                                     }
-                                } else {
-                                    viewModel.signInWithEmailAndPassword(email, password, rememberMe) { success, err ->
-                                        isAuthenticating = false
-                                        if (success) {
-                                            // Handled by viewmodel auth state change
-                                        } else {
-                                            val errorMsg = err ?: "Sign In failed."
-                                            errorMessage = errorMsg
-                                            errorDialogMsg = errorMsg
-                                            showErrorDialog = true
-                                            if (err != null && (err.contains("verify") || err.contains("verified") || err.contains("Verification") || err.contains("email"))) {
+                                    if (password.length < 6) {
+                                        errorMessage = "Password must be at least 6 characters."
+                                        return@Button
+                                    }
+                                    if (isSignUp && displayName.isBlank()) {
+                                        errorMessage = "Please enter a Display Name."
+                                        return@Button
+                                    }
+
+                                    errorMessage = null
+                                    successMessage = null
+                                    isAuthenticating = true
+                                    if (isSignUp) {
+                                        viewModel.signUpWithEmailAndPassword(email, password, displayName) { success, msg ->
+                                            isAuthenticating = false
+                                            if (success) {
+                                                successMessage = msg ?: "Verification email sent. Please verify your email before signing in."
+                                                isSignUp = false // Auto-switch to Sign In page
                                                 showResendButton = true
+                                            } else {
+                                                val errorMsg = msg ?: "Sign Up failed."
+                                                errorMessage = errorMsg
+                                                errorDialogMsg = errorMsg
+                                                showErrorDialog = true
+                                            }
+                                        }
+                                    } else {
+                                        viewModel.signInWithEmailAndPassword(email, password, rememberMe) { success, err ->
+                                            isAuthenticating = false
+                                            if (success) {
+                                                // Handled by viewmodel auth state change
+                                            } else {
+                                                val errorMsg = err ?: "Sign In failed."
+                                                errorMessage = errorMsg
+                                                errorDialogMsg = errorMsg
+                                                showErrorDialog = true
+                                                if (err != null && (err.contains("verify") || err.contains("verified") || err.contains("Verification") || err.contains("email"))) {
+                                                    showResendButton = true
+                                                }
                                             }
                                         }
                                     }
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                                .testTag(if (isSignUp) "create_account_button" else "sign_in_button"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF7C4DFF)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = if (isSignUp) "Create Account" else "Sign In",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-
-                    if (showResendButton && !isSignUp) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        if (isResending) {
-                            CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(24.dp))
-                        } else {
-                            Button(
-                                onClick = {
-                                    isResending = true
-                                    successMessage = null
-                                    errorMessage = null
-                                    viewModel.resendVerificationEmail(email, password) { success, msg ->
-                                        isResending = false
-                                        if (success) {
-                                            successMessage = msg ?: "Verification email resent successfully!"
-                                            showVerificationSentDialog = true
-                                        } else {
-                                            val errorMsg = msg ?: "Failed to resend email."
-                                            errorMessage = errorMsg
-                                            errorDialogMsg = errorMsg
-                                            showErrorDialog = true
-                                        }
-                                    }
                                 },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF00E5FF),
-                                    contentColor = Color.Black
-                                ),
-                                shape = RoundedCornerShape(12.dp),
+                                interactionSource = emailSubmitInteraction,
                                 modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = emailSubmitScale
+                                        scaleY = emailSubmitScale
+                                    }
                                     .fillMaxWidth()
                                     .height(44.dp)
-                                    .testTag("resend_verification_email_button")
+                                    .testTag(if (isSignUp) "create_account_button" else "sign_in_button"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF7C4DFF)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Text(
-                                    text = "Resend Verification Email",
+                                    text = if (isSignUp) "Create Account" else "Sign In",
+                                    color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 14.sp
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-                        if (isCheckingVerification) {
-                            CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(24.dp))
-                        } else {
-                            Button(
-                                onClick = {
-                                    isCheckingVerification = true
-                                    successMessage = null
-                                    errorMessage = null
-                                    viewModel.checkEmailVerification(email, password, rememberMe) { success, msg ->
-                                        isCheckingVerification = false
-                                        if (success) {
-                                            successMessage = "Email verified successfully!"
-                                        } else {
-                                            val errorMsg = msg ?: "Email not verified yet."
-                                            errorMessage = errorMsg
-                                            errorDialogMsg = errorMsg
-                                            showErrorDialog = true
+                        if (showResendButton && !isSignUp) {
+                            if (isResending) {
+                                CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(24.dp))
+                            } else {
+                                Button(
+                                    onClick = {
+                                        isResending = true
+                                        successMessage = null
+                                        errorMessage = null
+                                        viewModel.resendVerificationEmail(email, password) { success, msg ->
+                                            isResending = false
+                                            if (success) {
+                                                successMessage = msg ?: "Verification email resent successfully!"
+                                                showVerificationSentDialog = true
+                                            } else {
+                                                val errorMsg = msg ?: "Failed to resend email."
+                                                errorMessage = errorMsg
+                                                errorDialogMsg = errorMsg
+                                                showErrorDialog = true
+                                            }
                                         }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF4CAF50),
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                                    .testTag("ive_verified_my_email_button")
-                            ) {
-                                Text(
-                                    text = "I've Verified My Email",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    }
-
-                    if (userCreatedStatus != null || verificationEmailStatus != null) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, Color(0xFF2E2C3D), RoundedCornerShape(12.dp))
-                                .testTag("firebase_verification_debug_card"),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1C2E)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp)
-                            ) {
-                                Text(
-                                    text = "FIREBASE AUTH SYSTEM LOGS",
-                                    color = Color(0xFF00E5FF),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 1.sp,
-                                    modifier = Modifier.padding(bottom = 12.dp)
-                                )
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF00E5FF),
+                                        contentColor = Color.Black
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(40.dp)
+                                        .testTag("resend_verification_email_button")
                                 ) {
-                                    if (userCreatedStatus == true) {
-                                        Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("User created", color = Color.White, fontSize = 12.sp)
-                                    } else if (userCreatedStatus == false) {
-                                        Text("✗", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("User creation failed", color = Color.Red, fontSize = 12.sp)
-                                    } else {
-                                        CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Creating user Account...", color = Color.Gray, fontSize = 12.sp)
-                                    }
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                ) {
-                                    if (verificationEmailStatus == true) {
-                                        Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Verification email sent", color = Color.White, fontSize = 12.sp)
-                                    } else if (verificationEmailStatus == false) {
-                                        Text("✗", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Verification email failed", color = Color.Red, fontSize = 12.sp)
-                                    } else {
-                                        if (userCreatedStatus == true) {
-                                            CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Sending verification email...", color = Color.Gray, fontSize = 12.sp)
-                                        } else {
-                                            Text("○", color = Color.Gray, fontSize = 14.sp)
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Verification email pending", color = Color.Gray, fontSize = 12.sp)
-                                        }
-                                    }
-                                }
-
-                                verificationEmailError?.let { err ->
-                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Firebase Error: $err",
-                                        color = Color.Red,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 11.sp
+                                        text = "Resend Verification Email",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            if (isCheckingVerification) {
+                                CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(24.dp))
+                            } else {
+                                Button(
+                                    onClick = {
+                                        isCheckingVerification = true
+                                        successMessage = null
+                                        errorMessage = null
+                                        viewModel.checkEmailVerification(email, password, rememberMe) { success, msg ->
+                                            isCheckingVerification = false
+                                            if (success) {
+                                                successMessage = "Email verified successfully!"
+                                            } else {
+                                                val errorMsg = msg ?: "Email not verified yet."
+                                                errorMessage = errorMsg
+                                                errorDialogMsg = errorMsg
+                                                showErrorDialog = true
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF4CAF50),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(40.dp)
+                                        .testTag("ive_verified_my_email_button")
+                                ) {
+                                    Text(
+                                        text = "I've Verified My Email",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
                                     )
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        if (userCreatedStatus != null || verificationEmailStatus != null) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Color(0xFF2E2C3D), RoundedCornerShape(12.dp))
+                                    .testTag("firebase_verification_debug_card"),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1C2E)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "FIREBASE AUTH SYSTEM LOGS",
+                                        color = Color(0xFF00E5FF),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp,
+                                        letterSpacing = 1.sp
+                                    )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (isSignUp) "Already have an account? " else "Don't have an account? ",
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = if (isSignUp) "Sign In" else "Create Account",
-                            color = Color(0xFF7C4DFF),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            modifier = Modifier
-                                .clickable {
-                                    isSignUp = !isSignUp
-                                    errorMessage = null
-                                    successMessage = null
-                                    showResendButton = false
-                                }
-                                .testTag("toggle_login_mode")
-                        )
-                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (userCreatedStatus == true) {
+                                            Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("User created", color = Color.White, fontSize = 11.sp)
+                                        } else if (userCreatedStatus == false) {
+                                            Text("✗", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("User creation failed", color = Color.Red, fontSize = 11.sp)
+                                        } else {
+                                            CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(12.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Creating user Account...", color = Color.Gray, fontSize = 11.sp)
+                                        }
+                                    }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (verificationEmailStatus == true) {
+                                            Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Verification email sent", color = Color.White, fontSize = 11.sp)
+                                        } else if (verificationEmailStatus == false) {
+                                            Text("✗", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Verification email failed", color = Color.Red, fontSize = 11.sp)
+                                        } else {
+                                            if (userCreatedStatus == true) {
+                                                CircularProgressIndicator(color = Color(0xFF7C4DFF), modifier = Modifier.size(12.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Sending verification email...", color = Color.Gray, fontSize = 11.sp)
+                                            } else {
+                                                Text("○", color = Color.Gray, fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Verification email pending", color = Color.Gray, fontSize = 11.sp)
+                                            }
+                                        }
+                                    }
 
-                    // Or Divider
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(1.dp)
-                                .background(Color.Gray.copy(alpha = 0.2f))
-                        )
-                        Text(
-                            text = "OR",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(1.dp)
-                                .background(Color.Gray.copy(alpha = 0.2f))
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Active Google Sign In Button
-                    Button(
-                        onClick = {
-                            errorMessage = null
-                            successMessage = null
-                            isAuthenticating = true
-                            viewModel.signInWithGoogle(context) { success, err ->
-                                isAuthenticating = false
-                                if (!success) {
-                                    if (err != null) {
-                                        errorMessage = err
-                                        errorDialogMsg = err
-                                        showErrorDialog = true
+                                    verificationEmailError?.let { err ->
+                                        Text(
+                                            text = "Firebase Error: $err",
+                                            color = Color.Red,
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 10.sp
+                                        )
                                     }
                                 }
                             }
-                        },
-                        enabled = !isAuthenticating,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("google_sign_in_button"),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White,
-                            contentColor = Color.Black,
-                            disabledContainerColor = Color.White.copy(alpha = 0.6f),
-                            disabledContentColor = Color.Black.copy(alpha = 0.5f)
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF4285F4)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("G", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Continue with Google",
-                                color = Color.Black,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
                         }
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 5. Create Account / Toggle Login Mode
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isSignUp) "Already have an account? " else "Don't have an account? ",
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = if (isSignUp) "Sign In" else "Create Account",
+                    color = Color(0xFF7C4DFF),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clickable {
+                            isSignUp = !isSignUp
+                            errorMessage = null
+                            successMessage = null
+                            showResendButton = false
+                        }
+                        .testTag("toggle_login_mode")
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 6. Continue as Guest Button (Cyan borders, gaming look, triggers anonymous login)
+            OutlinedButton(
+                onClick = {
+                    errorMessage = null
+                    successMessage = null
+                    isAuthenticating = true
+                    viewModel.signInAnonymously { success, err ->
+                        isAuthenticating = false
+                        if (!success) {
+                            if (err != null) {
+                                errorMessage = err
+                                errorDialogMsg = err
+                                showErrorDialog = true
+                            }
+                        }
+                    }
+                },
+                enabled = !isAuthenticating,
+                interactionSource = guestInteraction,
+                border = BorderStroke(1.5.dp, Color(0xFF00E5FF).copy(alpha = 0.8f)),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = guestScale
+                        scaleY = guestScale
+                    }
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .testTag("continue_as_guest_button"),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF00E5FF),
+                    disabledContentColor = Color(0xFF00E5FF).copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Guest Play",
+                        tint = Color(0xFF00E5FF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Continue as Guest",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        letterSpacing = 1.sp
+                    )
                 }
             }
         }

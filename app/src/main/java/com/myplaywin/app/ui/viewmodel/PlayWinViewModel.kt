@@ -908,10 +908,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
 
     fun signInWithGoogle(context: Context, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            android.util.Log.d("PlayWinVM", "signInWithGoogle requested from UI")
             when (val result = com.myplaywin.app.data.auth.GoogleAuthManager.getGoogleIdToken(context)) {
                 is com.myplaywin.app.data.auth.GoogleSignInResult.Success -> {
-                    android.util.Log.d("PlayWinVM", "Google token retrieved: ${result.email}. Proceeding to Firebase Auth.")
                     handleGoogleSignInCredential(
                         idToken = result.idToken,
                         googleName = result.displayName,
@@ -925,7 +923,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     onResult(false, null)
                 }
                 is com.myplaywin.app.data.auth.GoogleSignInResult.Error -> {
-                    android.util.Log.e("PlayWinVM", "Google Sign-In returned Error: ${result.message}")
+                    android.util.Log.e("PlayWinVM", "Google Sign-In error: ${result.message}")
                     onResult(false, result.message)
                 }
             }
@@ -941,11 +939,9 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     ) {
         viewModelScope.launch {
             try {
-                android.util.Log.d("PlayWinVM", "Starting handleGoogleSignInCredential with Firebase Auth. Token length: ${idToken.length}")
+                android.util.Log.d("PlayWinVM", "Starting handleGoogleSignInCredential with Firebase Auth")
                 val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
                 val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
-                
-                android.util.Log.d("PlayWinVM", "Calling signInWithCredential...")
                 val authResult = auth.signInWithCredential(credential).awaitTask()
                 val firebaseUser = authResult.user
                     ?: throw Exception("Failed to obtain user session after Google sign in.")
@@ -955,96 +951,77 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                 val displayName = firebaseUser.displayName?.ifBlank { googleName } ?: googleName.ifBlank { "User" }
                 val photoUrl = firebaseUser.photoUrl?.toString() ?: googlePhoto
 
-                android.util.Log.d("PlayWinVM", "Firebase Auth SUCCESS for UID: $uid. Navigating UI immediately.")
-                
-                // CRITICAL: Navigate immediately to Authenticated state so UI changes
+                android.util.Log.d("PlayWinVM", "Google Sign-In successful for UID: $uid, Name: $displayName, Email: $email")
+
+                // Save session in SharedPreferences
+                val sharedPrefs = getApplication<Application>().getSharedPreferences("playwin_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.edit()
+                    .putBoolean("session_active", true)
+                    .putBoolean("remember_me", true)
+                    .putString("user_uid", uid)
+                    .putString("user_email", email)
+                    .putString("user_display_name", displayName)
+                    .putString("user_photo_url", photoUrl)
+                    .apply()
+
+                // Fetch or create user in Realtime DB
+                val dbUser = repository.getFirebaseUser(uid)
+                if (dbUser != null) {
+                    val updatedDbUser = dbUser.copy(
+                        displayName = if (dbUser.displayName.isNotBlank()) dbUser.displayName else displayName,
+                        email = if (dbUser.email.isNotBlank()) dbUser.email else email,
+                        photoUrl = if (dbUser.photoUrl.isNotBlank()) dbUser.photoUrl else photoUrl
+                    )
+                    repository.saveNewUserInFirebase(updatedDbUser)
+
+                    val syncWallet = UserWallet(
+                        id = 1,
+                        coins = updatedDbUser.coins,
+                        dailyStreak = updatedDbUser.streak,
+                        lastCheckInTime = updatedDbUser.lastCheckInTime,
+                        userId = uid,
+                        dailyAdsWatched = updatedDbUser.dailyAdsWatched,
+                        lastAdResetTime = updatedDbUser.lastAdResetTime,
+                        referredBy = updatedDbUser.referredBy,
+                        hasUsedReferralCode = updatedDbUser.hasUsedReferralCodeBool,
+                        totalReferrals = updatedDbUser.totalReferrals,
+                        remainingSpins = updatedDbUser.remainingSpins,
+                        totalSpinRewards = updatedDbUser.totalSpinRewards,
+                        remainingScratchCards = updatedDbUser.remainingScratchCards,
+                        lastScratchResetTime = updatedDbUser.lastScratchResetTime,
+                        totalScratchRewards = updatedDbUser.totalScratchRewards,
+                        lastSpinDate = updatedDbUser.lastSpinDate,
+                        freeSpinUsed = updatedDbUser.freeSpinUsedBool,
+                        rewardAdSpinUsed = updatedDbUser.rewardAdSpinUsedBool,
+                        dailySpinCount = updatedDbUser.dailySpinCount,
+                        rewardedSpinCount = updatedDbUser.rewardedSpinCount,
+                        lastCheckInDate = updatedDbUser.lastCheckInDate,
+                        totalCheckInRewards = updatedDbUser.totalCheckInRewards,
+                        lastRewardAdTime = updatedDbUser.lastRewardAdTime,
+                        pendingRewards = updatedDbUser.pendingRewards,
+                        referralsCoinsEarned = updatedDbUser.referralsCoinsEarned
+                    )
+                    repository.saveWalletLocally(syncWallet)
+                } else {
+                    val newUser = com.myplaywin.app.data.model.FirebaseUser(
+                        uid = uid,
+                        email = email,
+                        displayName = displayName,
+                        photoUrl = photoUrl,
+                        coins = 0,
+                        level = 1,
+                        streak = 0,
+                        joinedAt = System.currentTimeMillis()
+                    )
+                    repository.saveNewUserInFirebase(newUser)
+                    repository.saveWalletLocally(UserWallet(id = 1, coins = 0, userId = uid))
+                }
+
                 _authState.value = AuthState.Authenticated(uid)
                 onResult(true, null)
-
-                // Perform the rest of the sync in background
-                launch(kotlinx.coroutines.Dispatchers.IO) {
-                    try {
-                        android.util.Log.d("PlayWinVM", "Background: Starting session and DB sync for $uid")
-                        // Save session in SharedPreferences
-                        val sharedPrefs = getApplication<Application>().getSharedPreferences("playwin_prefs", Context.MODE_PRIVATE)
-                        sharedPrefs.edit()
-                            .putBoolean("session_active", true)
-                            .putBoolean("remember_me", true)
-                            .putString("user_uid", uid)
-                            .putString("user_email", email)
-                            .putString("user_display_name", displayName)
-                            .putString("user_photo_url", photoUrl)
-                            .apply()
-
-                        // Fetch or create user in Realtime DB
-                        val dbUser = repository.getFirebaseUser(uid)
-                        if (dbUser != null) {
-                            android.util.Log.d("PlayWinVM", "Background: User exists in DB, updating...")
-                            val updatedDbUser = dbUser.copy(
-                                displayName = if (dbUser.displayName.isNotBlank()) dbUser.displayName else displayName,
-                                email = if (dbUser.email.isNotBlank()) dbUser.email else email,
-                                photoUrl = if (dbUser.photoUrl.isNotBlank()) dbUser.photoUrl else photoUrl
-                            )
-                            repository.saveNewUserInFirebase(updatedDbUser)
-
-                            val syncWallet = UserWallet(
-                                id = 1,
-                                coins = updatedDbUser.coins,
-                                dailyStreak = updatedDbUser.streak,
-                                lastCheckInTime = updatedDbUser.lastCheckInTime,
-                                userId = uid,
-                                dailyAdsWatched = updatedDbUser.dailyAdsWatched,
-                                lastAdResetTime = updatedDbUser.lastAdResetTime,
-                                referredBy = updatedDbUser.referredBy,
-                                hasUsedReferralCode = updatedDbUser.hasUsedReferralCodeBool,
-                                totalReferrals = updatedDbUser.totalReferrals,
-                                remainingSpins = updatedDbUser.remainingSpins,
-                                totalSpinRewards = updatedDbUser.totalSpinRewards,
-                                remainingScratchCards = updatedDbUser.remainingScratchCards,
-                                lastScratchResetTime = updatedDbUser.lastScratchResetTime,
-                                totalScratchRewards = updatedDbUser.totalScratchRewards,
-                                lastSpinDate = updatedDbUser.lastSpinDate,
-                                freeSpinUsed = updatedDbUser.freeSpinUsedBool,
-                                rewardAdSpinUsed = updatedDbUser.rewardAdSpinUsedBool,
-                                dailySpinCount = updatedDbUser.dailySpinCount,
-                                rewardedSpinCount = updatedDbUser.rewardedSpinCount,
-                                lastCheckInDate = updatedDbUser.lastCheckInDate,
-                                totalCheckInRewards = updatedDbUser.totalCheckInRewards,
-                                lastRewardAdTime = updatedDbUser.lastRewardAdTime,
-                                pendingRewards = updatedDbUser.pendingRewards,
-                                referralsCoinsEarned = updatedDbUser.referralsCoinsEarned
-                            )
-                            repository.saveWalletLocally(syncWallet)
-                        } else {
-                            android.util.Log.d("PlayWinVM", "Background: New user, creating DB entry...")
-                            val newUser = com.myplaywin.app.data.model.FirebaseUser(
-                                uid = uid,
-                                email = email,
-                                displayName = displayName,
-                                photoUrl = photoUrl,
-                                coins = 0,
-                                level = 1,
-                                streak = 0,
-                                joinedAt = System.currentTimeMillis()
-                            )
-                            repository.saveNewUserInFirebase(newUser)
-                            repository.saveWalletLocally(UserWallet(id = 1, coins = 0, userId = uid))
-                        }
-                        android.util.Log.d("PlayWinVM", "Background: Sync completed for $uid")
-                    } catch (e: Exception) {
-                        android.util.Log.e("PlayWinVM", "Background: Sync ERROR for $uid", e)
-                    }
-                }
             } catch (e: Exception) {
-                android.util.Log.e("PlayWinVM", "Google Auth Error in handleGoogleSignInCredential", e)
-                val errorCode = if (e is com.google.android.gms.common.api.ApiException) " (Code: ${e.statusCode})" else ""
-                val errorType = e.javaClass.simpleName
-                val msg = "Authentication Failed: ${formatFirebaseErrorCode(e).ifBlank { e.localizedMessage ?: "Unknown Error" }} [$errorType$errorCode]"
-                
-                if (e is com.google.android.gms.common.api.ApiException && e.statusCode == 10) {
-                    android.util.Log.e("PlayWinVM", "!!! DEVELOPER_ERROR (10) DETECTED !!! This almost certainly means the SHA-1 fingerprint in Firebase Console does not match the app's actual fingerprint.")
-                }
-                
+                android.util.Log.e("PlayWinVM", "Google Auth Error", e)
+                val msg = formatFirebaseErrorCode(e).ifBlank { e.localizedMessage ?: "Google Authentication failed." }
                 onResult(false, msg)
             }
         }
