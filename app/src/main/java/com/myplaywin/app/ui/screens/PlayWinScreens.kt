@@ -402,10 +402,6 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
     val emailSubmitInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val emailSubmitPressed by emailSubmitInteraction.collectIsPressedAsState()
     val emailSubmitScale by androidx.compose.animation.core.animateFloatAsState(if (emailSubmitPressed) 0.96f else 1f, label = "email_submit_scale")
-
-    val guestInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val guestPressed by guestInteraction.collectIsPressedAsState()
-    val guestScale by androidx.compose.animation.core.animateFloatAsState(if (guestPressed) 0.96f else 1f, label = "guest_scale")
     
     val context = androidx.compose.ui.platform.LocalContext.current
     val initialRememberMe = remember {
@@ -1075,62 +1071,6 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
                         }
                         .testTag("toggle_login_mode")
                 )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 6. Continue as Guest Button (Cyan borders, gaming look, triggers anonymous login)
-            OutlinedButton(
-                onClick = {
-                    errorMessage = null
-                    successMessage = null
-                    isAuthenticating = true
-                    viewModel.signInAnonymously { success, err ->
-                        isAuthenticating = false
-                        if (!success) {
-                            if (err != null) {
-                                errorMessage = err
-                                errorDialogMsg = err
-                                showErrorDialog = true
-                            }
-                        }
-                    }
-                },
-                enabled = !isAuthenticating,
-                interactionSource = guestInteraction,
-                border = BorderStroke(1.5.dp, Color(0xFF00E5FF).copy(alpha = 0.8f)),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .graphicsLayer {
-                        scaleX = guestScale
-                        scaleY = guestScale
-                    }
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .testTag("continue_as_guest_button"),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color(0xFF00E5FF),
-                    disabledContentColor = Color(0xFF00E5FF).copy(alpha = 0.5f)
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Guest Play",
-                        tint = Color(0xFF00E5FF),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Continue as Guest",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        letterSpacing = 1.sp
-                    )
-                }
             }
         }
     }
