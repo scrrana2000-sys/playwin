@@ -216,6 +216,11 @@ object DailyResetManager {
                 mutableData.child("rewardAdScratchUsed").value = false
                 mutableData.child("lastScratchDate").value = dateStr
 
+                val scNode = mutableData.child("scratchCard")
+                scNode.child("scratchesToday").value = 0
+                scNode.child("freeScratchUsed").value = 0
+                scNode.child("rewardedScratchUsed").value = 0
+
                 // 3. Quiz Attempts Reset
                 val quizProgressNode = mutableData.child("quizProgress")
                 quizProgressNode.child("lastQuizDate").value = dateStr

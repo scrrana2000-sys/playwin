@@ -1293,18 +1293,6 @@ fun MainTabsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    var showWatchAdDialog by remember { mutableStateOf(false) }
-
-    // Dialog simulators
-    if (showWatchAdDialog) {
-        VideoAdSimulatorDialog(
-            viewModel = viewModel,
-            wallet = wallet,
-            onDismiss = { showWatchAdDialog = false },
-            snackbarHostState = snackbarHostState
-        )
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color(0xFF090615),
@@ -1375,7 +1363,6 @@ fun MainTabsScreen(
                     viewModel = viewModel,
                     coroutineScope = coroutineScope,
                     snackbarHostState = snackbarHostState,
-                    onWatchAdClick = { showWatchAdDialog = true },
                     onInviteClick = { onNavigateToGame(AppScreen.Referral) },
                     onViewAllTasksClick = { onTabSelected(AppTab.Tasks) },
                     onProfileClick = { onTabSelected(AppTab.Profile) },
@@ -1392,7 +1379,6 @@ fun MainTabsScreen(
                     coroutineScope = coroutineScope,
                     snackbarHostState = snackbarHostState,
                     onNavigateToGame = onNavigateToGame,
-                    onWatchAdClick = { showWatchAdDialog = true },
                     onDailyCheckIn = {
                         val success = viewModel.claimDailyReward()
                         coroutineScope.launch {
@@ -2843,7 +2829,6 @@ fun HomeScreen(
     viewModel: PlayWinViewModel,
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
-    onWatchAdClick: () -> Unit,
     onInviteClick: () -> Unit,
     onViewAllTasksClick: () -> Unit,
     onProfileClick: () -> Unit,
@@ -2907,6 +2892,13 @@ fun HomeScreen(
     val activity = context as? android.app.Activity
 
     var showRewardedAdDialog by remember { mutableStateOf(false) }
+    val showPremiumFromTasks by viewModel.showPremiumAdDialogFromTasks.collectAsStateWithLifecycle()
+    LaunchedEffect(showPremiumFromTasks) {
+        if (showPremiumFromTasks) {
+            showRewardedAdDialog = true
+            viewModel.showPremiumAdDialogFromTasks.value = false
+        }
+    }
     var adLoadingState by remember { mutableStateOf(false) }
     var adFeedbackMessage by remember { mutableStateOf<String?>(null) }
 
@@ -6356,11 +6348,19 @@ fun TasksScreen(
     coroutineScope: kotlinx.coroutines.CoroutineScope,
     snackbarHostState: SnackbarHostState,
     onNavigateToGame: (AppScreen) -> Unit,
-    onWatchAdClick: () -> Unit,
     onDailyCheckIn: () -> Unit,
     onTabSelected: (AppTab) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Dynamic config and state subscriptions
+    val watchAdsConfig by viewModel.watchAdsConfigState.collectAsStateWithLifecycle()
+    val userRewardAds by viewModel.userRewardAdsState.collectAsStateWithLifecycle()
+    val spinWheelConfig by viewModel.spinWheelConfigState.collectAsStateWithLifecycle()
+    val scratchCardSettings by viewModel.scratchCardSettingsState.collectAsStateWithLifecycle()
+    val userScratchCardState by viewModel.userScratchCardStateState.collectAsStateWithLifecycle()
+    val dailyQuiz by viewModel.dailyQuizState.collectAsStateWithLifecycle()
+    val remainingTime by com.myplaywin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -6380,61 +6380,124 @@ fun TasksScreen(
             text = "Complete exciting tasks and earn rewards every day!",
             color = Color.Gray,
             fontSize = 14.sp,
-            modifier = Modifier.padding(bottom = 24.dp)
+            modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        // Centered motivating countdown banner with gradient and subtle glow
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+                .border(
+                    width = 1.dp,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.4f), Color(0xFF00E5FF).copy(alpha = 0.4f))
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF181524)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = "Timer",
+                        tint = Color(0xFF00E5FF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Daily Tasks Reset",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = "Limits restored automatically",
+                            color = Color.Gray.copy(alpha = 0.7f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                
+                // Countdown Timer text with neon glow look, more compact
+                Text(
+                    text = remainingTime,
+                    color = Color(0xFF00E5FF),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    letterSpacing = 0.5.sp,
+                    modifier = Modifier
+                        .background(Color(0xFF00E5FF).copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
 
         // Section Title: DAILY TASKS
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 12.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Star,
                 contentDescription = null,
                 tint = Color(0xFF7C4DFF),
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(16.dp)
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "DAILY TASKS",
                 color = Color(0xFF7C4DFF),
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 letterSpacing = 1.sp
             )
         }
 
-        // List of 5 task cards
+        // List of 5 task cards with 10dp compact spacing
+        
         // Card 1: Watch Ads
-        PremiumTaskCard(
+        val adsLimit = if (watchAdsConfig.maxAdsPerDay > 0) watchAdsConfig.maxAdsPerDay else 10
+        val adsProgress = kotlin.math.min(userRewardAds.todayCount, adsLimit)
+        val adsProgressText = if (adsProgress >= adsLimit) "$adsProgress/$adsLimit Ads Watched ✓" else "$adsProgress/$adsLimit Ads Watched"
+        TaskProgressCard(
             title = "Watch Ads",
             desc = "Watch ads and earn rewards",
+            progress = adsProgress,
+            limit = adsLimit,
+            progressText = adsProgressText,
             icon = Icons.Default.PlayArrow,
             color = Color(0xFF7C4DFF),
             onClick = {
-                val now = System.currentTimeMillis()
-                val elapsed = now - wallet.lastRewardAdTime
-                val cooldownDuration = 1 * 60 * 1000L
-                if (wallet.dailyAdsWatched >= 10) {
-                    android.widget.Toast.makeText(context, "Daily Reward Ad Limit Reached. Come Back Tomorrow.", android.widget.Toast.LENGTH_SHORT).show()
-                } else if (wallet.lastRewardAdTime != 0L && elapsed < cooldownDuration) {
-                    val remainingSec = (cooldownDuration - elapsed) / 1000
-                    val min = remainingSec / 60
-                    val sec = remainingSec % 60
-                    val timeStr = String.format("%02d:%02d", min, sec)
-                    android.widget.Toast.makeText(context, "Next Reward Ad Available In: $timeStr", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    onWatchAdClick()
-                }
+                onTabSelected(AppTab.Home)
+                viewModel.showPremiumAdDialogFromTasks.value = true
             }
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Card 2: Complete Quiz
-        PremiumTaskCard(
+        val quizLimit = 1
+        val quizProgress = kotlin.math.min(if (dailyQuiz?.completed == true) 1 else 0, quizLimit)
+        val quizProgressText = if (quizProgress >= quizLimit) "1/1 Completed ✓" else "0/1 Completed"
+        TaskProgressCard(
             title = "Complete Quiz",
             desc = "Play quiz and earn rewards",
+            progress = quizProgress,
+            limit = quizLimit,
+            progressText = quizProgressText,
             icon = Icons.Default.HelpOutline,
             color = Color(0xFF00E5FF),
             onClick = {
@@ -6442,12 +6505,18 @@ fun TasksScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Card 3: Spin Wheel
-        PremiumTaskCard(
+        val spinLimit = if (spinWheelConfig.dailySpinLimit > 0) spinWheelConfig.dailySpinLimit else 3
+        val spinProgress = kotlin.math.min(wallet.dailySpinCount, spinLimit)
+        val spinProgressText = if (spinProgress >= spinLimit) "$spinProgress/$spinLimit Spins Used ✓" else "$spinProgress/$spinLimit Spins Used"
+        TaskProgressCard(
             title = "Spin Wheel",
             desc = "Spin and win exciting prizes",
+            progress = spinProgress,
+            limit = spinLimit,
+            progressText = spinProgressText,
             icon = Icons.Default.Refresh,
             color = Color(0xFF00C853),
             onClick = {
@@ -6455,12 +6524,18 @@ fun TasksScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Card 4: Scratch Card
-        PremiumTaskCard(
+        val scratchLimit = if (scratchCardSettings.dailyScratchLimit > 0) scratchCardSettings.dailyScratchLimit else 3
+        val scratchProgress = kotlin.math.min(userScratchCardState.scratchesToday, scratchLimit)
+        val scratchProgressText = if (scratchProgress >= scratchLimit) "$scratchProgress/$scratchLimit Scratched ✓" else "$scratchProgress/$scratchLimit Scratched"
+        TaskProgressCard(
             title = "Scratch Card",
             desc = "Scratch and win rewards",
+            progress = scratchProgress,
+            limit = scratchLimit,
+            progressText = scratchProgressText,
             icon = Icons.Default.Star,
             color = Color(0xFFFF9100),
             onClick = {
@@ -6468,12 +6543,18 @@ fun TasksScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Card 5: Refer 2 Friends
-        PremiumTaskCard(
-            title = "Refer 2 Friends",
+        // Card 5: Refer Friends
+        val referralLimit = 2
+        val referralProgress = kotlin.math.min(wallet.totalReferrals, referralLimit)
+        val referralProgressText = if (referralProgress >= referralLimit) "$referralProgress/$referralLimit Friends Referred ✓" else "$referralProgress/$referralLimit Friends Referred"
+        TaskProgressCard(
+            title = "Refer Friends",
             desc = "Invite friends and earn rewards",
+            progress = referralProgress,
+            limit = referralLimit,
+            progressText = referralProgressText,
             icon = Icons.Default.Person,
             color = Color(0xFFFF4081),
             onClick = {
@@ -6481,7 +6562,7 @@ fun TasksScreen(
             }
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Bottom AdMob Native Ad (Policy Compliant with Loading Shimmer & Fail Collapse)
         PolicyCompliantNativeAd(
@@ -6489,6 +6570,215 @@ fun TasksScreen(
         )
 
         Spacer(modifier = Modifier.height(80.dp)) // Safe area spacing before bottom navigation
+    }
+}
+
+@Composable
+fun TaskProgressCard(
+    title: String,
+    desc: String,
+    progress: Int,
+    limit: Int,
+    progressText: String,
+    icon: ImageVector,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val progressFraction = if (limit > 0) progress.toFloat() / limit else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progressFraction.coerceIn(0f, 1f),
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "progress_animation"
+    )
+    val isCompleted = progressFraction >= 1.0f
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                if (isCompleted) {
+                    android.widget.Toast.makeText(context, "Task completed! Resetting tomorrow.", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    onClick()
+                }
+            }
+            .border(
+                width = 1.dp,
+                brush = Brush.horizontalGradient(
+                    colors = if (isCompleted) {
+                        listOf(Color(0xFF00C853).copy(alpha = 0.6f), Color(0xFF00E5FF).copy(alpha = 0.6f))
+                    } else {
+                        listOf(color.copy(alpha = 0.25f), color.copy(alpha = 0.05f))
+                    }
+                ),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .shadow(
+                elevation = if (isCompleted) 4.dp else 0.dp,
+                shape = RoundedCornerShape(14.dp),
+                spotColor = if (isCompleted) Color(0xFF00C853) else Color.Transparent,
+                ambientColor = if (isCompleted) Color(0xFF00C853) else Color.Transparent
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF12111A).copy(alpha = 0.9f)
+        ),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            // Top Section (Icon, Title, Badge, Action/Arrow)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Icon Container with gradient/glass look
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(color.copy(alpha = 0.25f), color.copy(alpha = 0.05f))
+                                )
+                            )
+                            .border(1.dp, color.copy(alpha = 0.3f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = title,
+                            tint = color,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = desc,
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // Status Badge & Action Icon Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isCompleted) {
+                        // Completed Badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF00C853).copy(alpha = 0.15f))
+                                .border(1.dp, Color(0xFF00C853).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Completed ✓",
+                                color = Color(0xFF00C853),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Green Checkmark
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00C853).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Completed",
+                                tint = Color(0xFF00C853),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    } else {
+                        // In Progress Badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(color.copy(alpha = 0.12f))
+                                .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "In Progress",
+                                color = color,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Arrow action
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(color.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowRight,
+                                contentDescription = "Navigate",
+                                tint = color,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Progress Section
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Progress Bar (updates dynamically)
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = color,
+                    trackColor = color.copy(alpha = 0.12f)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                // Progress Text (e.g. 1/10 Ads Watched)
+                Text(
+                    text = progressText,
+                    color = if (isCompleted) Color(0xFF00C853) else Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
     }
 }
 
@@ -9933,215 +10223,6 @@ fun ProfileMenuRowItem(
 }
 
 // --- POPUP DIALOGS INTERACTIVE SIMULATORS ---
-
-@Composable
-fun VideoAdSimulatorDialog(
-    viewModel: com.myplaywin.app.ui.viewmodel.PlayWinViewModel,
-    wallet: com.myplaywin.app.data.model.UserWallet,
-    onDismiss: () -> Unit,
-    snackbarHostState: SnackbarHostState
-) {
-    val coroutineScope = rememberCoroutineScope()
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val activity = context as? android.app.Activity
-    
-    var stage by remember { mutableStateOf("LOADING") } // "LOADING", "ERROR", "REWARDED"
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        viewModel.checkAdCountReset()
-    }
-
-    LaunchedEffect(Unit) {
-        val todayWatched = wallet.dailyAdsWatched
-        if (todayWatched >= 10) {
-            errorMessage = "Daily Reward Ad Limit Reached. Come back tomorrow."
-            stage = "ERROR"
-            return@LaunchedEffect
-        }
-
-        val act = activity
-        if (act == null) {
-            errorMessage = "System error: Activity not found."
-            stage = "ERROR"
-            return@LaunchedEffect
-        }
-
-        // Play the real AdMob Rewarded Ad
-        com.playwin.ads.RewardedManager.showAd(
-            activity = act,
-            rewardType = com.playwin.ads.RewardType.BONUS_COINS,
-            callbacks = object : com.playwin.ads.RewardCallback {
-                override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
-                    com.playwin.ads.RewardController.grantReward(
-                        viewModel = viewModel,
-                        rewardType = rewardType,
-                        token = token,
-                        callback = object : com.playwin.ads.RewardController.RewardGrantCallback {
-                            override fun onSuccess(message: String) {
-                                stage = "REWARDED"
-                            }
-
-                            override fun onFailure(error: String) {
-                                errorMessage = error
-                                stage = "ERROR"
-                            }
-                        }
-                    )
-                }
-
-                override fun onAdFailedToLoad(errorCode: Int, errorMessageStr: String) {
-                    errorMessage = "Failed to load ad: $errorMessageStr"
-                    stage = "ERROR"
-                }
-
-                override fun onAdFailedToShow(errorMessageStr: String) {
-                    errorMessage = errorMessageStr
-                    stage = "ERROR"
-                }
-
-                override fun onAdClosed(userEarnedReward: Boolean) {
-                    if (!userEarnedReward) {
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar("Ad closed early. No reward earned.")
-                        }
-                        onDismiss()
-                    }
-                }
-            }
-        )
-    }
-
-    LaunchedEffect(stage) {
-        if (stage == "REWARDED") {
-            delay(1500)
-            onDismiss()
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = {
-            if (stage == "ERROR" || stage == "REWARDED") {
-                onDismiss()
-            }
-        },
-        confirmButton = {},
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Tv,
-                        contentDescription = null,
-                        tint = Color(0xFF00E5FF),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "PLAYWIN VIDEO ADS",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                if (stage == "LOADING") {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close ad",
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                when (stage) {
-                    "LOADING" -> {
-                        Text(
-                            text = "Loading sponsored rewarded ad...",
-                            color = Color.Gray,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        CircularProgressIndicator(
-                            color = Color(0xFF00E5FF),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = "Ads loaded today: ${wallet.dailyAdsWatched}/10",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 12.sp
-                        )
-                    }
-                    "ERROR" -> {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = "Error icon",
-                            tint = Color(0xFFFF3D00),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = errorMessage ?: "No ad is available at the moment.",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Button(
-                            onClick = onDismiss,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF))
-                        ) {
-                            Text("Dismiss", color = Color.White)
-                        }
-                    }
-                    "REWARDED" -> {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Success icon",
-                            tint = Color(0xFF00C853),
-                            modifier = Modifier.size(54.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Reward Earned! +50 Coins",
-                            color = Color(0xFF00C853),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Your coins updated instantly!",
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-        },
-        containerColor = Color(0xFF13111C),
-        shape = RoundedCornerShape(16.dp)
-    )
-}
 
 // --- BLOCKED USER OVERLAY SCREEN ---
 @Composable

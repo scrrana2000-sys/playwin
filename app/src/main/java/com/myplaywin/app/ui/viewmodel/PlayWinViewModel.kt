@@ -96,6 +96,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
     
     val watchAdsConfigState: StateFlow<com.myplaywin.app.data.model.FirebaseWatchAdsConfig>
     val userRewardAdsState = MutableStateFlow<com.myplaywin.app.data.model.FirebaseUserRewardAds>(com.myplaywin.app.data.model.FirebaseUserRewardAds())
+    val showPremiumAdDialogFromTasks = MutableStateFlow(false)
     private var firebaseUserRewardAdsJob: kotlinx.coroutines.Job? = null
     private var watchAdResetObserverJob: kotlinx.coroutines.Job? = null
 
