@@ -821,6 +821,91 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun signInAnonymously(onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                android.util.Log.d("PlayWinVM", "Starting signInAnonymously with Firebase Auth")
+                val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                val authResult = auth.signInAnonymously().awaitTask()
+                val firebaseUser = authResult.user
+                    ?: throw Exception("Failed to obtain user session for anonymous sign-in.")
+
+                val uid = firebaseUser.uid
+                val email = ""
+                val displayName = "Guest User"
+                val photoUrl = ""
+
+                // Save session in SharedPreferences
+                val sharedPrefs = getApplication<Application>().getSharedPreferences("playwin_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.edit()
+                    .putBoolean("session_active", true)
+                    .putBoolean("remember_me", false)
+                    .putString("user_uid", uid)
+                    .putString("user_email", email)
+                    .putString("user_display_name", displayName)
+                    .putString("user_photo_url", photoUrl)
+                    .apply()
+
+                // Fetch or create user in Realtime DB
+                val dbUser = repository.getFirebaseUser(uid)
+                if (dbUser != null) {
+                    val updatedDbUser = dbUser.copy(
+                        displayName = if (dbUser.displayName.isNotBlank()) dbUser.displayName else displayName
+                    )
+                    repository.saveNewUserInFirebase(updatedDbUser)
+                    val syncWallet = UserWallet(
+                        id = 1,
+                        coins = updatedDbUser.coins,
+                        dailyStreak = updatedDbUser.streak,
+                        lastCheckInTime = updatedDbUser.lastCheckInTime,
+                        userId = uid,
+                        dailyAdsWatched = updatedDbUser.dailyAdsWatched,
+                        lastAdResetTime = updatedDbUser.lastAdResetTime,
+                        referredBy = updatedDbUser.referredBy,
+                        hasUsedReferralCode = updatedDbUser.hasUsedReferralCodeBool,
+                        totalReferrals = updatedDbUser.totalReferrals,
+                        remainingSpins = updatedDbUser.remainingSpins,
+                        totalSpinRewards = updatedDbUser.totalSpinRewards,
+                        remainingScratchCards = updatedDbUser.remainingScratchCards,
+                        lastScratchResetTime = updatedDbUser.lastScratchResetTime,
+                        totalScratchRewards = updatedDbUser.totalScratchRewards,
+                        lastSpinDate = updatedDbUser.lastSpinDate,
+                        freeSpinUsed = updatedDbUser.freeSpinUsedBool,
+                        rewardAdSpinUsed = updatedDbUser.rewardAdSpinUsedBool,
+                        dailySpinCount = updatedDbUser.dailySpinCount,
+                        rewardedSpinCount = updatedDbUser.rewardedSpinCount,
+                        lastCheckInDate = updatedDbUser.lastCheckInDate,
+                        totalCheckInRewards = updatedDbUser.totalCheckInRewards,
+                        lastRewardAdTime = updatedDbUser.lastRewardAdTime,
+                        pendingRewards = updatedDbUser.pendingRewards,
+                        referralsCoinsEarned = updatedDbUser.referralsCoinsEarned
+                    )
+                    repository.saveWalletLocally(syncWallet)
+                } else {
+                    val newUser = com.myplaywin.app.data.model.FirebaseUser(
+                        uid = uid,
+                        email = email,
+                        displayName = displayName,
+                        photoUrl = photoUrl,
+                        coins = 0,
+                        level = 1,
+                        streak = 0,
+                        joinedAt = System.currentTimeMillis()
+                    )
+                    repository.saveNewUserInFirebase(newUser)
+                    repository.saveWalletLocally(UserWallet(id = 1, coins = 0, userId = uid))
+                }
+
+                _authState.value = AuthState.Authenticated(uid)
+                onResult(true, null)
+            } catch (e: Exception) {
+                android.util.Log.e("PlayWinVM", "Anonymous Auth Error", e)
+                val msg = formatFirebaseErrorCode(e).ifBlank { e.localizedMessage ?: "Guest login failed." }
+                onResult(false, msg)
+            }
+        }
+    }
+
     fun signInWithGoogle(context: Context, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             android.util.Log.d("PlayWinVM", "signInWithGoogle requested from UI")
