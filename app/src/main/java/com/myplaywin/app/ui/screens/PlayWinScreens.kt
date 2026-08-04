@@ -3507,6 +3507,190 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // --- COMPLETE DAILY TASKS COMPACT PROGRESS CARD ---
+        val spinWheelConfig by viewModel.spinWheelConfigState.collectAsStateWithLifecycle()
+        val dailyQuiz by viewModel.dailyQuizState.collectAsStateWithLifecycle()
+
+        val adsLimit = if (adConfig.maxAdsPerDay > 0) adConfig.maxAdsPerDay else 10
+        val adsProgress = kotlin.math.min(userRewardAds.todayCount, adsLimit)
+
+        val quizLimit = 1
+        val quizProgress = kotlin.math.min(if (dailyQuiz?.completed == true) 1 else 0, quizLimit)
+
+        val spinLimit = if (spinWheelConfig.dailySpinLimit > 0) spinWheelConfig.dailySpinLimit else 3
+        val spinProgress = kotlin.math.min(wallet.dailySpinCount, spinLimit)
+
+        val scratchLimit = if (scratchSettings.dailyScratchLimit > 0) scratchSettings.dailyScratchLimit else 3
+        val scratchProgress = kotlin.math.min(scratchState.scratchesToday, scratchLimit)
+
+        val referralLimit = 2
+        val referralProgress = kotlin.math.min(wallet.totalReferrals, referralLimit)
+
+        val totalTasks = 5
+        val completedTasksCount = listOf(
+            adsProgress >= adsLimit,
+            quizProgress >= quizLimit,
+            spinProgress >= spinLimit,
+            scratchProgress >= scratchLimit,
+            referralProgress >= referralLimit
+        ).count { it }
+
+        val taskProgressPercentage = (completedTasksCount * 100) / totalTasks
+        val isAllTasksCompleted = completedTasksCount == totalTasks
+
+        val taskAnimatedProgress by animateFloatAsState(
+            targetValue = completedTasksCount.toFloat() / totalTasks.toFloat(),
+            animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow),
+            label = "tasks_overall_progress"
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(76.dp)
+                .clickable { onTabSelected(AppTab.Tasks) },
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(
+                width = 1.2.dp,
+                brush = if (isAllTasksCompleted) {
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFFFFEA3D), Color(0xFF7C4DFF))
+                    )
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.8f), Color(0xFF14111F))
+                    )
+                }
+            ),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
+                        )
+                    )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .padding(bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(
+                                color = if (isAllTasksCompleted) Color(0xFFFFEA3D).copy(alpha = 0.15f) else Color(0xFF7C4DFF).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(10.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Assignment,
+                            contentDescription = "Daily Tasks",
+                            tint = if (isAllTasksCompleted) Color(0xFFFFEA3D) else Color(0xFF7C4DFF),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "Complete Daily Tasks",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        if (isAllTasksCompleted) {
+                            Text(
+                                text = "All Tasks Completed ✓",
+                                color = Color(0xFFFFEA3D),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.sp
+                            )
+                        } else {
+                            Text(
+                                text = "Complete tasks to unlock bigger rewards.",
+                                color = Color.Gray,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "$completedTasksCount/$totalTasks",
+                                color = if (isAllTasksCompleted) Color(0xFFFFEA3D) else Color(0xFF00E5FF),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "$taskProgressPercentage%",
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.width(6.dp))
+                        
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowRight,
+                            contentDescription = "Go to Tasks",
+                            tint = if (isAllTasksCompleted) Color(0xFFFFEA3D) else Color.Gray.copy(alpha = 0.7f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(Color(0xFF13111C))
+                ) {
+                    val barBrush = if (isAllTasksCompleted) {
+                        Brush.horizontalGradient(
+                            colors = listOf(Color(0xFFFFEA3D), Color(0xFFE212D1))
+                        )
+                    } else {
+                        Brush.horizontalGradient(
+                            colors = listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(taskAnimatedProgress)
+                            .background(brush = barBrush)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         // --- DAILY CHECK-IN (glowing purple container) ---
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val isWide = maxWidth >= 600.dp
