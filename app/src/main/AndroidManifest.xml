@@ -3,10 +3,22 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <attribution
+        android:tag="default"
+        android:label="@string/app_name" />
+    <attribution
         android:tag="play-services-ads"
         android:label="@string/app_name" />
     <attribution
+        android:tag="null"
+        android:label="@string/app_name" />
+    <attribution
         android:tag="com.google.android.gms"
+        android:label="@string/app_name" />
+    <attribution
+        android:tag="com.google.android.gms.ads"
+        android:label="@string/app_name" />
+    <attribution
+        android:tag="com.google.android.gms.measurement"
         android:label="@string/app_name" />
 
     <uses-permission android:name="android.permission.INTERNET" />

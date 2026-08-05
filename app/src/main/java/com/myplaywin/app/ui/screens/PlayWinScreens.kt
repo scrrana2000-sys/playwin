@@ -66,6 +66,8 @@ sealed interface AppScreen {
     object UPIWithdraw : AppScreen
     object Wallet : AppScreen
     object Referral : AppScreen
+    object SnakeGame : AppScreen
+    object BounceGame : AppScreen
 }
 
 enum class AppTab {
@@ -124,6 +126,8 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
                 is AppScreen.UPIWithdraw -> putString("type", "UPIWithdraw")
                 is AppScreen.Wallet -> putString("type", "Wallet")
                 is AppScreen.Referral -> putString("type", "Referral")
+                is AppScreen.SnakeGame -> putString("type", "SnakeGame")
+                is AppScreen.BounceGame -> putString("type", "BounceGame")
             }
         }
     },
@@ -141,6 +145,8 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
             "UPIWithdraw" -> AppScreen.UPIWithdraw
             "Wallet" -> AppScreen.Wallet
             "Referral" -> AppScreen.Referral
+            "SnakeGame" -> AppScreen.SnakeGame
+            "BounceGame" -> AppScreen.BounceGame
             else -> AppScreen.MainTabs
         }
         NavEntry(screen, tab)
@@ -165,6 +171,8 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                     is AppScreen.UPIWithdraw -> putString("type", "UPIWithdraw")
                     is AppScreen.Wallet -> putString("type", "Wallet")
                     is AppScreen.Referral -> putString("type", "Referral")
+                    is AppScreen.SnakeGame -> putString("type", "SnakeGame")
+                    is AppScreen.BounceGame -> putString("type", "BounceGame")
                 }
             }
         }
@@ -185,6 +193,8 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                 "UPIWithdraw" -> AppScreen.UPIWithdraw
                 "Wallet" -> AppScreen.Wallet
                 "Referral" -> AppScreen.Referral
+                "SnakeGame" -> AppScreen.SnakeGame
+                "BounceGame" -> AppScreen.BounceGame
                 else -> AppScreen.MainTabs
             }
             list.add(NavEntry(screen, tab))
@@ -312,6 +322,14 @@ fun PlayWinMainFlow(viewModel: PlayWinViewModel) {
                     viewModel = viewModel,
                     coroutineScope = coroutineScope,
                     snackbarHostState = snackbarHostState,
+                    onBack = navigateBack
+                )
+                is AppScreen.SnakeGame -> SnakeClassicScreen(
+                    viewModel = viewModel,
+                    onBack = navigateBack
+                )
+                is AppScreen.BounceGame -> BounceClassicScreen(
+                    viewModel = viewModel,
                     onBack = navigateBack
                 )
             }
@@ -4173,6 +4191,201 @@ fun HomeScreen(
                         emoji = "💳",
                         color = Color(0xFFFFD700),
                         onClick = { onNavigateToGame(AppScreen.Wallet) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // --- MINI GAMES SECTION ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "🎮 ",
+                    fontSize = 18.sp
+                )
+                Text(
+                    text = "MINI GAMES",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp,
+                    letterSpacing = 0.5.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Play Snake Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(86.dp)
+                .clickable { onNavigateToGame(AppScreen.SnakeGame) },
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.2.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
+                        )
+                    )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .background(
+                                color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "🐍", fontSize = 28.sp)
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Snake Classic",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "EARN COINS",
+                                    color = Color(0xFFFFD700),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Play classic snake, beat high scores & earn coins!",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Play Snake",
+                        tint = Color(0xFF7C4DFF),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Play Bounce Quest Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(86.dp)
+                .clickable { onNavigateToGame(AppScreen.BounceGame) },
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.2.dp, Color(0xFFA855F7).copy(alpha = 0.4f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
+                        )
+                    )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .background(
+                                color = Color(0xFFA855F7).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "🟣", fontSize = 28.sp)
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Bounce Classic",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "EARN COINS",
+                                    color = Color(0xFFFFD700),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Navigate traps, jump platforms & earn PlayWin coins!",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Play Bounce Classic",
+                        tint = Color(0xFFA855F7),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
