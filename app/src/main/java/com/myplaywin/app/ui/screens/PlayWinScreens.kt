@@ -2906,6 +2906,17 @@ fun HomeScreen(
     // Dialog state variables
     var showQuizChoiceDialog by remember { mutableStateOf(false) }
     var showNotificationsDialog by remember { mutableStateOf(false) }
+    var showDailyCheckInPopup by remember { mutableStateOf(false) }
+
+    val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
+    val checkInSettings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
+    val remainingTime by com.myplaywin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
+
+    val isEligibleToClaim = remember(userCheckIn?.lastClaimTimestamp, currentServerTime) {
+        val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+        val startOfToday = com.myplaywin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
+        lastClaim < startOfToday
+    }
 
     val activity = context as? android.app.Activity
 
@@ -3424,6 +3435,19 @@ fun HomeScreen(
         )
     }
 
+    if (showDailyCheckInPopup) {
+        DailyCheckInPopup(
+            onDismiss = { showDailyCheckInPopup = false },
+            userCheckIn = userCheckIn,
+            checkInSettings = checkInSettings,
+            currentServerTime = currentServerTime,
+            remainingTime = remainingTime,
+            viewModel = viewModel,
+            coroutineScope = coroutineScope,
+            snackbarHostState = snackbarHostState
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -3512,81 +3536,57 @@ fun HomeScreen(
             }
         }
 
-        // --- PROFILE SECTION ---
+        // --- PROFILE SECTION & DAILY CHECK-IN BUTTON ---
         HomeTopSection(
             displayName = displayName,
             coinBalance = coinBalance,
-            level = currentLevel,
-            streak = dailyStreak,
             profilePhotoUrl = profilePhotoUrl,
-            onNotificationClick = { showNotificationsDialog = true },
-            onProfileClick = onProfileClick
+            onProfileClick = onProfileClick,
+            onDailyCheckInClick = { showDailyCheckInPopup = true },
+            isEligibleToClaim = isEligibleToClaim,
+            remainingTime = remainingTime
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // --- COMPLETE DAILY TASKS COMPACT PROGRESS CARD ---
-        val spinWheelConfig by viewModel.spinWheelConfigState.collectAsStateWithLifecycle()
-        val dailyQuiz by viewModel.dailyQuizState.collectAsStateWithLifecycle()
+        // --- MINI GAMES SECTION ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "🎮 ",
+                    fontSize = 18.sp
+                )
+                Text(
+                    text = "MINI GAMES",
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp,
+                    letterSpacing = 0.5.sp
+                )
+            }
+        }
 
-        val adsLimit = if (adConfig.maxAdsPerDay > 0) adConfig.maxAdsPerDay else 10
-        val adsProgress = kotlin.math.min(userRewardAds.todayCount, adsLimit)
+        Spacer(modifier = Modifier.height(10.dp))
 
-        val quizLimit = 1
-        val quizProgress = kotlin.math.min(if (dailyQuiz?.completed == true) 1 else 0, quizLimit)
-
-        val spinLimit = if (spinWheelConfig.dailySpinLimit > 0) spinWheelConfig.dailySpinLimit else 3
-        val spinProgress = kotlin.math.min(wallet.dailySpinCount, spinLimit)
-
-        val scratchLimit = if (scratchSettings.dailyScratchLimit > 0) scratchSettings.dailyScratchLimit else 3
-        val scratchProgress = kotlin.math.min(scratchState.scratchesToday, scratchLimit)
-
-        val referralLimit = 2
-        val referralProgress = kotlin.math.min(wallet.totalReferrals, referralLimit)
-
-        val totalTasks = 5
-        val completedTasksCount = listOf(
-            adsProgress >= adsLimit,
-            quizProgress >= quizLimit,
-            spinProgress >= spinLimit,
-            scratchProgress >= scratchLimit,
-            referralProgress >= referralLimit
-        ).count { it }
-
-        val taskProgressPercentage = (completedTasksCount * 100) / totalTasks
-        val isAllTasksCompleted = completedTasksCount == totalTasks
-
-        val taskAnimatedProgress by animateFloatAsState(
-            targetValue = completedTasksCount.toFloat() / totalTasks.toFloat(),
-            animationSpec = androidx.compose.animation.core.spring(stiffness = androidx.compose.animation.core.Spring.StiffnessLow),
-            label = "tasks_overall_progress"
-        )
-
+        // Play Snake Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(76.dp)
-                .clickable { onTabSelected(AppTab.Tasks) },
+                .height(86.dp)
+                .clickable { onNavigateToGame(AppScreen.SnakeGame) },
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(
-                width = 1.2.dp,
-                brush = if (isAllTasksCompleted) {
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFFFFEA3D), Color(0xFF7C4DFF))
-                    )
-                } else {
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.8f), Color(0xFF14111F))
-                    )
-                }
-            ),
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            border = BorderStroke(1.2.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        brush = Brush.linearGradient(
+                        Brush.linearGradient(
                             colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
                         )
                     )
@@ -3594,114 +3594,63 @@ fun HomeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
-                        .padding(bottom = 6.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
+                            .size(50.dp)
                             .background(
-                                color = if (isAllTasksCompleted) Color(0xFFFFEA3D).copy(alpha = 0.15f) else Color(0xFF7C4DFF).copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(10.dp)
+                                color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp)
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Assignment,
-                            contentDescription = "Daily Tasks",
-                            tint = if (isAllTasksCompleted) Color(0xFFFFEA3D) else Color(0xFF7C4DFF),
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Text(text = "🐍", fontSize = 28.sp)
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
 
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.Center
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Snake Classic",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "EARN COINS",
+                                    color = Color(0xFFFFD700),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Complete Daily Tasks",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        if (isAllTasksCompleted) {
-                            Text(
-                                text = "All Tasks Completed ✓",
-                                color = Color(0xFFFFEA3D),
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 11.sp
-                            )
-                        } else {
-                            Text(
-                                text = "Complete tasks to unlock bigger rewards.",
-                                color = Color.Gray,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "$completedTasksCount/$totalTasks",
-                                color = if (isAllTasksCompleted) Color(0xFFFFEA3D) else Color(0xFF00E5FF),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "$taskProgressPercentage%",
-                                color = Color.Gray,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.width(6.dp))
-                        
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowRight,
-                            contentDescription = "Go to Tasks",
-                            tint = if (isAllTasksCompleted) Color(0xFFFFEA3D) else Color.Gray.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
+                            text = "Play classic snake, beat high scores & earn coins!",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(Color(0xFF13111C))
-                ) {
-                    val barBrush = if (isAllTasksCompleted) {
-                        Brush.horizontalGradient(
-                            colors = listOf(Color(0xFFFFEA3D), Color(0xFFE212D1))
-                        )
-                    } else {
-                        Brush.horizontalGradient(
-                            colors = listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(taskAnimatedProgress)
-                            .background(brush = barBrush)
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Play Snake",
+                        tint = Color(0xFF7C4DFF),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -3709,371 +3658,96 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAILY CHECK-IN (glowing purple container) ---
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val isWide = maxWidth >= 600.dp
-            
-            val userCheckIn by viewModel.userDailyCheckInState.collectAsStateWithLifecycle()
-            val checkInSettings by viewModel.dailyCheckInSettingsState.collectAsStateWithLifecycle()
-            
-            val currentServerTime by com.myplaywin.app.data.repository.DailyResetManager.currentServerTime.collectAsStateWithLifecycle()
-            val remainingTime by com.myplaywin.app.data.repository.DailyResetManager.remainingTime.collectAsStateWithLifecycle()
-
-            val isEligibleToClaim = remember(userCheckIn?.lastClaimTimestamp, currentServerTime) {
-                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                val startOfToday = com.myplaywin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
-                lastClaim < startOfToday
-            }
-            val countdownText = if (isEligibleToClaim) "" else "$remainingTime remaining."
-
-            val checkInLoading by viewModel.dailyCheckInLoadingState.collectAsStateWithLifecycle()
-            val rewardsList = checkInSettings?.rewards
-            val isConfigAvailable = checkInSettings != null && rewardsList != null && rewardsList.size >= 7
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFF320854), Color(0xFF09070F))
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(
-                    1.5.dp,
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFFE212D1), Color(0xFF7C4DFF))
-                    )
-                )
-            ) {
-                if (checkInLoading) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = Color(0xFF7C4DFF))
-                    }
-                } else if (!isConfigAvailable) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = "Configuration unavailable",
-                                tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Configuration unavailable",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                } else {
-                    val dayRewards = rewardsList!!
-                if (isWide) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // LEFT SIDE: Text + Button
-                        Column(
-                            modifier = Modifier.weight(1.1f),
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "Daily Check-in",
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 24.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = if (isEligibleToClaim) "Claim your daily reward!" else countdownText,
-                                color = if (isEligibleToClaim) Color.White.copy(alpha = 0.7f) else Color(0xFFFFEA3D),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip
-                            )
-                            Spacer(modifier = Modifier.height(20.dp))
-                            
-                            val buttonBrush = if (!isEligibleToClaim) {
-                                Brush.verticalGradient(
-                                    colors = listOf(Color(0xFF4B5563), Color(0xFF1F2937))
-                                )
-                            } else {
-                                Brush.verticalGradient(
-                                    colors = listOf(Color(0xFFFFEA3D), Color(0xFFFFAE00))
-                                )
-                            }
-
-                            Button(
-                                onClick = {
-                                    viewModel.claimDailyReward { success, errorMsg ->
-                                        coroutineScope.launch {
-                                            if (success) {
-                                                snackbarHostState.showSnackbar("Daily check-in successful! Reward claimed.")
-                                            } else {
-                                                snackbarHostState.showSnackbar(errorMsg ?: "Failed to claim reward.")
-                                            }
-                                        }
-                                    }
-                                },
-                                enabled = isEligibleToClaim,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(),
-                                modifier = Modifier
-                                    .height(44.dp)
-                                    .fillMaxWidth()
-                                    .background(
-                                        brush = buttonBrush,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                            ) {
-                                Text(
-                                    text = if (!isEligibleToClaim) "CHECKED IN" else "CHECK IN NOW",
-                                    color = if (!isEligibleToClaim) Color.White.copy(alpha = 0.6f) else Color.Black,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 13.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.width(24.dp))
-                        
-                        // RIGHT SIDE: Exactly 7 reward boxes
-                        Row(
-                            modifier = Modifier.weight(2.5f),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val days = listOf(
-                                "Day 1" to dayRewards[0],
-                                "Day 2" to dayRewards[1],
-                                "Day 3" to dayRewards[2],
-                                "Day 4" to dayRewards[3],
-                                "Day 5" to dayRewards[4],
-                                "Day 6" to dayRewards[5],
-                                "Day 7" to dayRewards[6]
-                            )
-                            days.forEachIndexed { index, (dayName, reward) ->
-                                val dayNum = index + 1
-                                val currentDay = userCheckIn?.currentDay ?: 0
-                                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                                val serverTime = currentServerTime
-                                val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, serverTime)
-                                DailyRewardBox(
-                                    day = dayName,
-                                    rewardCoins = reward,
-                                    status = status,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    // STACKED RESPONSIVE LAYOUT FOR PHONES
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        val buttonBrush = if (!isEligibleToClaim) {
-                            Brush.verticalGradient(
-                                colors = listOf(Color(0xFF4B5563), Color(0xFF1F2937))
-                            )
-                        } else {
-                            Brush.verticalGradient(
-                                colors = listOf(Color(0xFFFFEA3D), Color(0xFFFFAE00))
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Daily Check-in",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 20.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = if (isEligibleToClaim) "Claim your daily reward!" else countdownText,
-                                    color = if (isEligibleToClaim) Color.White.copy(alpha = 0.7f) else Color(0xFFFFEA3D),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.width(12.dp))
-                            
-                            Button(
-                                onClick = {
-                                    viewModel.claimDailyReward { success, errorMsg ->
-                                        coroutineScope.launch {
-                                            if (success) {
-                                                snackbarHostState.showSnackbar("Daily check-in successful! Reward claimed.")
-                                            } else {
-                                                snackbarHostState.showSnackbar(errorMsg ?: "Failed to claim reward.")
-                                            }
-                                        }
-                                    }
-                                },
-                                enabled = isEligibleToClaim,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp),
-                                modifier = Modifier
-                                    .height(38.dp)
-                                    .background(
-                                        brush = buttonBrush,
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                            ) {
-                                Text(
-                                    text = if (!isEligibleToClaim) "CHECKED IN" else "CHECK IN NOW",
-                                    color = if (!isEligibleToClaim) Color.White.copy(alpha = 0.6f) else Color.Black,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Clip
-                                )
-                            }
-                        }
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val days = listOf(
-                                "Day 1" to dayRewards[0],
-                                "Day 2" to dayRewards[1],
-                                "Day 3" to dayRewards[2],
-                                "Day 4" to dayRewards[3],
-                                "Day 5" to dayRewards[4],
-                                "Day 6" to dayRewards[5],
-                                "Day 7" to dayRewards[6]
-                            )
-                            days.forEachIndexed { index, (dayName, reward) ->
-                                val dayNum = index + 1
-                                val currentDay = userCheckIn?.currentDay ?: 0
-                                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
-                                val serverTime = currentServerTime
-                                val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, serverTime)
-                                DailyRewardBox(
-                                    day = dayName,
-                                    rewardCoins = reward,
-                                    status = status,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // --- PREMIUM REWARDED ADS DASHBOARD BANNER ---
+        // Play Bounce Quest Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { showRewardedAdDialog = true },
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF16141F)),
+                .height(86.dp)
+                .clickable { onNavigateToGame(AppScreen.BounceGame) },
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color(0xFF2C2A35))
+            border = BorderStroke(1.2.dp, Color(0xFFA855F7).copy(alpha = 0.4f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
         ) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
+                        )
+                    )
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
-                            .background(Color(0xFFD32F2F).copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                            .size(50.dp)
+                            .background(
+                                color = Color(0xFFA855F7).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("🎬", fontSize = 20.sp)
+                        Text(text = "🟣", fontSize = 28.sp)
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Bounce Classic",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "EARN COINS",
+                                    color = Color(0xFFFFD700),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Premium Ad Engine",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        val remaining = maxOf(0, adConfig.maxAdsPerDay - userRewardAds.todayCount)
-                        Text(
-                            text = when (currentAdStatus) {
-                                "Cooldown" -> String.format("⏳ Cooldown: %02dm %02ds left", secondsLeft / 60, secondsLeft % 60)
-                                "Limit Reached" -> "🎉 Daily limit completed! (+${userRewardAds.todayCoins} 🪙 earned)"
-                                "Maintenance" -> "🔧 Under scheduled maintenance"
-                                "Disabled" -> "🚫 Watch Ads are disabled"
-                                else -> "⚡ Ready • Earn +${adConfig.rewardCoins} Coins ($remaining left)"
-                            },
-                            fontSize = 11.sp,
-                            color = when (currentAdStatus) {
-                                "Cooldown" -> Color(0xFFFF9800)
-                                "Limit Reached" -> Color(0xFF00E676)
-                                else -> Color.White.copy(alpha = 0.6f)
-                            },
-                            fontWeight = FontWeight.Bold
+                            text = "Navigate traps, jump platforms & earn PlayWin coins!",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
+
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Play Bounce Classic",
+                        tint = Color(0xFFA855F7),
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = "Open Dashboard",
-                    tint = Color.White.copy(alpha = 0.5f),
-                    modifier = Modifier.size(24.dp)
-                )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- BANNER AD (AdMob) ---
+        com.playwin.ads.BannerManager.BannerAd()
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // --- FEATURE GRID (Exactly 3 columns, 3 rows) ---
         Column(
@@ -4196,205 +3870,6 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // --- MINI GAMES SECTION ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "🎮 ",
-                    fontSize = 18.sp
-                )
-                Text(
-                    text = "MINI GAMES",
-                    color = Color.White,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 16.sp,
-                    letterSpacing = 0.5.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Play Snake Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(86.dp)
-                .clickable { onNavigateToGame(AppScreen.SnakeGame) },
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.2.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
-                        )
-                    )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .background(
-                                color = Color(0xFF00E5FF).copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "🐍", fontSize = 28.sp)
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Snake Classic",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "EARN COINS",
-                                    color = Color(0xFFFFD700),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 8.sp
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Play classic snake, beat high scores & earn coins!",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowRight,
-                        contentDescription = "Play Snake",
-                        tint = Color(0xFF7C4DFF),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Play Bounce Quest Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(86.dp)
-                .clickable { onNavigateToGame(AppScreen.BounceGame) },
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.2.dp, Color(0xFFA855F7).copy(alpha = 0.4f)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
-                        )
-                    )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .background(
-                                color = Color(0xFFA855F7).copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "🟣", fontSize = 28.sp)
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Bounce Classic",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "EARN COINS",
-                                    color = Color(0xFFFFD700),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 8.sp
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Navigate traps, jump platforms & earn PlayWin coins!",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowRight,
-                        contentDescription = "Play Bounce Classic",
-                        tint = Color(0xFFA855F7),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // --- BOTTOM BANNER (AD) ---
-        com.playwin.ads.BannerManager.BannerAd()
     }
 }
 
@@ -4667,107 +4142,114 @@ fun AutoScalingText(
 fun HomeTopSection(
     displayName: String,
     coinBalance: Int,
-    level: Int,
-    streak: Int,
     profilePhotoUrl: String?,
-    onNotificationClick: () -> Unit,
     onProfileClick: () -> Unit,
+    onDailyCheckInClick: () -> Unit,
+    isEligibleToClaim: Boolean,
+    remainingTime: String,
     modifier: Modifier = Modifier
 ) {
-    val firstLetter = if (displayName.isNotEmpty()) displayName.first().uppercaseChar().toString() else "P"
-    
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp)
     ) {
-        // --- PROFILE SECTION ---
+        // --- SINGLE HORIZONTAL ROW: Profile Card + My Coins Card + Daily Check-in Card ---
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: Large Avatar + Username + Level/XP
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1.2f)
+            // 1. PROFILE CARD
+            Card(
+                modifier = Modifier
+                    .weight(0.88f)
+                    .fillMaxHeight()
+                    .clickable { onProfileClick() },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.25f))
             ) {
-                Box(
+                Row(
                     modifier = Modifier
-                        .size(68.dp) // Large avatar as per reference
-                        .clickable { onProfileClick() }
+                        .fillMaxSize()
+                        .padding(horizontal = 5.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Avatar Circle with gradient background and thick purple neon border
+                    // Avatar Box with Edit Badge
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .border(BorderStroke(2.5.dp, Color(0xFF7B2CF7)), CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(Color(0xFF7B2CF7).copy(alpha = 0.5f), Color(0xFF0F0C1B))
-                                ),
-                                shape = CircleShape
-                            )
-                            .clip(CircleShape),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        if (!profilePhotoUrl.isNullOrEmpty()) {
-                            coil.compose.AsyncImage(
-                                model = profilePhotoUrl,
-                                contentDescription = "Profile Photo",
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                        } else {
-                            // Illustrated character emoji (a cool boy profile)
-                            Text(
-                                text = "👦",
-                                fontSize = 38.sp
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .border(BorderStroke(1.2.dp, Color(0xFF7B2CF7)), CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(Color(0xFF7B2CF7).copy(alpha = 0.5f), Color(0xFF0F0C1B))
+                                    ),
+                                    shape = CircleShape
+                                )
+                                .clip(CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!profilePhotoUrl.isNullOrEmpty()) {
+                                coil.compose.AsyncImage(
+                                    model = profilePhotoUrl,
+                                    contentDescription = "Profile Photo",
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            } else {
+                                Text(
+                                    text = "👦",
+                                    fontSize = 15.sp
+                                )
+                            }
+                        }
+                        
+                        // Edit pen badge
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(Color(0xFF7B2CF7), CircleShape)
+                                .border(0.8.dp, Color(0xFF090615), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Profile",
+                                tint = Color.White,
+                                modifier = Modifier.size(5.dp)
                             )
                         }
                     }
                     
-                    // Edit pen badge at bottom right
-                    Box(
-                        modifier = Modifier
-                            .size(18.dp)
-                            .align(Alignment.BottomEnd)
-                            .background(Color(0xFF7B2CF7), CircleShape)
-                            .border(1.dp, Color(0xFF090615), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Profile",
-                            tint = Color.White,
-                            modifier = Modifier.size(10.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.width(12.dp))
-                
-                // Name and level details
-                Column {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    
+                    // Username + Verified Checkmark
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.weight(1f)
                     ) {
-                        AutoScalingText(
+                        Text(
                             text = displayName,
-                            style = TextStyle(
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp
-                            ),
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
                         
-                        // Verified badge (purple circle with check)
+                        // Verified badge
                         Box(
                             modifier = Modifier
-                                .size(16.dp)
+                                .size(12.dp)
                                 .background(Color(0xFF7B2CF7), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -4775,193 +4257,396 @@ fun HomeTopSection(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "Verified Profile",
                                 tint = Color.White,
-                                modifier = Modifier.size(10.dp)
+                                modifier = Modifier.size(7.dp)
                             )
                         }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    // Level badge & XP text in a row
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF2563EB), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "Level $level",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                        
-                        Text(
-                            text = "${850 + level * 5} / ${1200 + level * 10} XP",
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(6.dp))
-                    
-                    // XP Progress bar
-                    Box(
-                        modifier = Modifier
-                            .width(130.dp)
-                            .height(6.dp)
-                            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(100.dp))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(fraction = 0.71f)
-                                .background(
-                                    Brush.horizontalGradient(listOf(Color(0xFF7B2CF7), Color(0xFFA855F7))),
-                                    RoundedCornerShape(100.dp)
-                                )
-                        )
                     }
                 }
             }
-            
-            // Right: "My Coins" Wallet Card
+
+            // 2. MY COINS CARD
             Card(
                 modifier = Modifier
-                    .weight(0.8f)
+                    .weight(1.05f)
+                    .fillMaxHeight()
                     .clickable { onProfileClick() },
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.25f))
             ) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                        .fillMaxSize()
+                        .padding(horizontal = 5.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Gold Coin Circle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(24.dp)
                                 .background(Color(0xFFFFD700).copy(alpha = 0.15f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("🪙", fontSize = 18.sp)
+                            Text("🪙", fontSize = 12.sp)
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Column {
                             Text(
                                 text = "My Coins",
                                 color = Color.Gray,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                             Text(
                                 text = String.format("%,d", coinBalance),
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
-                                fontSize = 14.sp
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
-                    
-                    // Plus button (purple circle)
                     Box(
                         modifier = Modifier
-                            .size(22.dp)
+                            .size(15.dp)
                             .background(Color(0xFF7B2CF7), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "＋",
-                            color = Color.White,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 12.sp
-                        )
+                        Text("＋", color = Color.White, fontWeight = FontWeight.Black, fontSize = 9.sp)
                     }
                 }
             }
-        }
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        // --- STATS CARD (One horizontal premium card with 4 metrics) ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0A1B)),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color(0xFFFFFFFF).copy(alpha = 0.05f))
-        ) {
-            Row(
+
+            // 3. DAILY CHECK-IN CARD
+            Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .weight(1.27f)
+                    .fillMaxHeight()
+                    .clickable { onDailyCheckInClick() },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (isEligibleToClaim) {
+                        Brush.linearGradient(listOf(Color(0xFFFFEA3D), Color(0xFF7C4DFF)))
+                    } else {
+                        androidx.compose.ui.graphics.SolidColor(Color(0xFF7C4DFF).copy(alpha = 0.3f))
+                    }
+                )
             ) {
-                // Stat 1: Daily Streak
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    StatRowItem(
-                        icon = "📅",
-                        iconTint = Color(0xFF7B2CF7),
-                        label = "Daily Streak",
-                        valueNum = "$streak",
-                        valueUnit = "Days"
-                    )
-                }
-                
-                // Vertical Divider
-                Spacer(modifier = Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.08f)))
-                
-                // Stat 2: Longest Streak
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    StatRowItem(
-                        icon = "🔥",
-                        iconTint = Color(0xFFFB923C),
-                        label = "Longest Streak",
-                        valueNum = "${streak + 8}",
-                        valueUnit = "Days"
-                    )
-                }
-                
-                // Vertical Divider
-                Spacer(modifier = Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.08f)))
-                
-                // Stat 3: Total Quizzes
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    StatRowItem(
-                        icon = "⭐",
-                        iconTint = Color(0xFFA855F7),
-                        label = "Total Quizzes",
-                        valueNum = "${210 + level * 5}",
-                        valueUnit = ""
-                    )
-                }
-                
-                // Vertical Divider
-                Spacer(modifier = Modifier.width(1.dp).height(24.dp).background(Color.White.copy(alpha = 0.08f)))
-                
-                // Stat 4: Rank
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    StatRowItem(
-                        icon = "🏆",
-                        iconTint = Color(0xFFFFD700),
-                        label = "Rank",
-                        valueNum = "#${150 - streak.coerceAtMost(50)}",
-                        valueUnit = ""
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 5.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .background(
+                                    if (isEligibleToClaim) Color(0xFFFFEA3D).copy(alpha = 0.2f) else Color(0xFF7C4DFF).copy(alpha = 0.15f),
+                                    CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("📅", fontSize = 12.sp)
+                        }
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Column {
+                            Text(
+                                text = "Daily Check-in",
+                                color = Color.White,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            Text(
+                                text = if (isEligibleToClaim) "Claim Now!" else remainingTime,
+                                color = if (isEligibleToClaim) Color(0xFFFFEA3D) else Color.Gray,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Daily Check-in",
+                        tint = if (isEligibleToClaim) Color(0xFFFFEA3D) else Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DailyCheckInPopup(
+    onDismiss: () -> Unit,
+    userCheckIn: com.myplaywin.app.data.model.FirebaseUserDailyCheckIn?,
+    checkInSettings: com.myplaywin.app.data.model.FirebaseDailyCheckInSettings?,
+    currentServerTime: Long,
+    remainingTime: String,
+    viewModel: PlayWinViewModel,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    snackbarHostState: SnackbarHostState
+) {
+    val isEligibleToClaim = remember(userCheckIn?.lastClaimTimestamp, currentServerTime) {
+        val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+        val startOfToday = com.myplaywin.app.data.repository.DailyResetManager.getStartOfTodayUtc(currentServerTime)
+        lastClaim < startOfToday
+    }
+
+    val defaultRewards = listOf(50, 75, 100, 125, 150, 250, 500)
+    val rewardsList = checkInSettings?.rewards ?: defaultRewards
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 16.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF13111C),
+            border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFE212D1), Color(0xFF7C4DFF)))),
+            tonalElevation = 12.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📅", fontSize = 22.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Daily Check-in Rewards",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 17.sp,
+                            color = Color.White
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Timer Banner
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isEligibleToClaim) Color(0xFF7C4DFF).copy(alpha = 0.15f) else Color(0xFF1B1628),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .border(
+                            1.dp,
+                            if (isEligibleToClaim) Color(0xFF7C4DFF).copy(alpha = 0.4f) else Color.White.copy(alpha = 0.1f),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(vertical = 10.dp, horizontal = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isEligibleToClaim) "🎉 Claim your daily check-in reward today!" else "⏳ Next check-in resets in: $remainingTime",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isEligibleToClaim) Color(0xFFFFEA3D) else Color.White.copy(alpha = 0.8f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Day 1 to Day 7 Reward Cards
+                val currentDay = userCheckIn?.currentDay ?: 0
+                val lastClaim = userCheckIn?.lastClaimTimestamp ?: 0L
+
+                // Row 1: Days 1 - 4
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for (i in 0..3) {
+                        val dayNum = i + 1
+                        val reward = rewardsList.getOrElse(i) { defaultRewards[i] }
+                        val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, currentServerTime)
+                        PopupRewardCard(
+                            dayName = "Day $dayNum",
+                            rewardCoins = reward,
+                            status = status,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Row 2: Days 5 - 7
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    for (i in 4..6) {
+                        val dayNum = i + 1
+                        val reward = rewardsList.getOrElse(i) { defaultRewards[i] }
+                        val status = getNewCheckInDayStatus(dayNum, currentDay, lastClaim, currentServerTime)
+                        PopupRewardCard(
+                            dayName = "Day $dayNum",
+                            rewardCoins = reward,
+                            status = status,
+                            isFeatured = (dayNum == 7),
+                            modifier = Modifier.weight(if (dayNum == 7) 1.2f else 1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Action Button
+                val buttonBrush = if (!isEligibleToClaim) {
+                    Brush.verticalGradient(listOf(Color(0xFF4B5563), Color(0xFF1F2937)))
+                } else {
+                    Brush.verticalGradient(listOf(Color(0xFFFFEA3D), Color(0xFFFFAE00)))
+                }
+
+                Button(
+                    onClick = {
+                        viewModel.claimDailyReward { success, errorMsg ->
+                            coroutineScope.launch {
+                                if (success) {
+                                    snackbarHostState.showSnackbar("🎉 Daily check-in successful! Reward claimed.")
+                                    onDismiss()
+                                } else {
+                                    snackbarHostState.showSnackbar(errorMsg ?: "Failed to claim reward.")
+                                }
+                            }
+                        }
+                    },
+                    enabled = isEligibleToClaim,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .background(brush = buttonBrush, shape = RoundedCornerShape(14.dp))
+                ) {
+                    Text(
+                        text = if (!isEligibleToClaim) "CHECKED IN TODAY" else "CLAIM DAILY REWARD NOW",
+                        color = if (!isEligibleToClaim) Color.White.copy(alpha = 0.6f) else Color.Black,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PopupRewardCard(
+    dayName: String,
+    rewardCoins: Int,
+    status: CheckInDayStatus,
+    isFeatured: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val isCompleted = status == CheckInDayStatus.COMPLETED
+    val isActive = status == CheckInDayStatus.ACTIVE
+
+    val cardBg = when {
+        isActive -> Color(0xFF320854)
+        isCompleted -> Color(0xFF1A1A26)
+        else -> Color(0xFF0F0E17)
+    }
+
+    val borderColor = when {
+        isActive -> Color(0xFFFFEA3D)
+        isCompleted -> Color(0xFF00E676).copy(alpha = 0.5f)
+        else -> Color.White.copy(alpha = 0.08f)
+    }
+
+    Card(
+        modifier = modifier.height(84.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(if (isActive) 1.8.dp else 1.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = dayName,
+                color = if (isActive) Color(0xFFFFEA3D) else Color.White.copy(alpha = 0.7f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Box(contentAlignment = Alignment.Center) {
+                if (isCompleted) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .background(Color(0xFF00E676), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Completed",
+                            tint = Color.Black,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                } else if (!isActive) {
+                    Text("🔒", fontSize = 15.sp)
+                } else {
+                    Text("🪙", fontSize = 18.sp)
+                }
+            }
+
+            Text(
+                text = "+$rewardCoins",
+                color = if (isActive) Color(0xFFFFEA3D) else if (isCompleted) Color(0xFF00E676) else Color.White.copy(alpha = 0.5f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black
+            )
         }
     }
 }

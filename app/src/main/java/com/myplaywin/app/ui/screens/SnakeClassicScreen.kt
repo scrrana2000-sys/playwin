@@ -1,6 +1,7 @@
 package com.myplaywin.app.ui.screens
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
@@ -582,6 +583,37 @@ data class FloatingText(
     var currentLife: Int = 0
 )
 
+data class SnakeGameStateSnapshot(
+    val snake: List<SnakePoint>,
+    val previousSnake: List<SnakePoint>,
+    val direction: SnakeDirection,
+    val previousDirection: SnakeDirection,
+    val food: SnakePoint,
+    val score: Int,
+    val levelFruitsCollected: Int,
+    val fruitsCollectedThisGame: Int,
+    val currentLevelNumber: Int,
+    val isAdventureMode: Boolean,
+    val activeLevel: SnakeLevel?,
+    val breakableWalls: List<SnakePoint>,
+    val crystalPoint: SnakePoint?,
+    val bossPosition: SnakePoint,
+    val bossDirection: SnakeDirection,
+    val bossTickCounter: Int,
+    val activeTraps: List<SnakePoint>,
+    val bonusTimeLeftSeconds: Int,
+    val levelTimeElapsedSeconds: Int,
+    val hasShield: Boolean,
+    val shieldTimeLeft: Int,
+    val isDoubleCoinsActive: Boolean,
+    val doubleCoinsTimeLeft: Int,
+    val magnetTimeLeft: Int,
+    val slowMotionTimeLeft: Int,
+    val fruitFrenzyTimeLeft: Int,
+    val extraFruits: List<SnakePoint>,
+    val activePowerUpOnBoard: SnakeEntity?
+)
+
 @Composable
 fun SnakeClassicScreen(
     viewModel: PlayWinViewModel,
@@ -758,6 +790,17 @@ fun SnakeClassicScreen(
     // Reward claiming
     var rewardClaimed by remember { mutableStateOf(false) }
 
+    // Rewarded Ad Extra Life States
+    var hasUsedContinueThisGame by remember { mutableStateOf(false) }
+    var showSecondChanceText by remember { mutableStateOf(false) }
+    var isAdShieldActive by remember { mutableStateOf(false) }
+    var lastDeathSnapshot by remember { mutableStateOf<SnakeGameStateSnapshot?>(null) }
+
+    // Preload Rewarded Ad for Extra Life
+    LaunchedEffect(Unit) {
+        com.playwin.ads.RewardedManager.preload(context)
+    }
+
     // Pulsing Food Glow Animation
     val infiniteTransition = rememberInfiniteTransition(label = "food_glow")
     val foodPulseScale by infiniteTransition.animateFloat(
@@ -819,6 +862,72 @@ fun SnakeClassicScreen(
                 directionQueue.add(newDir)
                 soundManager.playSwipe()
             }
+        }
+    }
+
+    var isNavigatingHome by remember { mutableStateOf(false) }
+
+    fun exitGameToHome() {
+        if (isNavigatingHome) return
+        isNavigatingHome = true
+
+        soundManager.playButtonClick()
+        hapticManager.vibrateLight()
+        soundManager.stopBgm()
+
+        // Stop active power-up timers & states
+        shieldTimeLeft = 0
+        magnetTimeLeft = 0
+        slowMotionTimeLeft = 0
+        doubleCoinsTimeLeft = 0
+        fruitFrenzyTimeLeft = 0
+        extraFruits.clear()
+        activePowerUpOnBoard = null
+        hasShield = false
+        isDoubleCoinsActive = false
+        bonusFood = null
+        soundManager.isFruitFrenzyPlaying = false
+
+        // Clear temporary overlays & game state
+        showMysteryBoxOverlay = false
+        showTreasureChestOverlay = false
+        showLevelUpOverlay = false
+        particles.clear()
+        floatingTexts.clear()
+        directionQueue.clear()
+        isDeadAnimating = false
+        isDeadEyeClosed = false
+
+        // Close game over and transition state to LOBBY
+        rewardClaimed = false
+        isGameOver = false
+        isPaused = true
+        currentScreenState = "LOBBY"
+
+        // Refresh Home screen data
+        unlockedLevel = SnakeProgressionManager.loadUnlockedLevel(context)
+        stats = SnakeProgressionManager.loadStats(context)
+        achievements = SnakeProgressionManager.loadAchievements(context)
+        dailyMissions = SnakeProgressionManager.loadMissions(context)
+        highScore = prefs.getInt("high_score", 0)
+        highestLevel = prefs.getInt("highest_level", 1)
+        historyList = parseHistory(prefs.getString("game_history", "") ?: "")
+
+        isNavigatingHome = false
+    }
+
+    BackHandler(enabled = true) {
+        if (isGameOver) {
+            exitGameToHome()
+        } else if (showMysteryBoxOverlay) {
+            showMysteryBoxOverlay = false
+            isPaused = false
+        } else if (showLevelUpOverlay) {
+            showLevelUpOverlay = false
+        } else if (currentScreenState == "GAMEPLAY") {
+            exitGameToHome()
+        } else {
+            onBack()
         }
     }
 
@@ -1186,6 +1295,7 @@ fun SnakeClassicScreen(
 
     // Reset game state
     fun resetGame(levelToPlay: Int? = null) {
+        val targetLvl = levelToPlay ?: SnakeProgressionManager.loadUnlockedLevel(context)
         soundManager.stopBgm()
         isDeadAnimating = false
         isDeadEyeClosed = false
@@ -1200,55 +1310,44 @@ fun SnakeClassicScreen(
             boardFlashAlpha.snapTo(0f)
         }
         
-        if (levelToPlay != null) {
-            isAdventureMode = true
-            currentLevelNumber = levelToPlay
-            val lvl = generateLevelData(levelToPlay)
-            activeLevel = lvl
-            
-            // Set dynamic sound manager states
-            soundManager.currentThemeId = lvl.theme.id
-            soundManager.isBossLevel = lvl.isBoss
-            soundManager.isBonusLevel = lvl.isBonus
-            
-            levelFruitsCollected = 0
-            levelTimeElapsedSeconds = 0
-            isLevelCompleted = false
-            isSlidingIce = false
-            windMoveCounter = 0
-            
-            // Set up breakable walls
-            currentBreakableWalls.clear()
-            currentBreakableWalls.addAll(lvl.breakableWalls)
-            
-            // Spawn crystal if breakable walls exist
-            if (lvl.breakableWalls.isNotEmpty()) {
-                crystalPoint = SnakePoint(Random.nextInt(2, 18), Random.nextInt(3, 23))
-            } else {
-                crystalPoint = null
-            }
-            
-            // Setup Boss
-            if (lvl.isBoss) {
-                bossPosition = SnakePoint(10, 5)
-                bossDirection = SnakeDirection.RIGHT
-                bossTickCounter = 0
-                activeTraps.clear()
-            }
-            
-            // Setup Bonus timer
-            if (lvl.isBonus) {
-                bonusTimeLeftSeconds = 30
-            }
+        isAdventureMode = true
+        currentLevelNumber = targetLvl
+        val lvl = generateLevelData(targetLvl)
+        activeLevel = lvl
+        
+        // Set dynamic sound manager states
+        soundManager.currentThemeId = lvl.theme.id
+        soundManager.isBossLevel = lvl.isBoss
+        soundManager.isBonusLevel = lvl.isBonus
+        
+        levelFruitsCollected = 0
+        levelTimeElapsedSeconds = 0
+        isLevelCompleted = false
+        isSlidingIce = false
+        windMoveCounter = 0
+        
+        // Set up breakable walls
+        currentBreakableWalls.clear()
+        currentBreakableWalls.addAll(lvl.breakableWalls)
+        
+        // Spawn crystal if breakable walls exist
+        if (lvl.breakableWalls.isNotEmpty()) {
+            crystalPoint = SnakePoint(Random.nextInt(2, 18), Random.nextInt(3, 23))
         } else {
-            isAdventureMode = false
-            activeLevel = null
-            soundManager.currentThemeId = "NEON_CITY"
-            soundManager.isBossLevel = false
-            soundManager.isBonusLevel = false
-            currentBreakableWalls.clear()
             crystalPoint = null
+        }
+        
+        // Setup Boss
+        if (lvl.isBoss) {
+            bossPosition = SnakePoint(10, 5)
+            bossDirection = SnakeDirection.RIGHT
+            bossTickCounter = 0
             activeTraps.clear()
+        }
+        
+        // Setup Bonus timer
+        if (lvl.isBonus) {
+            bonusTimeLeftSeconds = 30
         }
 
         snake = listOf(
@@ -1293,6 +1392,10 @@ fun SnakeClassicScreen(
         hasShield = false
         isDoubleCoinsActive = false
         bonusFood = null
+        hasUsedContinueThisGame = false
+        showSecondChanceText = false
+        isAdShieldActive = false
+        lastDeathSnapshot = null
     }
 
     // Natural eye blinking loop
@@ -1378,10 +1481,8 @@ fun SnakeClassicScreen(
                         
                         if (currentLevelNumber < 100) {
                             val nextLvl = currentLevelNumber + 1
-                            if (nextLvl > unlockedLevel) {
-                                unlockedLevel = nextLvl
-                            }
                             SnakeProgressionManager.saveUnlockedLevel(context, nextLvl)
+                            unlockedLevel = SnakeProgressionManager.loadUnlockedLevel(context)
                         }
                         viewModel.addCoins(coinsReward, "Bonus Level $currentLevelNumber Complete")
                         stats = SnakeProgressionManager.loadStats(context)
@@ -1609,6 +1710,19 @@ fun SnakeClassicScreen(
                 )
             }
 
+            // Temporary Ad Shield protection (3 seconds after Rewarded Ad continue)
+            if (isAdShieldActive) {
+                if (actualHitWall) {
+                    actualNextHead = SnakePoint(
+                        (actualNextHead.x + gridWidth) % gridWidth,
+                        (actualNextHead.y + gridHeight) % gridHeight
+                    )
+                }
+                actualHitWall = false
+                actualHitSelf = false
+                actualHitObstacle = false
+            }
+
             if (actualHitWall || actualHitSelf || actualHitObstacle) {
                 if (hasShield || shieldTimeLeft > 0) {
                     hasShield = false
@@ -1654,6 +1768,38 @@ fun SnakeClassicScreen(
             }
 
             if (actualHitWall || actualHitSelf || actualHitObstacle) {
+                // Save snapshot containing exact game state immediately before death animation
+                lastDeathSnapshot = SnakeGameStateSnapshot(
+                    snake = snake.toList(),
+                    previousSnake = previousSnake.toList(),
+                    direction = direction,
+                    previousDirection = previousDirection,
+                    food = food,
+                    score = score,
+                    levelFruitsCollected = levelFruitsCollected,
+                    fruitsCollectedThisGame = fruitsCollectedThisGame,
+                    currentLevelNumber = currentLevelNumber,
+                    isAdventureMode = isAdventureMode,
+                    activeLevel = activeLevel,
+                    breakableWalls = currentBreakableWalls.toList(),
+                    crystalPoint = crystalPoint,
+                    bossPosition = bossPosition,
+                    bossDirection = bossDirection,
+                    bossTickCounter = bossTickCounter,
+                    activeTraps = activeTraps.toList(),
+                    bonusTimeLeftSeconds = bonusTimeLeftSeconds,
+                    levelTimeElapsedSeconds = levelTimeElapsedSeconds,
+                    hasShield = hasShield,
+                    shieldTimeLeft = shieldTimeLeft,
+                    isDoubleCoinsActive = isDoubleCoinsActive,
+                    doubleCoinsTimeLeft = doubleCoinsTimeLeft,
+                    magnetTimeLeft = magnetTimeLeft,
+                    slowMotionTimeLeft = slowMotionTimeLeft,
+                    fruitFrenzyTimeLeft = fruitFrenzyTimeLeft,
+                    extraFruits = extraFruits.toList(),
+                    activePowerUpOnBoard = activePowerUpOnBoard
+                )
+
                 // PREMIUM DEATH SEQUENCE
                 isDeadAnimating = true
                 isDeadEyeClosed = true
@@ -2071,10 +2217,8 @@ fun SnakeClassicScreen(
                                 
                                 if (currentLevelNumber < 100) {
                                     val nextLvl = currentLevelNumber + 1
-                                    if (nextLvl > unlockedLevel) {
-                                        unlockedLevel = nextLvl
-                                    }
                                     SnakeProgressionManager.saveUnlockedLevel(context, nextLvl)
+                                    unlockedLevel = SnakeProgressionManager.loadUnlockedLevel(context)
                                 }
                                 viewModel.addCoins(coinsReward, "Level $currentLevelNumber Complete")
                                 stats = SnakeProgressionManager.loadStats(context)
@@ -2204,12 +2348,10 @@ fun SnakeClassicScreen(
             ) {
                 IconButton(
                     onClick = {
-                        soundManager.playButtonClick()
-                        if (currentScreenState == "GAMEPLAY") {
-                            isPaused = true
-                            currentScreenState = "LOBBY"
-                            soundManager.stopBgm()
+                        if (currentScreenState == "GAMEPLAY" || isGameOver) {
+                            exitGameToHome()
                         } else {
+                            soundManager.playButtonClick()
                             onBack()
                         }
                     },
@@ -2411,7 +2553,8 @@ fun SnakeClassicScreen(
                     Button(
                         onClick = {
                             soundManager.playButtonClick()
-                            resetGame()
+                            val targetLvl = SnakeProgressionManager.loadUnlockedLevel(context)
+                            resetGame(targetLvl)
                             currentScreenState = "GAMEPLAY"
                         },
                         modifier = Modifier
@@ -2489,9 +2632,7 @@ fun SnakeClassicScreen(
 
                     when (lobbyTabState) {
                         "LEVELS" -> {
-                            val currentUnlockedLvl = remember(currentScreenState, lobbyTabState) {
-                                SnakeProgressionManager.loadUnlockedLevel(context)
-                            }
+                            val activeUnlockedLvl = SnakeProgressionManager.loadUnlockedLevel(context)
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -2570,7 +2711,7 @@ fun SnakeClassicScreen(
                                                         for (col in 0..4) {
                                                             val localLvlIdx = row * 5 + col
                                                             val lvlNum = startLvl + localLvlIdx
-                                                            val isUnlocked = lvlNum <= maxOf(unlockedLevel, currentUnlockedLvl)
+                                                            val isUnlocked = lvlNum <= maxOf(unlockedLevel, activeUnlockedLvl)
                                                             val stars = SnakeProgressionManager.loadLevelStars(context, lvlNum)
                                                             val isBoss = lvlNum % 10 == 0
                                                             val isBonus = lvlNum % 10 == 5
@@ -4159,61 +4300,58 @@ fun SnakeClassicScreen(
                             }
                         }
                     }
+                    // Second Chance! Banner Overlay Animation
+                    if (showSecondChanceText) {
+                        Card(
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(2.dp, Color(0xFF00E5FF)),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF19122A).copy(alpha = 0.95f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(Color(0xFF7C4DFF).copy(alpha = 0.35f), Color(0xFF00E5FF).copy(alpha = 0.35f))
+                                        )
+                                    )
+                                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text("🛡️", fontSize = 28.sp)
+                                Column {
+                                    Text(
+                                        text = "⭐ SECOND CHANCE ⭐",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 18.sp,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Text(
+                                        text = "Temporary Shield Active for 3s",
+                                        color = Color(0xFF00E5FF),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            // Swipe instruction guide at bottom
-            Card(
+            // Bottom Fixed Banner Ad (AdMob)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.2.dp, Color(0xFF7C4DFF).copy(alpha = 0.35f)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF1B1628), Color(0xFF14111F))
-                            )
-                        )
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(
-                                color = Color(0xFF7C4DFF).copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "👆", fontSize = 22.sp)
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = "SWIPE TO MOVE",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            letterSpacing = 0.5.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Swipe up, down, left or right to control the snake",
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
+                com.playwin.ads.BannerManager.BannerAd()
             }
             }
         }
@@ -4435,23 +4573,46 @@ fun SnakeClassicScreen(
         val coinsEarned = (score / 10 * 5).coerceAtMost(100)
 
         AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = {
+                exitGameToHome()
+            },
             containerColor = Color(0xFF13111C),
             shape = RoundedCornerShape(16.dp),
             tonalElevation = 6.dp,
             title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = "🎮 GAME OVER",
-                        color = Color.Red,
+                        color = Color(0xFFFF1744),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.align(Alignment.Center)
                     )
+
+                    // Circular Close (X) Button matching PlayWin dark purple premium theme
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(32.dp)
+                            .background(Color(0xFF1E1B2C), CircleShape)
+                            .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f), CircleShape)
+                            .clip(CircleShape)
+                            .clickable {
+                                exitGameToHome()
+                            }
+                            .testTag("game_over_close_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Game Over",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             },
             text = {
@@ -4569,6 +4730,152 @@ fun SnakeClassicScreen(
                         }
                     }
 
+                    // Rewarded Ad Extra Life Button (Allowed only once per game)
+                    if (!hasUsedContinueThisGame) {
+                        Button(
+                            onClick = {
+                                val activity = context as? android.app.Activity
+                                if (activity != null && com.playwin.ads.RewardedManager.isAdReady(activity)) {
+                                    soundManager.stopBgm()
+                                    com.playwin.ads.RewardedManager.showAd(
+                                        activity = activity,
+                                        rewardType = com.playwin.ads.RewardType.QUIZ_LIFELINE,
+                                        callbacks = object : com.playwin.ads.RewardCallback {
+                                            override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                                // Reward earned
+                                            }
+
+                                            override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                                soundManager.startBgm()
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Rewarded ad is currently unavailable. Please try again.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+
+                                            override fun onAdFailedToShow(errorMessage: String) {
+                                                soundManager.startBgm()
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Rewarded ad is currently unavailable. Please try again.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+
+                                            override fun onAdClosed(userEarnedReward: Boolean) {
+                                                if (userEarnedReward) {
+                                                    // Restore game state from snapshot
+                                                    val snapshot = lastDeathSnapshot
+                                                    if (snapshot != null) {
+                                                        snake = snapshot.snake
+                                                        previousSnake = snapshot.previousSnake
+                                                        direction = snapshot.direction
+                                                        previousDirection = snapshot.previousDirection
+                                                        food = snapshot.food
+                                                        score = snapshot.score
+                                                        levelFruitsCollected = snapshot.levelFruitsCollected
+                                                        fruitsCollectedThisGame = snapshot.fruitsCollectedThisGame
+                                                        currentLevelNumber = snapshot.currentLevelNumber
+                                                        isAdventureMode = snapshot.isAdventureMode
+                                                        activeLevel = snapshot.activeLevel
+                                                        currentBreakableWalls.clear()
+                                                        currentBreakableWalls.addAll(snapshot.breakableWalls)
+                                                        crystalPoint = snapshot.crystalPoint
+                                                        bossPosition = snapshot.bossPosition
+                                                        bossDirection = snapshot.bossDirection
+                                                        bossTickCounter = snapshot.bossTickCounter
+                                                        activeTraps.clear()
+                                                        activeTraps.addAll(snapshot.activeTraps)
+                                                        bonusTimeLeftSeconds = snapshot.bonusTimeLeftSeconds
+                                                        levelTimeElapsedSeconds = snapshot.levelTimeElapsedSeconds
+
+                                                        isDoubleCoinsActive = snapshot.isDoubleCoinsActive
+                                                        doubleCoinsTimeLeft = snapshot.doubleCoinsTimeLeft
+                                                        magnetTimeLeft = snapshot.magnetTimeLeft
+                                                        slowMotionTimeLeft = snapshot.slowMotionTimeLeft
+                                                        fruitFrenzyTimeLeft = snapshot.fruitFrenzyTimeLeft
+                                                        extraFruits.clear()
+                                                        extraFruits.addAll(snapshot.extraFruits)
+                                                        activePowerUpOnBoard = snapshot.activePowerUpOnBoard
+                                                    }
+
+                                                    isDeadAnimating = false
+                                                    isDeadEyeClosed = false
+
+                                                    coroutineScope.launch {
+                                                        snakeDeathAlpha.snapTo(1f)
+                                                        snakeDeathShake.snapTo(0f)
+                                                        moveProgress.snapTo(1f)
+                                                    }
+
+                                                    hasShield = true
+                                                    shieldTimeLeft = 3
+                                                    isAdShieldActive = true
+
+                                                    hasUsedContinueThisGame = true
+                                                    isGameOver = false
+                                                    isPaused = false
+                                                    countdownState = -1
+
+                                                    soundManager.startBgm()
+
+                                                    coroutineScope.launch {
+                                                        showSecondChanceText = true
+                                                        delay(3000)
+                                                        showSecondChanceText = false
+                                                        isAdShieldActive = false
+                                                    }
+                                                } else {
+                                                    soundManager.startBgm()
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Watch full ad to continue. Try again!",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    com.playwin.ads.RewardedManager.preload(context)
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Rewarded ad is currently unavailable. Please try again.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .background(
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(Color(0xFF7C4DFF), Color(0xFF9D4EDD))
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .testTag("watch_ad_continue_button")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Text("🛡️ ", fontSize = 16.sp)
+                                Text(
+                                    text = "Watch Ad & Continue",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -4576,11 +4883,14 @@ fun SnakeClassicScreen(
                         Button(
                             onClick = {
                                 soundManager.playButtonClick()
+                                hapticManager.vibrateLight()
                                 if (isAdventureMode) {
                                     resetGame(currentLevelNumber)
                                 } else {
                                     resetGame()
                                 }
+                                isGameOver = false
+                                currentScreenState = "GAMEPLAY"
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C4DFF)),
                             shape = RoundedCornerShape(10.dp),
@@ -4591,12 +4901,7 @@ fun SnakeClassicScreen(
 
                         Button(
                             onClick = {
-                                soundManager.playButtonClick()
-                                if (isAdventureMode) {
-                                    currentScreenState = "LOBBY"
-                                } else {
-                                    onBack()
-                                }
+                                exitGameToHome()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1B2C)),
                             shape = RoundedCornerShape(10.dp),
