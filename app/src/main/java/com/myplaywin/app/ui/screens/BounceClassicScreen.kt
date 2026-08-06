@@ -507,82 +507,51 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
     }
 
     // Dedicated Exit Flag (Finish Portal) Placement logic
-    var safePortalX = level.width - 150f
-    var safePortalY = level.height - 150f
-    var portalPlacedSuccessfully = false
-
-    // 1. Gather all walkable static solid platforms, prioritized from rightmost (the natural end of the level) to left.
+    // 1. Identify the final solid exit platform.
     // A platform is solid and safe for exit if it is not a spike, not a spring, not moving, and not a falling platform.
-    val possibleExitPlats = finalWalkable.filter { plat ->
-        !plat.isSpike && plat.spikeDirection == null && !plat.isSpring && !plat.isMoving && !plat.isFallingPlatform && plat.width >= 120f
-    }.sortedByDescending { it.x + it.width }
-
-    for (plat in possibleExitPlats) {
-        // 2. Determine safe horizontal bounds on the platform, keeping at least 80f margin from either edge (about 3 player widths).
-        // This ensures the flag is never too close to the edge and there is enough standing space.
-        val minX = plat.x + 80f
-        val maxX = plat.x + plat.width - 80f
-        if (maxX >= minX) {
-            // Scan from right to left on the platform
-            var tx = maxX
-            while (tx >= minX) {
-                // Center the portal so it rests directly on top of the platform:
-                // Bottom of the portal (radius 32f) touches plat.y
-                val ty = (plat.y - 32f).coerceIn(minPlatformY, maxPlatformY)
-                
-                // 3. Verify there is enough free space around the flag
-                // We check that the portal area itself is clear from any hazards or obstacles.
-                var areaClear = true
-                
-                // Verify collisions for portal center
-                if (isCollidingAt(tx, ty, r = 24f)) {
-                    areaClear = false
-                }
-                
-                // Verify a safe standing spot for the player beside the flag (to the left of the flag, 45f away)
-                val standX = tx - 45f
-                val standY = plat.y - 14f // Player center height
-                if (areaClear && isCollidingAt(standX, standY, r = 14f)) {
-                    areaClear = false
-                }
-                
-                if (areaClear) {
-                    safePortalX = tx
-                    safePortalY = ty
-                    portalPlacedSuccessfully = true
-                    break
-                }
-                tx -= 15f
-            }
-        }
-        if (portalPlacedSuccessfully) break
+    val solidPlats = finalWalkable.filter { plat ->
+        !plat.isSpike && plat.spikeDirection == null && !plat.isSpring && !plat.isMoving && !plat.isFallingPlatform
     }
 
-    // Fallback if no perfect spot was found (to ensure level is always winnable and doesn't break):
-    if (!portalPlacedSuccessfully) {
-        val lastPlat = finalWalkable.lastOrNull() ?: BounceObstacle(level.width - 300f, 500f, 200f, 40f)
-        val sanitizedPortalX = (lastPlat.x + lastPlat.width / 2f).coerceIn(100f, level.width - 100f)
+    val exitPlatform = solidPlats.minByOrNull { Math.abs((it.x + it.width / 2f) - level.portalX) }
+        ?: solidPlats.maxByOrNull { it.x + it.width }
+        ?: finalWalkable.lastOrNull()
+        ?: BounceObstacle(level.width - 300f, 500f, 200f, 40f)
 
-        val platAtPortal = finalWalkable.filter {
-            sanitizedPortalX >= it.x - 10f && sanitizedPortalX <= it.x + it.width + 10f
-        }.minByOrNull { it.y } ?: lastPlat
+    // Calculate exit position from the final platform bounds:
+    // Centered visually on the platform.
+    val initialPortalX = exitPlatform.x + exitPlatform.width * 0.5f
+    // Position the flag on top of the platform (32f is the portal's visual radius, so it sits nicely on top of the platform top 'exitPlatform.y')
+    val initialPortalY = (exitPlatform.y - 32f).coerceIn(minPlatformY, maxPlatformY)
 
-        val (fallbackX, fallbackY) = findValidPlacement(
-            initX = sanitizedPortalX,
-            initY = platAtPortal.y - 80f,
-            walkablePlatforms = finalWalkable,
-            allPlatforms = sanitizedPlatforms,
-            doors = sanitizedDoors,
-            blocks = level.interactiveBlocks,
-            enemies = level.enemies,
-            minPlatformY = minPlatformY,
-            maxPlatformY = maxPlatformY,
-            levelWidth = level.width,
-            levelHeight = level.height,
-            isCheckpoint = false
-        )
-        safePortalX = fallbackX
-        safePortalY = fallbackY - 12f // Offset to sit nicely on top of the platform
+    var safePortalX = initialPortalX
+    var safePortalY = initialPortalY
+
+    // 2. Verify there is enough free space and standing space around the flag.
+    if (isCollidingAt(safePortalX, safePortalY, r = 24f)) {
+        // Find nearest valid position on the platform if colliding
+        var foundSafe = false
+        val leftBound = exitPlatform.x + 45f // Keep safe standing margin (at least 1 player width = 28f, 45f is plenty)
+        val rightBound = exitPlatform.x + exitPlatform.width - 45f
+        if (rightBound >= leftBound) {
+            val step = 15f
+            var offset = step
+            while (initialPortalX - offset >= leftBound || initialPortalX + offset <= rightBound) {
+                val testRightX = initialPortalX + offset
+                if (testRightX <= rightBound && !isCollidingAt(testRightX, initialPortalY, r = 24f) && !isCollidingAt(testRightX - 45f, exitPlatform.y - 14f, r = 14f)) {
+                    safePortalX = testRightX
+                    foundSafe = true
+                    break
+                }
+                val testLeftX = initialPortalX - offset
+                if (testLeftX >= leftBound && !isCollidingAt(testLeftX, initialPortalY, r = 24f) && !isCollidingAt(testLeftX - 45f, exitPlatform.y - 14f, r = 14f)) {
+                    safePortalX = testLeftX
+                    foundSafe = true
+                    break
+                }
+                offset += step
+            }
+        }
     }
 
     val sanitizedCollectibles = level.collectibles.map { col ->
@@ -747,6 +716,10 @@ object SmartProceduralLevelGenerator {
         val levelName = "Level $levelNum: $titleThemeName $titleChunk"
         val levelDesc = "Explore the treacherous terrains of $titleThemeName. Complete all challenges, find the secret chamber, and exit safely."
 
+        val exitPlatform = exitChunk.platforms.first()
+        val calculatedPortalX = exitPlatform.x + exitPlatform.width * 0.5f
+        val calculatedPortalY = exitPlatform.y - 32f
+
         val levelObj = BounceLevel(
             number = levelNum,
             name = levelName,
@@ -755,8 +728,8 @@ object SmartProceduralLevelGenerator {
             height = levelHeight,
             startX = 100f,
             startY = 390f,
-            portalX = currentX - 150f,
-            portalY = currentY - 80f,
+            portalX = calculatedPortalX,
+            portalY = calculatedPortalY,
             platforms = platforms,
             collectibles = collectibles,
             checkpoints = checkpoints,
