@@ -617,29 +617,6 @@ data class LevelChunk(
     val portalY: Float? = null
 )
 
-enum class LevelArchetype(val displayName: String) {
-    LONG_JUMP_CHALLENGE("Long Jump Challenge"),
-    VERTICAL_TOWER_CLIMB("Vertical Tower Climb"),
-    NARROW_CAVE("Narrow Cave"),
-    FLOATING_ISLANDS("Floating Islands"),
-    SPEED_RUN("Speed Run"),
-    PRECISION_PLATFORMING("Precision Platforming"),
-    MOVING_PLATFORM_LEVEL("Moving Platform Level"),
-    SPRING_BOUNCE_LEVEL("Spring Bounce Level"),
-    HAZARD_MAZE("Hazard Maze"),
-    SPIKE_CORRIDOR("Spike Corridor"),
-    SAWBLADE_FACTORY("Sawblade Factory"),
-    UNDERGROUND_TUNNEL("Underground Tunnel"),
-    SKY_ISLANDS("Sky Islands"),
-    LAVA_ESCAPE("Lava Escape"),
-    ICE_SLIPPERY_PLATFORMS("Ice Slippery Platforms"),
-    FOREST_BRIDGES("Forest Bridges"),
-    CASTLE_RUINS("Castle Ruins"),
-    CRYSTAL_CAVERNS("Crystal Caverns"),
-    UNDERWATER_STYLE("Underwater Style"),
-    MIXED_CHALLENGE("Mixed Challenge")
-}
-
 object SmartProceduralLevelGenerator {
 
     enum class LevelLength { SMALL, MEDIUM, LARGE }
@@ -657,13 +634,15 @@ object SmartProceduralLevelGenerator {
             val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
             val savedTheme = prefs.getString("infinite_level_theme_$levelNum", null)
             val savedDiff = prefs.getFloat("infinite_level_difficulty_$levelNum", -1f)
-            val savedArchetype = prefs.getString("infinite_level_archetype_$levelNum", null)
-            val savedSeed = prefs.getLong("infinite_level_seed_$levelNum", -1L)
-            if (savedTheme != null && savedDiff >= 0f && savedArchetype != null && savedSeed >= 0L) {
+            val savedChunks = prefs.getString("infinite_level_chunks_$levelNum", null)
+            if (savedTheme != null && savedDiff >= 0f && savedChunks != null) {
                 try {
                     val theme = ProceduralTheme.valueOf(savedTheme)
-                    val archetype = LevelArchetype.valueOf(savedArchetype)
-                    return buildLevelFromArchetype(levelNum, theme, savedDiff, archetype, savedSeed, context)
+                    val chunks = savedChunks.split(",").map {
+                        val parts = it.split(":")
+                        Pair(ChunkType.valueOf(parts[0]), parts[1].toInt())
+                    }
+                    return buildLevelFromConfig(levelNum, theme, savedDiff, chunks, context)
                 } catch (e: Exception) {
                     // Fallback to fresh generation
                 }
@@ -671,675 +650,25 @@ object SmartProceduralLevelGenerator {
         }
 
         var attempts = 0
-        val maxAttempts = 100
-        while (attempts < maxAttempts) {
-            val seed = (levelNum * 2000L + attempts * 133L + 7L)
-            val random = java.util.Random(seed)
-            
-            // Theme changes every 25 levels
-            val themeIndex = ((levelNum - 1) / 25) % ProceduralTheme.values().size
-            val theme = ProceduralTheme.values()[themeIndex]
-            
-            // Never generate two consecutive levels from the same archetype
-            val prevArchetype: LevelArchetype? = if (context != null) {
-                val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
-                prefs.getString("infinite_level_archetype_${levelNum - 1}", null)?.let {
-                    try { LevelArchetype.valueOf(it) } catch (e: Exception) { null }
-                }
-            } else {
-                // Deterministic fallback for consecutive checks
-                val prevRandom = java.util.Random((levelNum - 1) * 7331L)
-                val list = LevelArchetype.values()
-                list[prevRandom.nextInt(list.size)]
-            }
-            
-            val allowedArchetypes = LevelArchetype.values().filter { it != prevArchetype }
-            val archetype = allowedArchetypes[random.nextInt(allowedArchetypes.size)]
-            
-            val baseDifficulty = when {
-                levelNum <= 5 -> 0.05f + (levelNum - 1) * 0.03f
-                levelNum <= 15 -> 0.2f + (levelNum - 6) * 0.04f
-                else -> (0.6f + (levelNum - 16) * 0.015f).coerceAtMost(1.0f)
-            }
-            
-            val adaptiveSettings = if (context != null) {
-                com.myplaywin.app.data.AdaptiveDifficultyManager.getAdaptiveSettings(context, levelNum)
-            } else {
-                com.myplaywin.app.data.AdaptiveDifficultySettings(
-                    difficultyOffset = 0f,
-                    increaseSafePlatforms = false,
-                    reduceEnemyDensity = false,
-                    addBonusPaths = true,
-                    addRiskRewardShortcuts = true,
-                    hiddenCavesChance = 0.25f,
-                    secretStarRoutesChance = 0.25f,
-                    verticalExplorationChance = 0.3f,
-                    bonusCoinRoomChance = 0.2f
-                )
-            }
-            val difficulty = (baseDifficulty + adaptiveSettings.difficultyOffset).coerceIn(0.01f, 1.0f)
-            
-            val candidate = buildLevelFromArchetype(levelNum, theme, difficulty, archetype, seed, context)
-            if (verifyAndPlaytestLevel(candidate)) {
+        while (attempts < 100) {
+            val candidate = buildSmartCandidateLevel(levelNum, seed = (levelNum * 1337 + attempts).toLong(), context)
+            if (verifyAndPlaytestLevel(candidate.first)) {
                 if (context != null) {
                     val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+                    val chunkStr = candidate.second.joinToString(",") { "${it.first.name}:${it.second}" }
                     prefs.edit()
-                        .putString("infinite_level_theme_$levelNum", theme.name)
-                        .putFloat("infinite_level_difficulty_$levelNum", difficulty)
-                        .putString("infinite_level_archetype_$levelNum", archetype.name)
-                        .putLong("infinite_level_seed_$levelNum", seed)
+                        .putString("infinite_level_theme_$levelNum", candidate.third.name)
+                        .putFloat("infinite_level_difficulty_$levelNum", candidate.fourth)
+                        .putString("infinite_level_chunks_$levelNum", chunkStr)
                         .apply()
                 }
-                return candidate
+                return candidate.first
             }
             attempts++
         }
 
-        // Absolutely safe fallback
-        val fallbackSeed = levelNum * 2000L
-        val fallbackTheme = ProceduralTheme.values()[((levelNum - 1) / 25) % ProceduralTheme.values().size]
-        val fallbackArchetype = LevelArchetype.LONG_JUMP_CHALLENGE
-        return buildLevelFromArchetype(levelNum, fallbackTheme, 0.1f, fallbackArchetype, fallbackSeed, context)
-    }
-
-    private fun buildLevelFromArchetype(
-        levelNum: Int,
-        theme: ProceduralTheme,
-        difficulty: Float,
-        archetype: LevelArchetype,
-        seed: Long,
-        context: Context?
-    ): BounceLevel {
-        val random = java.util.Random(seed)
-        
-        // Determine level dimensions
-        val isVertical = archetype == LevelArchetype.VERTICAL_TOWER_CLIMB || archetype == LevelArchetype.SKY_ISLANDS
-        val levelHeight = if (isVertical) 1000f else 600f
-        
-        // Base length increases gradually with levelNum
-        val levelWidth = (2800f + (levelNum * 120f).coerceAtMost(2000f) + random.nextInt(400).toFloat()).coerceAtMost(6500f)
-        
-        val platforms = mutableListOf<BounceObstacle>()
-        val collectibles = mutableListOf<BounceCollectible>()
-        val checkpoints = mutableListOf<BounceCheckpoint>()
-        val enemies = mutableListOf<BounceEnemy>()
-        val keys = mutableListOf<BounceKey>()
-        val doors = mutableListOf<BounceDoor>()
-        val waterZones = mutableListOf<BounceWaterZone>()
-        val interactiveBlocks = mutableListOf<BounceInteractiveBlock>()
-        
-        // Spawn platform at player start
-        val startPlatY = if (isVertical) 850f else 440f
-        val startPlat = BounceObstacle(x = 0f, y = startPlatY, width = 320f, height = 150f)
-        platforms.add(startPlat)
-        
-        // Mini-boss variables
-        val isMiniBoss = levelNum % 10 == 0
-        
-        // Key/Door pairing trackers
-        var nextEntityId = 1000
-        
-        var currentX = 250f
-        var currentY = startPlatY
-        
-        // Number of checkpoints based on level length/difficulty
-        val totalCheckpointsToSpawn = when {
-            levelWidth < 3200f -> 1
-            levelWidth < 4500f -> 2
-            else -> 3
-        }
-        val checkpointInterval = (levelWidth - 800f) / (totalCheckpointsToSpawn + 1)
-        var spawnedCheckpoints = 0
-        
-        // Step-by-step generation loop
-        var stepCount = 0
-        while (currentX < levelWidth - 450f) {
-            stepCount++
-            
-            // Should we spawn a checkpoint?
-            val nextCheckpointX = 400f + (spawnedCheckpoints + 1) * checkpointInterval
-            if (spawnedCheckpoints < totalCheckpointsToSpawn && currentX >= nextCheckpointX) {
-                // Spawn a safe checkpoint platform
-                val cpY = currentY.coerceIn(150f, levelHeight - 150f)
-                val cpPlat = BounceObstacle(x = currentX, y = cpY, width = 180f, height = 40f)
-                platforms.add(cpPlat)
-                checkpoints.add(BounceCheckpoint(id = spawnedCheckpoints + 1, x = currentX + 90f, y = cpY - 45f))
-                
-                // Add a guaranteed coin above checkpoint
-                collectibles.add(BounceCollectible(x = currentX + 90f, y = cpY - 80f, isStar = false, isBonus = false))
-                
-                spawnedCheckpoints++
-                currentX += 220f
-                currentY = cpY
-                continue
-            }
-            
-            // Randomize according to archetype
-            when (archetype) {
-                LevelArchetype.LONG_JUMP_CHALLENGE -> {
-                    val gap = (165f + random.nextFloat() * 45f + (difficulty * 15f)).coerceIn(150f, 220f)
-                    val platWidth = (120f + random.nextInt(80) - (difficulty * 20f)).coerceAtLeast(80f)
-                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(250f, 480f)
-                    
-                    // Gap Hazard: Spikes at the bottom or moving saw
-                    if (random.nextBoolean() || isMiniBoss) {
-                        platforms.add(BounceObstacle(x = currentX + 20f, y = levelHeight - 40f, width = gap - 40f, height = 40f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    }
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    // Coins in a beautiful parabola over the gap
-                    val midX = currentX + gap / 2f
-                    val apexY = minOf(currentY, nextY) - 80f - (difficulty * 20f)
-                    collectibles.add(BounceCollectible(x = midX - 30f, y = apexY + 20f, isStar = false, isBonus = false))
-                    collectibles.add(BounceCollectible(x = midX, y = apexY, isStar = random.nextFloat() < 0.15f, isBonus = false))
-                    collectibles.add(BounceCollectible(x = midX + 30f, y = apexY + 20f, isStar = false, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.VERTICAL_TOWER_CLIMB -> {
-                    // Ascending tower blocks
-                    val isClimbingUp = random.nextBoolean() || currentY > levelHeight - 250f
-                    val nextY = if (isClimbingUp) {
-                        (currentY - 110f - random.nextInt(30)).coerceAtLeast(120f)
-                    } else {
-                        (currentY + 110f + random.nextInt(30)).coerceAtMost(levelHeight - 120f)
-                    }
-                    val platWidth = (100f + random.nextInt(60)).coerceAtLeast(80f)
-                    val gap = (100f + random.nextInt(60)).toFloat()
-                    
-                    val isSpringPlat = random.nextFloat() < 0.25f
-                    val nextPlat = BounceObstacle(
-                        x = currentX + gap,
-                        y = nextY,
-                        width = platWidth,
-                        height = 35f,
-                        isSpring = isSpringPlat,
-                        springForce = -680f
-                    )
-                    platforms.add(nextPlat)
-                    
-                    // Collectibles and enemies
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.15f, isBonus = false))
-                    if (random.nextFloat() < 0.2f && !isSpringPlat) {
-                        enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.WALKING, x = currentX + gap + 20f, y = nextY - 28f, moveRangeX = platWidth - 40f, moveSpeed = 50f))
-                    }
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.NARROW_CAVE -> {
-                    // Ceiling and floor boundaries
-                    platforms.add(BounceObstacle(x = currentX, y = 80f, width = 300f, height = 140f)) // Ceiling
-                    platforms.add(BounceObstacle(x = currentX, y = 480f, width = 300f, height = 120f)) // Floor
-                    
-                    val platWidth = 140f
-                    val gap = 120f
-                    val nextY = 350f + (random.nextFloat() * 40f - 20f)
-                    
-                    // Spikes on ceiling or floor
-                    if (random.nextBoolean()) {
-                        platforms.add(BounceObstacle(x = currentX + 50f, y = 220f, width = 60f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.DOWN))
-                    } else {
-                        platforms.add(BounceObstacle(x = currentX + 50f, y = 460f, width = 60f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    }
-                    
-                    platforms.add(BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f))
-                    
-                    // Breakable block obstacle inside cave
-                    if (random.nextFloat() < 0.4f) {
-                        interactiveBlocks.add(
-                            BounceInteractiveBlock(
-                                id = nextEntityId++,
-                                type = InteractiveType.BREAKABLE,
-                                x = currentX + gap + 40f,
-                                y = nextY - 40f,
-                                width = 40f,
-                                height = 40f
-                            )
-                        )
-                        collectibles.add(BounceCollectible(x = currentX + gap + 60f, y = nextY - 80f, isStar = false, isBonus = true))
-                    }
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + 20f, y = nextY - 35f, isStar = random.nextFloat() < 0.2f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.FLOATING_ISLANDS -> {
-                    val gap = 140f + random.nextInt(60)
-                    val platWidth = 110f + random.nextInt(60)
-                    val nextY = (currentY + (random.nextFloat() * 120f - 60f)).coerceIn(160f, 480f)
-                    
-                    val isMovingPlat = random.nextFloat() < 0.4f
-                    val nextPlat = BounceObstacle(
-                        x = currentX + gap,
-                        y = nextY,
-                        width = platWidth,
-                        height = 30f,
-                        isMoving = isMovingPlat,
-                        moveRangeX = if (isMovingPlat && random.nextBoolean()) 100f else 0f,
-                        moveRangeY = if (isMovingPlat && random.nextBoolean()) 80f else 0f,
-                        moveSpeed = 0.05f + (difficulty * 0.03f)
-                    )
-                    platforms.add(nextPlat)
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.25f, isBonus = false))
-                    if (random.nextFloat() < 0.25f) {
-                        enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.FLYING, x = currentX + gap / 2f, y = nextY - 100f, moveRangeX = 80f, moveRangeY = 40f, moveSpeed = 65f))
-                    }
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.SPEED_RUN -> {
-                    val gap = 60f + random.nextInt(50)
-                    val platWidth = 260f + random.nextInt(120)
-                    val nextY = (currentY + (random.nextFloat() * 40f - 20f)).coerceIn(320f, 460f)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    // Springs on platform to keep running speed
-                    if (random.nextFloat() < 0.35f) {
-                        platforms.add(BounceObstacle(x = currentX + gap + platWidth - 45f, y = nextY - 20f, width = 40f, height = 20f, isSpring = true, springForce = -500f))
-                    }
-                    
-                    // Long row of coins
-                    for (c in 0 until (platWidth / 60f).toInt()) {
-                        collectibles.add(BounceCollectible(x = currentX + gap + 30f + c * 50f, y = nextY - 45f, isStar = false, isBonus = false))
-                    }
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.PRECISION_PLATFORMING -> {
-                    val gap = 110f + random.nextInt(50)
-                    val platWidth = 50f + random.nextInt(20) // Tiny pegs
-                    val nextY = (currentY + (random.nextFloat() * 110f - 55f)).coerceIn(180f, 480f)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f)
-                    platforms.add(nextPlat)
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.3f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.MOVING_PLATFORM_LEVEL -> {
-                    val gap = 240f + random.nextInt(120)
-                    val platWidth = 100f + random.nextInt(60)
-                    val nextY = (currentY + (random.nextFloat() * 100f - 50f)).coerceIn(220f, 460f)
-                    
-                    // Static safety landmass after the moving platform
-                    val midPlat = BounceObstacle(
-                        x = currentX + gap / 3f,
-                        y = (currentY + nextY) / 2f,
-                        width = 80f,
-                        height = 25f,
-                        isMoving = true,
-                        moveRangeX = gap / 3f,
-                        moveSpeed = 0.07f + (difficulty * 0.03f)
-                    )
-                    platforms.add(midPlat)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap / 3f + 40f, y = ((currentY + nextY) / 2f) - 50f, isStar = random.nextFloat() < 0.2f, isBonus = true))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.SPRING_BOUNCE_LEVEL -> {
-                    val gap = 150f + random.nextInt(60)
-                    val platWidth = 60f + random.nextInt(30)
-                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(240f, 480f)
-                    
-                    // Large spike pit below
-                    platforms.add(BounceObstacle(x = currentX + 10f, y = levelHeight - 40f, width = gap + platWidth - 20f, height = 40f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    
-                    val nextPlat = BounceObstacle(
-                        x = currentX + gap,
-                        y = nextY,
-                        width = platWidth,
-                        height = 30f,
-                        isSpring = true,
-                        springForce = -700f
-                    )
-                    platforms.add(nextPlat)
-                    
-                    // Collectible at peak of spring bounce
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 160f, isStar = random.nextFloat() < 0.35f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.HAZARD_MAZE -> {
-                    // Split paths
-                    val upperY = 220f
-                    val lowerY = 440f
-                    
-                    platforms.add(BounceObstacle(x = currentX, y = upperY, width = 250f, height = 30f))
-                    platforms.add(BounceObstacle(x = currentX, y = lowerY, width = 250f, height = 30f))
-                    
-                    // Put a door on the upper path and a key on the lower path
-                    val doorId = nextEntityId++
-                    doors.add(BounceDoor(id = doorId, x = currentX + 180f, y = upperY - 80f, keyIdNeeded = doorId))
-                    keys.add(BounceKey(id = doorId, x = currentX + 60f, y = lowerY - 40f))
-                    
-                    // Enemies patrolling lower path
-                    enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.WALKING, x = currentX + 100f, y = lowerY - 28f, moveRangeX = 100f, moveSpeed = 50f))
-                    
-                    collectibles.add(BounceCollectible(x = currentX + 220f, y = upperY - 45f, isStar = true, isBonus = false))
-                    
-                    currentX += 320f
-                    currentY = upperY
-                }
-                
-                LevelArchetype.SPIKE_CORRIDOR -> {
-                    // Low ceiling corridor
-                    platforms.add(BounceObstacle(x = currentX, y = 140f, width = 300f, height = 100f)) // Ceiling
-                    platforms.add(BounceObstacle(x = currentX, y = 460f, width = 300f, height = 140f)) // Floor
-                    
-                    // Ceiling spikes pointing down
-                    platforms.add(BounceObstacle(x = currentX + 80f, y = 240f, width = 120f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.DOWN))
-                    // Floor spikes pointing up
-                    platforms.add(BounceObstacle(x = currentX + 120f, y = 440f, width = 100f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    
-                    val nextPlat = BounceObstacle(x = currentX + 260f, y = 350f, width = 120f, height = 30f)
-                    platforms.add(nextPlat)
-                    
-                    collectibles.add(BounceCollectible(x = currentX + 60f, y = 320f, isStar = false, isBonus = false))
-                    collectibles.add(BounceCollectible(x = currentX + 220f, y = 320f, isStar = false, isBonus = false))
-                    
-                    currentX += 380f
-                    currentY = 350f
-                }
-                
-                LevelArchetype.SAWBLADE_FACTORY -> {
-                    val gap = 120f + random.nextInt(60)
-                    val platWidth = 130f + random.nextInt(80)
-                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(240f, 480f)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    // Sawblade rotating hazard in gap or above platform
-                    enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.ROTATING_HAZARD, x = currentX + gap / 2f + 10f, y = (currentY + nextY) / 2f - 20f, moveSpeed = 140f + (difficulty * 50f)))
-                    
-                    if (random.nextFloat() < 0.3f) {
-                        platforms.add(BounceObstacle(x = currentX + gap + 30f, y = nextY, width = 60f, height = 30f, isFallingPlatform = true))
-                    }
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.2f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.UNDERGROUND_TUNNEL -> {
-                    // Underground cave feel with water zones
-                    val gap = 100f + random.nextInt(50)
-                    val platWidth = 140f + random.nextInt(80)
-                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(300f, 480f)
-                    
-                    // Place a water zone in the gap
-                    waterZones.add(BounceWaterZone(x = currentX + 20f, y = nextY + 20f, width = gap - 40f, height = levelHeight - (nextY + 20f)))
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    // Hidden secret chamber
-                    if (random.nextFloat() < 0.4f) {
-                        interactiveBlocks.add(
-                            BounceInteractiveBlock(
-                                id = nextEntityId++,
-                                type = InteractiveType.BREAKABLE,
-                                x = currentX + gap + 50f,
-                                y = nextY - 40f,
-                                width = 40f,
-                                height = 40f
-                            )
-                        )
-                        collectibles.add(BounceCollectible(x = currentX + gap + 60f, y = nextY - 35f, isStar = true, isBonus = true))
-                    }
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + 10f, y = nextY - 35f, isStar = false, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.SKY_ISLANDS -> {
-                    val gap = 160f + random.nextInt(80)
-                    val platWidth = 100f + random.nextInt(80)
-                    val nextY = (currentY - 100f - random.nextInt(60)).coerceAtLeast(140f)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f)
-                    platforms.add(nextPlat)
-                    
-                    // Sky launch springboard
-                    platforms.add(BounceObstacle(x = currentX + 20f, y = currentY - 20f, width = 45f, height = 20f, isSpring = true, springForce = -740f))
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = true, isBonus = false))
-                    enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.FLYING, x = currentX + gap / 2f, y = nextY + 50f, moveRangeX = 60f, moveRangeY = 60f, moveSpeed = 70f))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.LAVA_ESCAPE -> {
-                    // Large boiling lava lake at bottom
-                    platforms.add(BounceObstacle(x = currentX, y = levelHeight - 40f, width = 350f, height = 40f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    
-                    val gap = 110f + random.nextInt(50)
-                    val platWidth = 100f + random.nextInt(50)
-                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(240f, 380f)
-                    
-                    // High frequency of falling platforms
-                    val nextPlat = BounceObstacle(
-                        x = currentX + gap,
-                        y = nextY,
-                        width = platWidth,
-                        height = 30f,
-                        isFallingPlatform = random.nextFloat() < 0.6f
-                    )
-                    platforms.add(nextPlat)
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.2f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.ICE_SLIPPERY_PLATFORMS -> {
-                    val gap = 120f + random.nextInt(60)
-                    val platWidth = 120f + random.nextInt(80)
-                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(250f, 480f)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f)
-                    platforms.add(nextPlat)
-                    
-                    // Falling icicles (small falling platforms above the track)
-                    if (random.nextFloat() < 0.4f) {
-                        platforms.add(BounceObstacle(x = currentX + gap + platWidth / 2f - 20f, y = nextY - 140f, width = 40f, height = 20f, isFallingPlatform = true))
-                    }
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + 30f, y = nextY - 45f, isStar = false, isBonus = false))
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth - 40f, y = nextY - 45f, isStar = false, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.FOREST_BRIDGES -> {
-                    // Rope bridge sequence: 3 small consecutive platforms close together
-                    val bridgeY = (currentY + (random.nextFloat() * 40f - 20f)).coerceIn(280f, 460f)
-                    
-                    platforms.add(BounceObstacle(x = currentX + 80f, y = bridgeY, width = 70f, height = 15f))
-                    platforms.add(BounceObstacle(x = currentX + 170f, y = bridgeY + 10f, width = 70f, height = 15f))
-                    platforms.add(BounceObstacle(x = currentX + 260f, y = bridgeY, width = 70f, height = 15f))
-                    
-                    collectibles.add(BounceCollectible(x = currentX + 170f, y = bridgeY - 30f, isStar = random.nextFloat() < 0.25f, isBonus = false))
-                    
-                    currentX += 380f
-                    currentY = bridgeY
-                }
-                
-                LevelArchetype.CASTLE_RUINS -> {
-                    // Strong brick architecture and gated arches
-                    val gap = 110f + random.nextInt(50)
-                    val platWidth = 140f + random.nextInt(80)
-                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(220f, 480f)
-                    
-                    // High stone pillars
-                    platforms.add(BounceObstacle(x = currentX + gap - 30f, y = nextY, width = 30f, height = levelHeight - nextY))
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    // Dungeon Door needing Key
-                    if (random.nextFloat() < 0.3f) {
-                        val gateId = nextEntityId++
-                        doors.add(BounceDoor(id = gateId, x = currentX + gap + platWidth - 40f, y = nextY - 80f, keyIdNeeded = gateId))
-                        keys.add(BounceKey(id = gateId, x = currentX + 20f, y = currentY - 40f))
-                    }
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + 40f, y = nextY - 45f, isStar = false, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.CRYSTAL_CAVERNS -> {
-                    val gap = 110f + random.nextInt(60)
-                    val platWidth = 130f + random.nextInt(80)
-                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(250f, 480f)
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 35f)
-                    platforms.add(nextPlat)
-                    
-                    // Crystal cluster spikes pointing up
-                    platforms.add(BounceObstacle(x = currentX + gap + 40f, y = nextY - 20f, width = 30f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + 80f, y = nextY - 55f, isStar = true, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.UNDERWATER_STYLE -> {
-                    val gap = 100f + random.nextInt(60)
-                    val platWidth = 140f + random.nextInt(80)
-                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(280f, 480f)
-                    
-                    // Large water zones covering the platforming
-                    waterZones.add(BounceWaterZone(x = currentX, y = 200f, width = gap + platWidth, height = levelHeight - 200f))
-                    
-                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
-                    platforms.add(nextPlat)
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.2f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-                
-                LevelArchetype.MIXED_CHALLENGE -> {
-                    // Mix random components!
-                    val picker = random.nextInt(6)
-                    val gap = (100f + random.nextInt(100)).toFloat()
-                    val platWidth = (100f + random.nextInt(120)).toFloat()
-                    val nextY = (currentY + (random.nextFloat() * 100f - 50f)).coerceIn(200f, 480f)
-                    
-                    val nextPlat = BounceObstacle(
-                        x = currentX + gap,
-                        y = nextY,
-                        width = platWidth,
-                        height = 35f,
-                        isMoving = picker == 1,
-                        isSpring = picker == 2,
-                        isFallingPlatform = picker == 3
-                    )
-                    platforms.add(nextPlat)
-                    
-                    if (picker == 4) {
-                        enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.WALKING, x = currentX + gap + 20f, y = nextY - 28f, moveRangeX = platWidth - 40f, moveSpeed = 60f))
-                    } else if (picker == 5) {
-                        platforms.add(BounceObstacle(x = currentX + gap + 20f, y = nextY - 20f, width = 30f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
-                    }
-                    
-                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.3f, isBonus = false))
-                    
-                    currentX += gap + platWidth
-                    currentY = nextY
-                }
-            }
-        }
-        
-        // Spawn the exit platform & portal at the end
-        val exitPlatY = currentY.coerceIn(200f, levelHeight - 160f)
-        val exitPlat = BounceObstacle(x = currentX, y = exitPlatY, width = 360f, height = 150f, isExitPlatform = true)
-        platforms.add(exitPlat)
-        
-        // Place the Exit Portal precisely centered on top of the exit platform
-        val portalX = exitPlat.x + exitPlat.width / 2f
-        val portalY = exitPlat.y - 48f // Safe clearance
-        
-        // Set standard and bonus coins
-        val baseReward = if (isMiniBoss) 150 + levelNum * 50 else 50 + levelNum * 25
-        
-        // Ensure at least 1 star and some collectibles exist
-        if (collectibles.none { it.isStar }) {
-            // Find a platform to place a star
-            val listPlat = platforms.filter { !it.isSpike && it.spikeDirection == null && !it.isExitPlatform && it.x > 300f }
-            val midPlat = if (listPlat.isNotEmpty()) listPlat[random.nextInt(listPlat.size)] else null
-            if (midPlat != null) {
-                collectibles.add(BounceCollectible(x = midPlat.x + midPlat.width / 2f, y = midPlat.y - 45f, isStar = true, isBonus = false))
-            } else {
-                collectibles.add(BounceCollectible(x = 500f, y = startPlatY - 45f, isStar = true, isBonus = false))
-            }
-        }
-        
-        val displayArchetype = archetype.displayName
-        val levelName = if (isMiniBoss) {
-            "Level $levelNum: [MINI-BOSS] $displayArchetype"
-        } else {
-            "Level $levelNum: $displayArchetype"
-        }
-        val levelDesc = "Conquer the procedurally crafted $displayArchetype layout of the ${theme.themeName} realm. Collect all stars and exit safely."
-        
-        return BounceLevel(
-            number = levelNum,
-            name = levelName,
-            description = levelDesc,
-            width = currentX + 360f,
-            height = levelHeight,
-            startX = 100f,
-            startY = startPlatY - 50f,
-            portalX = portalX,
-            portalY = portalY,
-            platforms = platforms,
-            collectibles = collectibles,
-            checkpoints = checkpoints,
-            enemies = enemies,
-            keys = keys,
-            doors = doors,
-            waterZones = waterZones,
-            interactiveBlocks = interactiveBlocks,
-            baseRewardCoins = baseReward
-        )
+        val fallbackCandidate = buildSmartCandidateLevel(levelNum, seed = levelNum.toLong(), context)
+        return fallbackCandidate.first
     }
 
     private fun buildSmartCandidateLevel(
@@ -7705,7 +7034,6 @@ fun ActiveBounceQuestGame(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val isPending = rewardState == "Pending"
-                            val txId = "bounce_lvl_${level.number}_reward_v2"
 
                             // Left Button: Watch Ad
                             Box(
@@ -7721,9 +7049,9 @@ fun ActiveBounceQuestGame(
                                             )
                                         )
                                     )
-                                    .graphicsLayer { alpha = if (isPending && !isProcessingReward) 1f else 0.4f }
+                                    .graphicsLayer { alpha = if (isPending) 1f else 0.4f }
                                     .clickable(enabled = isPending && !isProcessingReward) {
-                                        if (rewardState == "Pending" && !isProcessingReward) {
+                                        if (isPending && !isProcessingReward) {
                                             isProcessingReward = true
                                             val activity = context as? Activity
                                             if (activity != null) {
@@ -7733,19 +7061,16 @@ fun ActiveBounceQuestGame(
                                                         rewardType = RewardType.BONUS_COINS,
                                                         callbacks = object : RewardCallback {
                                                             override fun onRewardEarned(rewardType: RewardType, amount: Int, token: String) {
-                                                                if (rewardState == "Pending") {
-                                                                    rewardState = "2X Claimed"
-                                                                    prefs.edit().putString("bounce_reward_state_level_${level.number}", "2X Claimed").commit()
+                                                                val txId = "bounce_lvl_${level.number}_ad_${System.currentTimeMillis()}"
+                                                                rewardState = "2X Claimed"
+                                                                prefs.edit().putString("bounce_reward_state_level_${level.number}", "2X Claimed").commit()
 
-                                                                    viewModel.addCoins(coinsReward * 2, "Bounce Quest Lvl ${level.number} (2x Ad Bonus)", txId) { success ->
-                                                                        triggerCoinFlyAnimation {
-                                                                            android.widget.Toast.makeText(context, "Claimed 2X Bonus (+${coinsReward} extra coins)!", android.widget.Toast.LENGTH_SHORT).show()
-                                                                            triggerNextLevelTransition(adWatched = true)
-                                                                            isProcessingReward = false
-                                                                        }
+                                                                viewModel.addCoins(coinsReward * 2, "Bounce Quest Lvl ${level.number} (2x Ad Bonus)", txId) { success ->
+                                                                    triggerCoinFlyAnimation {
+                                                                        android.widget.Toast.makeText(context, "Claimed 2X Bonus (+${coinsReward} extra coins)!", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        triggerNextLevelTransition(adWatched = true)
+                                                                        isProcessingReward = false
                                                                     }
-                                                                } else {
-                                                                    isProcessingReward = false
                                                                 }
                                                             }
 
@@ -7807,10 +7132,11 @@ fun ActiveBounceQuestGame(
                                             )
                                         )
                                     )
-                                    .graphicsLayer { alpha = if (isPending && !isProcessingReward) 1f else 0.4f }
+                                    .graphicsLayer { alpha = if (isPending) 1f else 0.4f }
                                     .clickable(enabled = isPending && !isProcessingReward) {
-                                        if (rewardState == "Pending" && !isProcessingReward) {
+                                        if (isPending && !isProcessingReward) {
                                             isProcessingReward = true
+                                            val txId = "bounce_lvl_${level.number}_claim_${System.currentTimeMillis()}"
                                             rewardState = "Claimed"
                                             prefs.edit().putString("bounce_reward_state_level_${level.number}", "Claimed").commit()
 
@@ -7845,8 +7171,8 @@ fun ActiveBounceQuestGame(
                             onClick = {
                                 if (!isProcessingReward) {
                                     isProcessingReward = true
-                                    val txId = "bounce_lvl_${level.number}_reward_v2"
                                     if (rewardState == "Pending") {
+                                        val txId = "bounce_lvl_${level.number}_claim_${System.currentTimeMillis()}"
                                         rewardState = "Claimed"
                                         prefs.edit().putString("bounce_reward_state_level_${level.number}", "Claimed").commit()
                                         viewModel.addCoins(coinsReward, "Bounce Quest Lvl ${level.number}", txId) { success ->
@@ -7882,8 +7208,8 @@ fun ActiveBounceQuestGame(
                                 .clickable(enabled = !isProcessingReward) {
                                     if (!isProcessingReward) {
                                         isProcessingReward = true
-                                        val txId = "bounce_lvl_${level.number}_reward_v2"
                                         if (rewardState == "Pending") {
+                                            val txId = "bounce_lvl_${level.number}_claim_${System.currentTimeMillis()}"
                                             rewardState = "Claimed"
                                             prefs.edit().putString("bounce_reward_state_level_${level.number}", "Claimed").commit()
                                             viewModel.addCoins(coinsReward, "Bounce Quest Lvl ${level.number}", txId) { success ->
