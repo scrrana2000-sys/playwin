@@ -1002,7 +1002,7 @@ fun LoginScreen(viewModel: PlayWinViewModel) {
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text(
-                                        text = "FIREBASE AUTH SYSTEM LOGS",
+                                        text = "REGISTRATION STATUS",
                                         color = Color(0xFF00E5FF),
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 10.sp,

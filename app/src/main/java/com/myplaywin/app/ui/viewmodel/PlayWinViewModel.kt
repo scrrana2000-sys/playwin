@@ -1087,17 +1087,40 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    fun addCoins(amount: Int, source: String) {
+    fun addCoins(amount: Int, source: String, rewardTxId: String? = null, onComplete: (Boolean) -> Unit = {}) {
         val currentWallet = walletState.value
         val userId = currentWallet.userId
-        if (userId.isEmpty()) return
+        if (userId.isEmpty()) {
+            onComplete(false)
+            return
+        }
         
         executeRewardTransaction(
             userId = userId,
             amount = amount,
             type = "reward",
             source = source,
-            onComplete = { _, _, _, _ -> }
+            extraCheck = { mutableData ->
+                if (rewardTxId != null) {
+                    val claimedPath = "claimed_rewards/$rewardTxId"
+                    if (mutableData.child(claimedPath).value != null) {
+                        "Reward already claimed"
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            },
+            extraUpdate = { mutableData ->
+                if (rewardTxId != null) {
+                    val claimedPath = "claimed_rewards/$rewardTxId"
+                    mutableData.child(claimedPath).value = true
+                }
+            },
+            onComplete = { success, _, _, _ ->
+                onComplete(success)
+            }
         )
     }
 

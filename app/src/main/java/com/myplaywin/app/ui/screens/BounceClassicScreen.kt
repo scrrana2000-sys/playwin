@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myplaywin.app.ui.viewmodel.PlayWinViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import kotlin.math.*
 import java.util.*
@@ -161,8 +162,11 @@ data class BounceObstacle(
     val fallDelay: Float = 0.35f,
     val respawnDelay: Float = 3.0f,
     val isSpring: Boolean = false,
-    val springForce: Float = -650f
-)
+    val springForce: Float = -650f,
+    val isExitPlatform: Boolean = false
+) {
+    val topCenter: androidx.compose.ui.geometry.Offset get() = androidx.compose.ui.geometry.Offset(x + width / 2f, y)
+}
 
 data class BounceCheckpoint(
     val id: Int,
@@ -524,52 +528,30 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
     }
 
     // Dedicated Exit Flag (Finish Portal) Placement logic
-    // 1. Identify the final solid exit platform.
-    // A platform is solid and safe for exit if it is not a spike, not a spring, not moving, and not a falling platform.
-    val solidPlats = finalWalkable.filter { plat ->
-        !plat.isSpike && plat.spikeDirection == null && !plat.isSpring && !plat.isMoving && !plat.isFallingPlatform
-    }
-
-    val exitPlatform = solidPlats.minByOrNull { Math.abs((it.x + it.width / 2f) - level.portalX) }
-        ?: solidPlats.maxByOrNull { it.x + it.width }
-        ?: finalWalkable.lastOrNull()
-        ?: BounceObstacle(level.width - 300f, 500f, 200f, 40f)
-
-    // Calculate exit position from the final platform bounds:
-    // Centered visually on the platform.
-    val initialPortalX = exitPlatform.x + exitPlatform.width * 0.5f
-    // Position the flag on top of the platform (32f is the portal's visual radius, so it sits nicely on top of the platform top 'exitPlatform.y')
-    val initialPortalY = (exitPlatform.y - 32f).safeCoerceIn(minPlatformY, maxPlatformY)
-
-    var safePortalX = initialPortalX
-    var safePortalY = initialPortalY
-
-    // 2. Verify there is enough free space and standing space around the flag.
-    if (isCollidingAt(safePortalX, safePortalY, r = 24f)) {
-        // Find nearest valid position on the platform if colliding
-        var foundSafe = false
-        val leftBound = exitPlatform.x + 45f // Keep safe standing margin (at least 1 player width = 28f, 45f is plenty)
-        val rightBound = exitPlatform.x + exitPlatform.width - 45f
-        if (rightBound >= leftBound) {
-            val step = 15f
-            var offset = step
-            while (initialPortalX - offset >= leftBound || initialPortalX + offset <= rightBound) {
-                val testRightX = initialPortalX + offset
-                if (testRightX <= rightBound && !isCollidingAt(testRightX, initialPortalY, r = 24f) && !isCollidingAt(testRightX - 45f, exitPlatform.y - 14f, r = 14f)) {
-                    safePortalX = testRightX
-                    foundSafe = true
-                    break
-                }
-                val testLeftX = initialPortalX - offset
-                if (testLeftX >= leftBound && !isCollidingAt(testLeftX, initialPortalY, r = 24f) && !isCollidingAt(testLeftX - 45f, exitPlatform.y - 14f, r = 14f)) {
-                    safePortalX = testLeftX
-                    foundSafe = true
-                    break
-                }
-                offset += step
-            }
+    // 1. Identify/mark the final solid exit platform.
+    var exitPlatform = sanitizedPlatforms.firstOrNull { it.isExitPlatform }
+    if (exitPlatform == null) {
+        val solidPlats = sanitizedPlatforms.filter { plat ->
+            !plat.isSpike && plat.spikeDirection == null && !plat.isSpring && !plat.isMoving && !plat.isFallingPlatform
         }
+        val candidate = solidPlats.maxByOrNull { it.x + it.width }
+            ?: sanitizedPlatforms.filter { !it.isSpike && it.spikeDirection == null }.maxByOrNull { it.x + it.width }
+            ?: sanitizedPlatforms.lastOrNull()
+            ?: BounceObstacle(level.width - 300f, 500f, 200f, 40f)
+
+        val idx = sanitizedPlatforms.indexOf(candidate)
+        val marked = candidate.copy(isExitPlatform = true)
+        if (idx != -1) {
+            sanitizedPlatforms[idx] = marked
+        } else {
+            sanitizedPlatforms.add(marked)
+        }
+        exitPlatform = marked
     }
+
+    // 2. Position the exit portal exactly on top of the platform using exitPlatform.topCenter
+    val safePortalX = exitPlatform.topCenter.x
+    val safePortalY = exitPlatform.topCenter.y
 
     val sanitizedCollectibles = level.collectibles.map { col ->
         val (safeX, safeY) = findValidPlacement(
@@ -635,6 +617,29 @@ data class LevelChunk(
     val portalY: Float? = null
 )
 
+enum class LevelArchetype(val displayName: String) {
+    LONG_JUMP_CHALLENGE("Long Jump Challenge"),
+    VERTICAL_TOWER_CLIMB("Vertical Tower Climb"),
+    NARROW_CAVE("Narrow Cave"),
+    FLOATING_ISLANDS("Floating Islands"),
+    SPEED_RUN("Speed Run"),
+    PRECISION_PLATFORMING("Precision Platforming"),
+    MOVING_PLATFORM_LEVEL("Moving Platform Level"),
+    SPRING_BOUNCE_LEVEL("Spring Bounce Level"),
+    HAZARD_MAZE("Hazard Maze"),
+    SPIKE_CORRIDOR("Spike Corridor"),
+    SAWBLADE_FACTORY("Sawblade Factory"),
+    UNDERGROUND_TUNNEL("Underground Tunnel"),
+    SKY_ISLANDS("Sky Islands"),
+    LAVA_ESCAPE("Lava Escape"),
+    ICE_SLIPPERY_PLATFORMS("Ice Slippery Platforms"),
+    FOREST_BRIDGES("Forest Bridges"),
+    CASTLE_RUINS("Castle Ruins"),
+    CRYSTAL_CAVERNS("Crystal Caverns"),
+    UNDERWATER_STYLE("Underwater Style"),
+    MIXED_CHALLENGE("Mixed Challenge")
+}
+
 object SmartProceduralLevelGenerator {
 
     enum class LevelLength { SMALL, MEDIUM, LARGE }
@@ -652,15 +657,13 @@ object SmartProceduralLevelGenerator {
             val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
             val savedTheme = prefs.getString("infinite_level_theme_$levelNum", null)
             val savedDiff = prefs.getFloat("infinite_level_difficulty_$levelNum", -1f)
-            val savedChunks = prefs.getString("infinite_level_chunks_$levelNum", null)
-            if (savedTheme != null && savedDiff >= 0f && savedChunks != null) {
+            val savedArchetype = prefs.getString("infinite_level_archetype_$levelNum", null)
+            val savedSeed = prefs.getLong("infinite_level_seed_$levelNum", -1L)
+            if (savedTheme != null && savedDiff >= 0f && savedArchetype != null && savedSeed >= 0L) {
                 try {
                     val theme = ProceduralTheme.valueOf(savedTheme)
-                    val chunks = savedChunks.split(",").map {
-                        val parts = it.split(":")
-                        Pair(ChunkType.valueOf(parts[0]), parts[1].toInt())
-                    }
-                    return buildLevelFromConfig(levelNum, theme, savedDiff, chunks, context)
+                    val archetype = LevelArchetype.valueOf(savedArchetype)
+                    return buildLevelFromArchetype(levelNum, theme, savedDiff, archetype, savedSeed, context)
                 } catch (e: Exception) {
                     // Fallback to fresh generation
                 }
@@ -668,25 +671,675 @@ object SmartProceduralLevelGenerator {
         }
 
         var attempts = 0
-        while (attempts < 100) {
-            val candidate = buildSmartCandidateLevel(levelNum, seed = (levelNum * 1337 + attempts).toLong(), context)
-            if (verifyAndPlaytestLevel(candidate.first)) {
+        val maxAttempts = 100
+        while (attempts < maxAttempts) {
+            val seed = (levelNum * 2000L + attempts * 133L + 7L)
+            val random = java.util.Random(seed)
+            
+            // Theme changes every 25 levels
+            val themeIndex = ((levelNum - 1) / 25) % ProceduralTheme.values().size
+            val theme = ProceduralTheme.values()[themeIndex]
+            
+            // Never generate two consecutive levels from the same archetype
+            val prevArchetype: LevelArchetype? = if (context != null) {
+                val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+                prefs.getString("infinite_level_archetype_${levelNum - 1}", null)?.let {
+                    try { LevelArchetype.valueOf(it) } catch (e: Exception) { null }
+                }
+            } else {
+                // Deterministic fallback for consecutive checks
+                val prevRandom = java.util.Random((levelNum - 1) * 7331L)
+                val list = LevelArchetype.values()
+                list[prevRandom.nextInt(list.size)]
+            }
+            
+            val allowedArchetypes = LevelArchetype.values().filter { it != prevArchetype }
+            val archetype = allowedArchetypes[random.nextInt(allowedArchetypes.size)]
+            
+            val baseDifficulty = when {
+                levelNum <= 5 -> 0.05f + (levelNum - 1) * 0.03f
+                levelNum <= 15 -> 0.2f + (levelNum - 6) * 0.04f
+                else -> (0.6f + (levelNum - 16) * 0.015f).coerceAtMost(1.0f)
+            }
+            
+            val adaptiveSettings = if (context != null) {
+                com.myplaywin.app.data.AdaptiveDifficultyManager.getAdaptiveSettings(context, levelNum)
+            } else {
+                com.myplaywin.app.data.AdaptiveDifficultySettings(
+                    difficultyOffset = 0f,
+                    increaseSafePlatforms = false,
+                    reduceEnemyDensity = false,
+                    addBonusPaths = true,
+                    addRiskRewardShortcuts = true,
+                    hiddenCavesChance = 0.25f,
+                    secretStarRoutesChance = 0.25f,
+                    verticalExplorationChance = 0.3f,
+                    bonusCoinRoomChance = 0.2f
+                )
+            }
+            val difficulty = (baseDifficulty + adaptiveSettings.difficultyOffset).coerceIn(0.01f, 1.0f)
+            
+            val candidate = buildLevelFromArchetype(levelNum, theme, difficulty, archetype, seed, context)
+            if (verifyAndPlaytestLevel(candidate)) {
                 if (context != null) {
                     val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
-                    val chunkStr = candidate.second.joinToString(",") { "${it.first.name}:${it.second}" }
                     prefs.edit()
-                        .putString("infinite_level_theme_$levelNum", candidate.third.name)
-                        .putFloat("infinite_level_difficulty_$levelNum", candidate.fourth)
-                        .putString("infinite_level_chunks_$levelNum", chunkStr)
+                        .putString("infinite_level_theme_$levelNum", theme.name)
+                        .putFloat("infinite_level_difficulty_$levelNum", difficulty)
+                        .putString("infinite_level_archetype_$levelNum", archetype.name)
+                        .putLong("infinite_level_seed_$levelNum", seed)
                         .apply()
                 }
-                return candidate.first
+                return candidate
             }
             attempts++
         }
 
-        val fallbackCandidate = buildSmartCandidateLevel(levelNum, seed = levelNum.toLong(), context)
-        return fallbackCandidate.first
+        // Absolutely safe fallback
+        val fallbackSeed = levelNum * 2000L
+        val fallbackTheme = ProceduralTheme.values()[((levelNum - 1) / 25) % ProceduralTheme.values().size]
+        val fallbackArchetype = LevelArchetype.LONG_JUMP_CHALLENGE
+        return buildLevelFromArchetype(levelNum, fallbackTheme, 0.1f, fallbackArchetype, fallbackSeed, context)
+    }
+
+    private fun buildLevelFromArchetype(
+        levelNum: Int,
+        theme: ProceduralTheme,
+        difficulty: Float,
+        archetype: LevelArchetype,
+        seed: Long,
+        context: Context?
+    ): BounceLevel {
+        val random = java.util.Random(seed)
+        
+        // Determine level dimensions
+        val isVertical = archetype == LevelArchetype.VERTICAL_TOWER_CLIMB || archetype == LevelArchetype.SKY_ISLANDS
+        val levelHeight = if (isVertical) 1000f else 600f
+        
+        // Base length increases gradually with levelNum
+        val levelWidth = (2800f + (levelNum * 120f).coerceAtMost(2000f) + random.nextInt(400).toFloat()).coerceAtMost(6500f)
+        
+        val platforms = mutableListOf<BounceObstacle>()
+        val collectibles = mutableListOf<BounceCollectible>()
+        val checkpoints = mutableListOf<BounceCheckpoint>()
+        val enemies = mutableListOf<BounceEnemy>()
+        val keys = mutableListOf<BounceKey>()
+        val doors = mutableListOf<BounceDoor>()
+        val waterZones = mutableListOf<BounceWaterZone>()
+        val interactiveBlocks = mutableListOf<BounceInteractiveBlock>()
+        
+        // Spawn platform at player start
+        val startPlatY = if (isVertical) 850f else 440f
+        val startPlat = BounceObstacle(x = 0f, y = startPlatY, width = 320f, height = 150f)
+        platforms.add(startPlat)
+        
+        // Mini-boss variables
+        val isMiniBoss = levelNum % 10 == 0
+        
+        // Key/Door pairing trackers
+        var nextEntityId = 1000
+        
+        var currentX = 250f
+        var currentY = startPlatY
+        
+        // Number of checkpoints based on level length/difficulty
+        val totalCheckpointsToSpawn = when {
+            levelWidth < 3200f -> 1
+            levelWidth < 4500f -> 2
+            else -> 3
+        }
+        val checkpointInterval = (levelWidth - 800f) / (totalCheckpointsToSpawn + 1)
+        var spawnedCheckpoints = 0
+        
+        // Step-by-step generation loop
+        var stepCount = 0
+        while (currentX < levelWidth - 450f) {
+            stepCount++
+            
+            // Should we spawn a checkpoint?
+            val nextCheckpointX = 400f + (spawnedCheckpoints + 1) * checkpointInterval
+            if (spawnedCheckpoints < totalCheckpointsToSpawn && currentX >= nextCheckpointX) {
+                // Spawn a safe checkpoint platform
+                val cpY = currentY.coerceIn(150f, levelHeight - 150f)
+                val cpPlat = BounceObstacle(x = currentX, y = cpY, width = 180f, height = 40f)
+                platforms.add(cpPlat)
+                checkpoints.add(BounceCheckpoint(id = spawnedCheckpoints + 1, x = currentX + 90f, y = cpY - 45f))
+                
+                // Add a guaranteed coin above checkpoint
+                collectibles.add(BounceCollectible(x = currentX + 90f, y = cpY - 80f, isStar = false, isBonus = false))
+                
+                spawnedCheckpoints++
+                currentX += 220f
+                currentY = cpY
+                continue
+            }
+            
+            // Randomize according to archetype
+            when (archetype) {
+                LevelArchetype.LONG_JUMP_CHALLENGE -> {
+                    val gap = (165f + random.nextFloat() * 45f + (difficulty * 15f)).coerceIn(150f, 220f)
+                    val platWidth = (120f + random.nextInt(80) - (difficulty * 20f)).coerceAtLeast(80f)
+                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(250f, 480f)
+                    
+                    // Gap Hazard: Spikes at the bottom or moving saw
+                    if (random.nextBoolean() || isMiniBoss) {
+                        platforms.add(BounceObstacle(x = currentX + 20f, y = levelHeight - 40f, width = gap - 40f, height = 40f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    }
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    // Coins in a beautiful parabola over the gap
+                    val midX = currentX + gap / 2f
+                    val apexY = minOf(currentY, nextY) - 80f - (difficulty * 20f)
+                    collectibles.add(BounceCollectible(x = midX - 30f, y = apexY + 20f, isStar = false, isBonus = false))
+                    collectibles.add(BounceCollectible(x = midX, y = apexY, isStar = random.nextFloat() < 0.15f, isBonus = false))
+                    collectibles.add(BounceCollectible(x = midX + 30f, y = apexY + 20f, isStar = false, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.VERTICAL_TOWER_CLIMB -> {
+                    // Ascending tower blocks
+                    val isClimbingUp = random.nextBoolean() || currentY > levelHeight - 250f
+                    val nextY = if (isClimbingUp) {
+                        (currentY - 110f - random.nextInt(30)).coerceAtLeast(120f)
+                    } else {
+                        (currentY + 110f + random.nextInt(30)).coerceAtMost(levelHeight - 120f)
+                    }
+                    val platWidth = (100f + random.nextInt(60)).coerceAtLeast(80f)
+                    val gap = (100f + random.nextInt(60)).toFloat()
+                    
+                    val isSpringPlat = random.nextFloat() < 0.25f
+                    val nextPlat = BounceObstacle(
+                        x = currentX + gap,
+                        y = nextY,
+                        width = platWidth,
+                        height = 35f,
+                        isSpring = isSpringPlat,
+                        springForce = -680f
+                    )
+                    platforms.add(nextPlat)
+                    
+                    // Collectibles and enemies
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.15f, isBonus = false))
+                    if (random.nextFloat() < 0.2f && !isSpringPlat) {
+                        enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.WALKING, x = currentX + gap + 20f, y = nextY - 28f, moveRangeX = platWidth - 40f, moveSpeed = 50f))
+                    }
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.NARROW_CAVE -> {
+                    // Ceiling and floor boundaries
+                    platforms.add(BounceObstacle(x = currentX, y = 80f, width = 300f, height = 140f)) // Ceiling
+                    platforms.add(BounceObstacle(x = currentX, y = 480f, width = 300f, height = 120f)) // Floor
+                    
+                    val platWidth = 140f
+                    val gap = 120f
+                    val nextY = 350f + (random.nextFloat() * 40f - 20f)
+                    
+                    // Spikes on ceiling or floor
+                    if (random.nextBoolean()) {
+                        platforms.add(BounceObstacle(x = currentX + 50f, y = 220f, width = 60f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.DOWN))
+                    } else {
+                        platforms.add(BounceObstacle(x = currentX + 50f, y = 460f, width = 60f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    }
+                    
+                    platforms.add(BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f))
+                    
+                    // Breakable block obstacle inside cave
+                    if (random.nextFloat() < 0.4f) {
+                        interactiveBlocks.add(
+                            BounceInteractiveBlock(
+                                id = nextEntityId++,
+                                type = InteractiveType.BREAKABLE,
+                                x = currentX + gap + 40f,
+                                y = nextY - 40f,
+                                width = 40f,
+                                height = 40f
+                            )
+                        )
+                        collectibles.add(BounceCollectible(x = currentX + gap + 60f, y = nextY - 80f, isStar = false, isBonus = true))
+                    }
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + 20f, y = nextY - 35f, isStar = random.nextFloat() < 0.2f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.FLOATING_ISLANDS -> {
+                    val gap = 140f + random.nextInt(60)
+                    val platWidth = 110f + random.nextInt(60)
+                    val nextY = (currentY + (random.nextFloat() * 120f - 60f)).coerceIn(160f, 480f)
+                    
+                    val isMovingPlat = random.nextFloat() < 0.4f
+                    val nextPlat = BounceObstacle(
+                        x = currentX + gap,
+                        y = nextY,
+                        width = platWidth,
+                        height = 30f,
+                        isMoving = isMovingPlat,
+                        moveRangeX = if (isMovingPlat && random.nextBoolean()) 100f else 0f,
+                        moveRangeY = if (isMovingPlat && random.nextBoolean()) 80f else 0f,
+                        moveSpeed = 0.05f + (difficulty * 0.03f)
+                    )
+                    platforms.add(nextPlat)
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.25f, isBonus = false))
+                    if (random.nextFloat() < 0.25f) {
+                        enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.FLYING, x = currentX + gap / 2f, y = nextY - 100f, moveRangeX = 80f, moveRangeY = 40f, moveSpeed = 65f))
+                    }
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.SPEED_RUN -> {
+                    val gap = 60f + random.nextInt(50)
+                    val platWidth = 260f + random.nextInt(120)
+                    val nextY = (currentY + (random.nextFloat() * 40f - 20f)).coerceIn(320f, 460f)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    // Springs on platform to keep running speed
+                    if (random.nextFloat() < 0.35f) {
+                        platforms.add(BounceObstacle(x = currentX + gap + platWidth - 45f, y = nextY - 20f, width = 40f, height = 20f, isSpring = true, springForce = -500f))
+                    }
+                    
+                    // Long row of coins
+                    for (c in 0 until (platWidth / 60f).toInt()) {
+                        collectibles.add(BounceCollectible(x = currentX + gap + 30f + c * 50f, y = nextY - 45f, isStar = false, isBonus = false))
+                    }
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.PRECISION_PLATFORMING -> {
+                    val gap = 110f + random.nextInt(50)
+                    val platWidth = 50f + random.nextInt(20) // Tiny pegs
+                    val nextY = (currentY + (random.nextFloat() * 110f - 55f)).coerceIn(180f, 480f)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f)
+                    platforms.add(nextPlat)
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.3f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.MOVING_PLATFORM_LEVEL -> {
+                    val gap = 240f + random.nextInt(120)
+                    val platWidth = 100f + random.nextInt(60)
+                    val nextY = (currentY + (random.nextFloat() * 100f - 50f)).coerceIn(220f, 460f)
+                    
+                    // Static safety landmass after the moving platform
+                    val midPlat = BounceObstacle(
+                        x = currentX + gap / 3f,
+                        y = (currentY + nextY) / 2f,
+                        width = 80f,
+                        height = 25f,
+                        isMoving = true,
+                        moveRangeX = gap / 3f,
+                        moveSpeed = 0.07f + (difficulty * 0.03f)
+                    )
+                    platforms.add(midPlat)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap / 3f + 40f, y = ((currentY + nextY) / 2f) - 50f, isStar = random.nextFloat() < 0.2f, isBonus = true))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.SPRING_BOUNCE_LEVEL -> {
+                    val gap = 150f + random.nextInt(60)
+                    val platWidth = 60f + random.nextInt(30)
+                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(240f, 480f)
+                    
+                    // Large spike pit below
+                    platforms.add(BounceObstacle(x = currentX + 10f, y = levelHeight - 40f, width = gap + platWidth - 20f, height = 40f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    
+                    val nextPlat = BounceObstacle(
+                        x = currentX + gap,
+                        y = nextY,
+                        width = platWidth,
+                        height = 30f,
+                        isSpring = true,
+                        springForce = -700f
+                    )
+                    platforms.add(nextPlat)
+                    
+                    // Collectible at peak of spring bounce
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 160f, isStar = random.nextFloat() < 0.35f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.HAZARD_MAZE -> {
+                    // Split paths
+                    val upperY = 220f
+                    val lowerY = 440f
+                    
+                    platforms.add(BounceObstacle(x = currentX, y = upperY, width = 250f, height = 30f))
+                    platforms.add(BounceObstacle(x = currentX, y = lowerY, width = 250f, height = 30f))
+                    
+                    // Put a door on the upper path and a key on the lower path
+                    val doorId = nextEntityId++
+                    doors.add(BounceDoor(id = doorId, x = currentX + 180f, y = upperY - 80f, keyIdNeeded = doorId))
+                    keys.add(BounceKey(id = doorId, x = currentX + 60f, y = lowerY - 40f))
+                    
+                    // Enemies patrolling lower path
+                    enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.WALKING, x = currentX + 100f, y = lowerY - 28f, moveRangeX = 100f, moveSpeed = 50f))
+                    
+                    collectibles.add(BounceCollectible(x = currentX + 220f, y = upperY - 45f, isStar = true, isBonus = false))
+                    
+                    currentX += 320f
+                    currentY = upperY
+                }
+                
+                LevelArchetype.SPIKE_CORRIDOR -> {
+                    // Low ceiling corridor
+                    platforms.add(BounceObstacle(x = currentX, y = 140f, width = 300f, height = 100f)) // Ceiling
+                    platforms.add(BounceObstacle(x = currentX, y = 460f, width = 300f, height = 140f)) // Floor
+                    
+                    // Ceiling spikes pointing down
+                    platforms.add(BounceObstacle(x = currentX + 80f, y = 240f, width = 120f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.DOWN))
+                    // Floor spikes pointing up
+                    platforms.add(BounceObstacle(x = currentX + 120f, y = 440f, width = 100f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    
+                    val nextPlat = BounceObstacle(x = currentX + 260f, y = 350f, width = 120f, height = 30f)
+                    platforms.add(nextPlat)
+                    
+                    collectibles.add(BounceCollectible(x = currentX + 60f, y = 320f, isStar = false, isBonus = false))
+                    collectibles.add(BounceCollectible(x = currentX + 220f, y = 320f, isStar = false, isBonus = false))
+                    
+                    currentX += 380f
+                    currentY = 350f
+                }
+                
+                LevelArchetype.SAWBLADE_FACTORY -> {
+                    val gap = 120f + random.nextInt(60)
+                    val platWidth = 130f + random.nextInt(80)
+                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(240f, 480f)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    // Sawblade rotating hazard in gap or above platform
+                    enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.ROTATING_HAZARD, x = currentX + gap / 2f + 10f, y = (currentY + nextY) / 2f - 20f, moveSpeed = 140f + (difficulty * 50f)))
+                    
+                    if (random.nextFloat() < 0.3f) {
+                        platforms.add(BounceObstacle(x = currentX + gap + 30f, y = nextY, width = 60f, height = 30f, isFallingPlatform = true))
+                    }
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.2f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.UNDERGROUND_TUNNEL -> {
+                    // Underground cave feel with water zones
+                    val gap = 100f + random.nextInt(50)
+                    val platWidth = 140f + random.nextInt(80)
+                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(300f, 480f)
+                    
+                    // Place a water zone in the gap
+                    waterZones.add(BounceWaterZone(x = currentX + 20f, y = nextY + 20f, width = gap - 40f, height = levelHeight - (nextY + 20f)))
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    // Hidden secret chamber
+                    if (random.nextFloat() < 0.4f) {
+                        interactiveBlocks.add(
+                            BounceInteractiveBlock(
+                                id = nextEntityId++,
+                                type = InteractiveType.BREAKABLE,
+                                x = currentX + gap + 50f,
+                                y = nextY - 40f,
+                                width = 40f,
+                                height = 40f
+                            )
+                        )
+                        collectibles.add(BounceCollectible(x = currentX + gap + 60f, y = nextY - 35f, isStar = true, isBonus = true))
+                    }
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + 10f, y = nextY - 35f, isStar = false, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.SKY_ISLANDS -> {
+                    val gap = 160f + random.nextInt(80)
+                    val platWidth = 100f + random.nextInt(80)
+                    val nextY = (currentY - 100f - random.nextInt(60)).coerceAtLeast(140f)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f)
+                    platforms.add(nextPlat)
+                    
+                    // Sky launch springboard
+                    platforms.add(BounceObstacle(x = currentX + 20f, y = currentY - 20f, width = 45f, height = 20f, isSpring = true, springForce = -740f))
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = true, isBonus = false))
+                    enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.FLYING, x = currentX + gap / 2f, y = nextY + 50f, moveRangeX = 60f, moveRangeY = 60f, moveSpeed = 70f))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.LAVA_ESCAPE -> {
+                    // Large boiling lava lake at bottom
+                    platforms.add(BounceObstacle(x = currentX, y = levelHeight - 40f, width = 350f, height = 40f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    
+                    val gap = 110f + random.nextInt(50)
+                    val platWidth = 100f + random.nextInt(50)
+                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(240f, 380f)
+                    
+                    // High frequency of falling platforms
+                    val nextPlat = BounceObstacle(
+                        x = currentX + gap,
+                        y = nextY,
+                        width = platWidth,
+                        height = 30f,
+                        isFallingPlatform = random.nextFloat() < 0.6f
+                    )
+                    platforms.add(nextPlat)
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.2f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.ICE_SLIPPERY_PLATFORMS -> {
+                    val gap = 120f + random.nextInt(60)
+                    val platWidth = 120f + random.nextInt(80)
+                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(250f, 480f)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 30f)
+                    platforms.add(nextPlat)
+                    
+                    // Falling icicles (small falling platforms above the track)
+                    if (random.nextFloat() < 0.4f) {
+                        platforms.add(BounceObstacle(x = currentX + gap + platWidth / 2f - 20f, y = nextY - 140f, width = 40f, height = 20f, isFallingPlatform = true))
+                    }
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + 30f, y = nextY - 45f, isStar = false, isBonus = false))
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth - 40f, y = nextY - 45f, isStar = false, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.FOREST_BRIDGES -> {
+                    // Rope bridge sequence: 3 small consecutive platforms close together
+                    val bridgeY = (currentY + (random.nextFloat() * 40f - 20f)).coerceIn(280f, 460f)
+                    
+                    platforms.add(BounceObstacle(x = currentX + 80f, y = bridgeY, width = 70f, height = 15f))
+                    platforms.add(BounceObstacle(x = currentX + 170f, y = bridgeY + 10f, width = 70f, height = 15f))
+                    platforms.add(BounceObstacle(x = currentX + 260f, y = bridgeY, width = 70f, height = 15f))
+                    
+                    collectibles.add(BounceCollectible(x = currentX + 170f, y = bridgeY - 30f, isStar = random.nextFloat() < 0.25f, isBonus = false))
+                    
+                    currentX += 380f
+                    currentY = bridgeY
+                }
+                
+                LevelArchetype.CASTLE_RUINS -> {
+                    // Strong brick architecture and gated arches
+                    val gap = 110f + random.nextInt(50)
+                    val platWidth = 140f + random.nextInt(80)
+                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(220f, 480f)
+                    
+                    // High stone pillars
+                    platforms.add(BounceObstacle(x = currentX + gap - 30f, y = nextY, width = 30f, height = levelHeight - nextY))
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    // Dungeon Door needing Key
+                    if (random.nextFloat() < 0.3f) {
+                        val gateId = nextEntityId++
+                        doors.add(BounceDoor(id = gateId, x = currentX + gap + platWidth - 40f, y = nextY - 80f, keyIdNeeded = gateId))
+                        keys.add(BounceKey(id = gateId, x = currentX + 20f, y = currentY - 40f))
+                    }
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + 40f, y = nextY - 45f, isStar = false, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.CRYSTAL_CAVERNS -> {
+                    val gap = 110f + random.nextInt(60)
+                    val platWidth = 130f + random.nextInt(80)
+                    val nextY = (currentY + (random.nextFloat() * 80f - 40f)).coerceIn(250f, 480f)
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 35f)
+                    platforms.add(nextPlat)
+                    
+                    // Crystal cluster spikes pointing up
+                    platforms.add(BounceObstacle(x = currentX + gap + 40f, y = nextY - 20f, width = 30f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + 80f, y = nextY - 55f, isStar = true, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.UNDERWATER_STYLE -> {
+                    val gap = 100f + random.nextInt(60)
+                    val platWidth = 140f + random.nextInt(80)
+                    val nextY = (currentY + (random.nextFloat() * 60f - 30f)).coerceIn(280f, 480f)
+                    
+                    // Large water zones covering the platforming
+                    waterZones.add(BounceWaterZone(x = currentX, y = 200f, width = gap + platWidth, height = levelHeight - 200f))
+                    
+                    val nextPlat = BounceObstacle(x = currentX + gap, y = nextY, width = platWidth, height = 40f)
+                    platforms.add(nextPlat)
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.2f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+                
+                LevelArchetype.MIXED_CHALLENGE -> {
+                    // Mix random components!
+                    val picker = random.nextInt(6)
+                    val gap = (100f + random.nextInt(100)).toFloat()
+                    val platWidth = (100f + random.nextInt(120)).toFloat()
+                    val nextY = (currentY + (random.nextFloat() * 100f - 50f)).coerceIn(200f, 480f)
+                    
+                    val nextPlat = BounceObstacle(
+                        x = currentX + gap,
+                        y = nextY,
+                        width = platWidth,
+                        height = 35f,
+                        isMoving = picker == 1,
+                        isSpring = picker == 2,
+                        isFallingPlatform = picker == 3
+                    )
+                    platforms.add(nextPlat)
+                    
+                    if (picker == 4) {
+                        enemies.add(BounceEnemy(id = nextEntityId++, type = EnemyType.WALKING, x = currentX + gap + 20f, y = nextY - 28f, moveRangeX = platWidth - 40f, moveSpeed = 60f))
+                    } else if (picker == 5) {
+                        platforms.add(BounceObstacle(x = currentX + gap + 20f, y = nextY - 20f, width = 30f, height = 20f, isSpike = true, spikeDirection = SpikeDirection.UP))
+                    }
+                    
+                    collectibles.add(BounceCollectible(x = currentX + gap + platWidth / 2f, y = nextY - 45f, isStar = random.nextFloat() < 0.3f, isBonus = false))
+                    
+                    currentX += gap + platWidth
+                    currentY = nextY
+                }
+            }
+        }
+        
+        // Spawn the exit platform & portal at the end
+        val exitPlatY = currentY.coerceIn(200f, levelHeight - 160f)
+        val exitPlat = BounceObstacle(x = currentX, y = exitPlatY, width = 360f, height = 150f, isExitPlatform = true)
+        platforms.add(exitPlat)
+        
+        // Place the Exit Portal precisely centered on top of the exit platform
+        val portalX = exitPlat.x + exitPlat.width / 2f
+        val portalY = exitPlat.y - 48f // Safe clearance
+        
+        // Set standard and bonus coins
+        val baseReward = if (isMiniBoss) 150 + levelNum * 50 else 50 + levelNum * 25
+        
+        // Ensure at least 1 star and some collectibles exist
+        if (collectibles.none { it.isStar }) {
+            // Find a platform to place a star
+            val listPlat = platforms.filter { !it.isSpike && it.spikeDirection == null && !it.isExitPlatform && it.x > 300f }
+            val midPlat = if (listPlat.isNotEmpty()) listPlat[random.nextInt(listPlat.size)] else null
+            if (midPlat != null) {
+                collectibles.add(BounceCollectible(x = midPlat.x + midPlat.width / 2f, y = midPlat.y - 45f, isStar = true, isBonus = false))
+            } else {
+                collectibles.add(BounceCollectible(x = 500f, y = startPlatY - 45f, isStar = true, isBonus = false))
+            }
+        }
+        
+        val displayArchetype = archetype.displayName
+        val levelName = if (isMiniBoss) {
+            "Level $levelNum: [MINI-BOSS] $displayArchetype"
+        } else {
+            "Level $levelNum: $displayArchetype"
+        }
+        val levelDesc = "Conquer the procedurally crafted $displayArchetype layout of the ${theme.themeName} realm. Collect all stars and exit safely."
+        
+        return BounceLevel(
+            number = levelNum,
+            name = levelName,
+            description = levelDesc,
+            width = currentX + 360f,
+            height = levelHeight,
+            startX = 100f,
+            startY = startPlatY - 50f,
+            portalX = portalX,
+            portalY = portalY,
+            platforms = platforms,
+            collectibles = collectibles,
+            checkpoints = checkpoints,
+            enemies = enemies,
+            keys = keys,
+            doors = doors,
+            waterZones = waterZones,
+            interactiveBlocks = interactiveBlocks,
+            baseRewardCoins = baseReward
+        )
     }
 
     private fun buildSmartCandidateLevel(
@@ -925,45 +1578,64 @@ object SmartProceduralLevelGenerator {
             if (px == null || py == null) {
                 reasons.add("Exit chunk must define portalX and portalY coordinates")
             } else {
-                val plat = chunk.platforms.firstOrNull { !it.isSpike && it.spikeDirection == null }
+                val plat = chunk.platforms.firstOrNull { it.isExitPlatform }
+                    ?: chunk.platforms.firstOrNull { !it.isSpike && it.spikeDirection == null && !it.isSpring && !it.isMoving && !it.isFallingPlatform }
+                    ?: chunk.platforms.firstOrNull { !it.isSpike && it.spikeDirection == null }
+                
                 if (plat == null) {
                     reasons.add("Exit chunk must contain a walkable platform")
                 } else {
-                    // 1. Must never spawn below the platform, under the platform, or inside terrain
-                    if (py >= plat.y) {
-                        reasons.add("Exit portal must be placed strictly on top of the platform, got py=$py, plat.y=${plat.y}")
+                    // Rule 1: The Exit Portal must always be attached to the TOP SURFACE of the FINAL WALKABLE PLATFORM.
+                    // Rule 2: Never attach the Exit to walls, platform sides, platform bottoms, decorative blocks, or terrain.
+                    // Validation:
+                    // - Exit is below platform top:
+                    if (py > plat.y - 5f) {
+                        reasons.add("Exit portal must be placed strictly on top of the platform (py=$py, plat.y=${plat.y})")
                     }
-                    
-                    // 2. Must never spawn beyond the platform edge
+
+                    // - Must never spawn beyond the platform edge
                     if (px < plat.x || px > plat.x + plat.width) {
-                        reasons.add("Exit portal must be on the platform horizontally, got px=$px, plat range=[${plat.x}, ${plat.x + plat.width}]")
+                        reasons.add("Exit portal must be horizontally within the platform boundaries (px=$px, plat=[${plat.x}, ${plat.x + plat.width}])")
                     }
 
-                    // 3. Must never spawn outside the camera (height is 600f)
+                    // - Must never spawn outside the camera bounds (height is 600f)
                     if (py < 40f || py > 560f || px < 0f) {
-                        reasons.add("Exit portal must be within safe camera bounds, got px=$px, py=$py")
+                        reasons.add("Exit portal must be within safe camera bounds (px=$px, py=$py)")
                     }
 
-                    // 4. Must never spawn inside a wall / solid terrain
+                    // - Exit intersects any collider or overlaps a wall:
                     for (p in chunk.platforms) {
-                        if (p != plat && !p.isSpike && p.spikeDirection == null) {
-                            val bufferY = 4f
-                            if (px + 15f > p.x && px - 15f < p.x + p.width &&
-                                py + 15f > p.y + bufferY && py - 15f < p.y + p.height) {
-                                reasons.add("Exit portal spawns inside an obstacle/wall/terrain")
+                        if (p != plat) {
+                            val r = 24f
+                            val closestX = px.coerceIn(p.x, p.x + p.width)
+                            val closestY = py.coerceIn(p.y, p.y + p.height)
+                            val distSq = (px - closestX) * (px - closestX) + (py - closestY) * (py - closestY)
+                            if (distSq < r * r) {
+                                reasons.add("Exit portal overlaps or intersects platform collider of block at (x=${p.x}, y=${p.y})")
                             }
                         }
                     }
 
-                    // 5. Standing space validation: at least one player-width of standing space before the Exit (player width = 28f)
+                    // - Standing space validation: at least one player-width of standing space on either side (player width = 28f)
                     val standingSpaceLeft = px - plat.x
                     val standingSpaceRight = (plat.x + plat.width) - px
                     val minStandingSpace = 28f
                     if (standingSpaceLeft < minStandingSpace && standingSpaceRight < minStandingSpace) {
-                        reasons.add("Exit portal does not have enough standing space on either side, left=$standingSpaceLeft, right=$standingSpaceRight")
+                        reasons.add("Exit portal lacks sufficient standing space on either side (left=$standingSpaceLeft, right=$standingSpaceRight)")
                     }
 
-                    // 6. Reachability validation: no spikes or obstacles block the player's horizontal path to the exit portal
+                    // - Overhead clearance / direct reachability validation: no ceiling blocking access
+                    for (p in chunk.platforms) {
+                        if (p != plat) {
+                            if (px + 15f > p.x && px - 15f < p.x + p.width) {
+                                if (p.y + p.height > py - 60f && p.y < py) {
+                                    reasons.add("Exit path overhead is blocked by platform (y=${p.y}, height=${p.height})")
+                                }
+                            }
+                        }
+                    }
+
+                    // - No spikes or hazards block the player's horizontal path on the platform
                     for (p in chunk.platforms) {
                         if (p.isSpike || p.spikeDirection != null) {
                             if (p.x + p.width > plat.x && p.x < px) {
@@ -1146,9 +1818,32 @@ object SmartProceduralLevelGenerator {
         val levelName = "Level $levelNum: $titleThemeName $titleChunk"
         val levelDesc = "Explore the treacherous terrains of $titleThemeName. Complete all challenges, find the secret chamber, and exit safely."
 
-        val exitPlatform = platforms.lastOrNull() ?: BounceObstacle(currentX - 400f, currentY, 400f, 100f)
-        val calculatedPortalX = levelPortalX ?: (exitPlatform.x + exitPlatform.width * 0.5f)
-        val calculatedPortalY = levelPortalY ?: (exitPlatform.y - 32f)
+        // Find or assign the Exit Platform explicitly marked with isExitPlatform = true
+        var exitPlatform = platforms.firstOrNull { it.isExitPlatform }
+        if (exitPlatform == null) {
+            val rightmostWalkable = platforms.filter { !it.isSpike && it.spikeDirection == null && !it.isSpring && !it.isMoving && !it.isFallingPlatform }.maxByOrNull { it.x + it.width }
+                ?: platforms.filter { !it.isSpike && it.spikeDirection == null }.maxByOrNull { it.x + it.width }
+                ?: platforms.lastOrNull()
+            
+            if (rightmostWalkable != null) {
+                val idx = platforms.indexOf(rightmostWalkable)
+                val marked = rightmostWalkable.copy(isExitPlatform = true)
+                if (idx != -1) {
+                    platforms[idx] = marked
+                } else {
+                    platforms.add(marked)
+                }
+                exitPlatform = marked
+            }
+        }
+        if (exitPlatform == null) {
+            val fallback = BounceObstacle(currentX - 400f, currentY, 400f, 100f, isExitPlatform = true)
+            platforms.add(fallback)
+            exitPlatform = fallback
+        }
+
+        val calculatedPortalX = exitPlatform.topCenter.x
+        val calculatedPortalY = exitPlatform.topCenter.y
 
         val levelObj = BounceLevel(
             number = levelNum,
@@ -1470,21 +2165,52 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         if (overlapsSolid(cp.x, cp.y, 12f)) return false
         if (cp.y > level.height - 30f) return false // below terrain / abyss
     }
-    // Exit Portal placement check
-    if (overlapsSolid(level.portalX, level.portalY, 15f)) return false
-    if (level.portalY > level.height - 30f) return false
+    // Exit Portal placement and validation check
+    val exitPlat = level.platforms.firstOrNull { it.isExitPlatform }
+    if (exitPlat == null) return false // Must have an exit platform!
+
+    // Verify it is aligned to topCenter of that platform
+    if (Math.abs(level.portalX - exitPlat.topCenter.x) > 1f || Math.abs(level.portalY - exitPlat.topCenter.y) > 1f) {
+        return false // Exit Portal must use topCenter!
+    }
+
+    // Exit is below platform top:
+    if (level.portalY > exitPlat.y - 5f) return false
+
+    // Exit intersects any collider or overlaps a wall:
+    for (p in level.platforms) {
+        if (p != exitPlat) {
+            val r = 24f // Full safety collision boundary circle
+            val closestX = level.portalX.coerceIn(p.x, p.x + p.width)
+            val closestY = level.portalY.coerceIn(p.y, p.y + p.height)
+            val distSq = (level.portalX - closestX) * (level.portalX - closestX) + (level.portalY - closestY) * (level.portalY - closestY)
+            if (distSq < r * r) return false // Intersects or overlaps!
+        }
+    }
+
+    // Exit is not directly reachable by the player (e.g. blocked by overhead platform or lacks standing space)
+    val standingSpaceLeft = level.portalX - exitPlat.x
+    val standingSpaceRight = (exitPlat.x + exitPlat.width) - level.portalX
+    val minStandingSpace = 28f
+    if (standingSpaceLeft < minStandingSpace && standingSpaceRight < minStandingSpace) {
+        return false // Not enough standing space!
+    }
+
+    for (p in level.platforms) {
+        if (p != exitPlat) {
+            // Overhead blockage check
+            if (level.portalX + 15f > p.x && level.portalX - 15f < p.x + p.width) {
+                if (p.y + p.height > level.portalY - 60f && p.y < level.portalY) {
+                    return false // Overhead path blocked!
+                }
+            }
+        }
+    }
 
     // Enemies inside terrain check
     for (enemy in level.enemies) {
         if (overlapsSolid(enemy.x, enemy.y, 12f)) return false
     }
-
-    // 4. Exit / Portal Standing Space Validation
-    val exitPlatform = walkable[portalPlatIndex]
-    if (exitPlatform.width < 80f) return false // Needs enough standing space around exit flag
-    // Ensure the portal sits nicely on the platform vertically
-    val distToPortalPlatform = exitPlatform.y - level.portalY
-    if (distToPortalPlatform < 0f || distToPortalPlatform > 90f) return false
 
     // Ensure exit is after all objectives geometrically
     for (star in level.collectibles.filter { it.isStar }) {
@@ -3693,7 +4419,7 @@ fun BounceClassicScreen(
                 historyList = updated
                 prefs.edit().putString("bounce_history", serializeBounceHistory(updated)).apply()
 
-                isPlaying = false
+                selectedLevelNum = nextLevel
             }
         )
     }
@@ -4367,6 +5093,16 @@ class FallingState(
     var alpha: Float = 1f
 )
 
+data class BounceCoinParticle(
+    val id: Int,
+    val startX: Float,
+    val startY: Float,
+    val endX: Float,
+    val endY: Float,
+    val delayMs: Int,
+    val durationMs: Int
+)
+
 @Composable
 fun ActiveBounceQuestGame(
     level: BounceLevel,
@@ -4376,6 +5112,7 @@ fun ActiveBounceQuestGame(
     onLevelCompleted: (stars: Int, coins: Int, score: Int, deaths: Int, missedJumps: Int, time: Float, checkpointRespawns: Int, discoveredSecret: Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val activeLevel = remember(level) { sanitizeAndValidateLevel(level) }
 
     // Control preferences & settings state
@@ -4383,6 +5120,7 @@ fun ActiveBounceQuestGame(
     var controlScale by remember { mutableFloatStateOf(prefs.getFloat("control_scale", 1.0f)) }
     var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    val isDebugExitOverlayEnabled = false
     var joystickXAmount by remember { mutableFloatStateOf(0f) }
 
     // Dynamic Floating Joystick State
@@ -4390,6 +5128,53 @@ fun ActiveBounceQuestGame(
     var joystickCenterPos by remember { mutableStateOf<Offset?>(null) }
     var joystickKnobPos by remember { mutableStateOf<Offset?>(null) }
     var lastVibratedDirection by remember { mutableIntStateOf(0) }
+
+    // --- REWARD & VICTORY DIALOG STATES ---
+    var showVictoryDialog by remember(activeLevel) { mutableStateOf(true) }
+    var rewardState by remember(activeLevel) {
+        mutableStateOf(
+            prefs.getString("bounce_reward_state_level_${activeLevel.number}", "Pending") ?: "Pending"
+        )
+    }
+    var isProcessingReward by remember { mutableStateOf(false) }
+
+    // Coin animation states
+    var showCoinAnimation by remember { mutableStateOf(false) }
+    var coinParticles by remember { mutableStateOf<List<BounceCoinParticle>>(emptyList()) }
+    val coinAnimProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+
+    fun triggerCoinFlyAnimation(onFinished: () -> Unit) {
+        val particles = (1..15).map { i ->
+            BounceCoinParticle(
+                id = i,
+                startX = 100f + (Math.random() * 200f).toFloat(),
+                startY = 350f + (Math.random() * 100f).toFloat(),
+                endX = 150f + (Math.random() * 100f).toFloat(),
+                endY = 50f + (Math.random() * 40f).toFloat(),
+                delayMs = (i * 45),
+                durationMs = 600 + (Math.random() * 250).toInt()
+            )
+        }
+        coinParticles = particles
+        showCoinAnimation = true
+        
+        scope.launch {
+            coinAnimProgress.snapTo(0f)
+            coinAnimProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 1400,
+                    easing = androidx.compose.animation.core.LinearEasing
+                )
+            )
+            showCoinAnimation = false
+            onFinished()
+        }
+    }
+
+    LaunchedEffect(activeLevel) {
+        prefs.edit().putString("bounce_reward_state_level_${activeLevel.number}", "Pending").commit()
+    }
 
     // Physics & Game Engine Constants
     val ballRadius = 14f
@@ -4428,6 +5213,11 @@ fun ActiveBounceQuestGame(
 
     // Gameplay & Health states
     var livesRemaining by remember { mutableIntStateOf(3) }
+    var isExitAnimating by remember { mutableStateOf(false) }
+    var exitAnimationTimer by remember { mutableFloatStateOf(0f) }
+    var isLoadingNextLevel by remember { mutableStateOf(false) }
+    var loadingMessage by remember { mutableStateOf("") }
+    var transitionAlpha by remember { mutableFloatStateOf(0f) }
     var hasUsedAdRevive by remember { mutableStateOf(false) }
     var elapsedTimeSeconds by remember { mutableFloatStateOf(0f) }
     var lastCheckpointX by remember(activeLevel) { mutableFloatStateOf(activeLevel.startX) }
@@ -4511,6 +5301,30 @@ fun ActiveBounceQuestGame(
     }
 
     // --- PARTICLE GENERATOR HELPERS ---
+    fun spawnVictoryConfetti(x: Float, y: Float) {
+        val colors = listOf(
+            Color(0xFFFF00D6), Color(0xFF00E5FF), Color(0xFFFFD700),
+            Color(0xFF22C55E), Color(0xFFFF3D00), Color(0xFFA855F7)
+        )
+        val random = java.util.Random()
+        for (i in 0 until 50) {
+            val angle = random.nextFloat() * 2f * Math.PI
+            val speed = 60f + random.nextFloat() * 180f
+            particles.add(
+                BounceParticle(
+                    x = x,
+                    y = y,
+                    vx = (cos(angle) * speed).toFloat(),
+                    vy = (sin(angle) * speed - 60f).toFloat(), // Upwards bias
+                    alpha = 1.0f,
+                    size = 3.5f + random.nextFloat() * 4.5f,
+                    color = colors[random.nextInt(colors.size)],
+                    isSparkle = random.nextBoolean()
+                )
+            )
+        }
+    }
+
     fun spawnLandingDust(x: Float, y: Float) {
         for (i in 0 until 8) {
             val angle = Math.PI + (Math.random() - 0.5) * Math.PI * 0.85
@@ -4876,6 +5690,54 @@ fun ActiveBounceQuestGame(
         }
     }
 
+    LaunchedEffect(activeLevel) {
+        ballX = activeLevel.startX
+        ballY = activeLevel.startY
+        ballVx = 0f
+        ballVy = 0f
+        livesRemaining = 3
+        isExitAnimating = false
+        exitAnimationTimer = 0f
+        isLoadingNextLevel = false
+        transitionAlpha = 0f
+        hasUsedAdRevive = false
+        elapsedTimeSeconds = 0f
+        lastCheckpointX = activeLevel.startX
+        lastCheckpointY = activeLevel.startY
+        squashX = 1f
+        squashY = 1f
+        rollAngle = 0f
+        cameraX = (activeLevel.startX - viewportWidthWorld / 2f).safeCoerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
+        cameraY = (activeLevel.startY - viewportHeightWorld * 0.42f).safeCoerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
+        invincibilityTimer = 0f
+        cameraShakeTimer = 0f
+        isGrounded = false
+        wasGrounded = false
+        coyoteTimer = 0f
+        jumpBufferTimer = 0f
+        isGameOver = false
+        gameCompleted = false
+        starsCollected = 0
+        coinsCollected = 0
+        currentScore = 0
+        isHoldingLeft = false
+        isHoldingRight = false
+        joystickXAmount = 0f
+        jumpRequested = false
+        particles.clear()
+
+        for (i in fallingPlatformStates.indices) {
+            fallingPlatformStates[i].state = PlatformState.STABLE
+            fallingPlatformStates[i].timer = 0f
+            fallingPlatformStates[i].offsetY = 0f
+            fallingPlatformStates[i].shakeX = 0f
+            fallingPlatformStates[i].alpha = 1f
+        }
+        for (i in springCompressions.indices) {
+            springCompressions[i] = 0f
+        }
+    }
+
     // High Performance 60 FPS Engine Loop with withFrameNanos
     LaunchedEffect(isPaused, isGameOver, gameCompleted) {
         var lastFrameNanos = System.nanoTime()
@@ -4889,6 +5751,39 @@ fun ActiveBounceQuestGame(
                 var dt = (dtNanos / 1_000_000_000f).coerceIn(0.005f, 0.033f)
                 animationTime += dt
                 elapsedTimeSeconds += dt
+
+                if (isExitAnimating) {
+                    exitAnimationTimer -= dt
+                    ballX += (activeLevel.portalX - ballX) * 0.15f
+                    ballY += (activeLevel.portalY - ballY) * 0.15f
+                    squashX = (exitAnimationTimer / 1.3f).coerceIn(0f, 1f)
+                    squashY = (exitAnimationTimer / 1.3f).coerceIn(0f, 1f)
+                    if (exitAnimationTimer <= 0f) {
+                        isExitAnimating = false
+                        gameCompleted = true
+                        BounceProgressionManager.recordLevelCompleted(
+                            context = context,
+                            prefs = prefs,
+                            viewModel = viewModel,
+                            levelNum = level.number,
+                            stars = starsCollected,
+                            coins = coinsCollected,
+                            timeSeconds = elapsedTimeSeconds,
+                            tookDamage = livesRemaining < 3
+                        )
+                    }
+
+                    val particleIterator = particles.iterator()
+                    while (particleIterator.hasNext()) {
+                        val p = particleIterator.next()
+                        p.x += p.vx * dt
+                        p.y += p.vy * dt
+                        p.alpha -= 1.8f * dt
+                        p.size = (p.size - 1.2f * dt).coerceAtLeast(0.5f)
+                        if (p.alpha <= 0f) particleIterator.remove()
+                    }
+                    return@withFrameNanos
+                }
 
                 // Camera Shake Decay
                 if (cameraShakeTimer > 0f) {
@@ -5352,19 +6247,11 @@ fun ActiveBounceQuestGame(
                     // 12. Portal completion
                     val pDistSq = (ballX - activeLevel.portalX) * (ballX - activeLevel.portalX) + (ballY - activeLevel.portalY) * (ballY - activeLevel.portalY)
                     if (pDistSq < (ballRadius + 24f) * (ballRadius + 24f)) {
-                        if (!gameCompleted) {
-                            gameCompleted = true
+                        if (!gameCompleted && !isExitAnimating) {
+                            isExitAnimating = true
+                            exitAnimationTimer = 1.3f
                             BounceAudioEngine.playVictory()
-                            BounceProgressionManager.recordLevelCompleted(
-                                context = context,
-                                prefs = prefs,
-                                viewModel = viewModel,
-                                levelNum = level.number,
-                                stars = starsCollected,
-                                coins = coinsCollected,
-                                timeSeconds = elapsedTimeSeconds,
-                                tookDamage = livesRemaining < 3
-                            )
+                            spawnVictoryConfetti(activeLevel.portalX, activeLevel.portalY)
                         }
                     }
                 }
@@ -5940,7 +6827,20 @@ fun ActiveBounceQuestGame(
                     }
                 }
 
-                // 8. Draw Finish Portal
+                // 8. Draw Finish Portal & Flag
+
+                // A. Soft Neon Glow around the Flag Destination area
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(themeAccent.copy(alpha = 0.35f), Color.Transparent),
+                        center = Offset(activeLevel.portalX, activeLevel.portalY - 30f),
+                        radius = 80f
+                    ),
+                    radius = 80f,
+                    center = Offset(activeLevel.portalX, activeLevel.portalY - 30f)
+                )
+
+                // B. Keep the existing rotating portal base below the flag
                 drawCircle(
                     color = Color(0xFFFF00D6).copy(alpha = 0.15f),
                     radius = 32f,
@@ -5967,6 +6867,93 @@ fun ActiveBounceQuestGame(
                         start = Offset(activeLevel.portalX - 22f, activeLevel.portalY),
                         end = Offset(activeLevel.portalX + 22f, activeLevel.portalY),
                         strokeWidth = 3f
+                    )
+                }
+
+                // C. Draw Vertical Flagpole above the portal center
+                val poleHeight = 65f
+                val poleStartX = activeLevel.portalX
+                val poleStartY = activeLevel.portalY
+                val poleEndY = activeLevel.portalY - poleHeight
+
+                // Draw flagpole drop shadow
+                drawLine(
+                    color = Color.Black.copy(alpha = 0.25f),
+                    start = Offset(poleStartX + 3f, poleStartY),
+                    end = Offset(poleStartX + 3f, poleEndY),
+                    strokeWidth = 4f
+                )
+
+                // Draw flagpole metallic body
+                drawLine(
+                    brush = Brush.linearGradient(
+                        colors = listOf(Color(0xFF888888), Color(0xFFDDDDDD), Color(0xFF555555))
+                    ),
+                    start = Offset(poleStartX, poleStartY),
+                    end = Offset(poleStartX, poleEndY),
+                    strokeWidth = 3.5f
+                )
+
+                // Draw Gold Top Orb of the flagpole
+                drawCircle(
+                    color = Color(0xFFFFD700),
+                    radius = 4.5f,
+                    center = Offset(poleStartX, poleEndY)
+                )
+
+                // D. Draw Beautiful Waving Flag
+                val flagTime = System.currentTimeMillis() / 1000f
+                val waveOffset = (kotlin.math.sin(flagTime * 8f) * 4.5f)
+                val waveOffset2 = (kotlin.math.cos(flagTime * 8f) * 3f)
+
+                val flagPath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(poleStartX, poleEndY + 5f)
+                    // Top edge waving to the right
+                    lineTo(poleStartX + 18f, poleEndY + 5f + waveOffset)
+                    lineTo(poleStartX + 36f, poleEndY + 8f + waveOffset2)
+                    lineTo(poleStartX + 48f, poleEndY + 12f + waveOffset)
+                    // Right vertical edge
+                    lineTo(poleStartX + 44f, poleEndY + 32f + waveOffset2)
+                    // Bottom edge waving back to the pole
+                    lineTo(poleStartX + 32f, poleEndY + 28f + waveOffset)
+                    lineTo(poleStartX + 16f, poleEndY + 26f + waveOffset2)
+                    lineTo(poleStartX, poleEndY + 24f)
+                    close()
+                }
+
+                // Bright orange/red/yellow theme-matching waving gradient brush
+                val flagBrush = Brush.horizontalGradient(
+                    colors = listOf(themeAccent, Color(0xFFFF3D00), Color(0xFFFFD700)),
+                    startX = poleStartX,
+                    endX = poleStartX + 48f
+                )
+
+                // Draw flag path with glowing style
+                drawPath(
+                    path = flagPath,
+                    brush = flagBrush
+                )
+
+                // Add nice inner details/borders to flag path for extra depth/premium style
+                drawPath(
+                    path = flagPath,
+                    color = Color.White.copy(alpha = 0.28f),
+                    style = Stroke(width = 1.5f)
+                )
+
+                // E. Ambient floating tiny sparkles around the flagpole/destination
+                for (i in 0 until 5) {
+                    val particleTime = flagTime + i * 1.6f
+                    val progress = (particleTime % 2.5f) / 2.5f // 0.0 to 1.0
+                    val pX = poleStartX + kotlin.math.sin(i * 157.32f) * 35f
+                    val pY = poleStartY - 10f - progress * 55f
+                    val pAlpha = (1f - progress) * 0.85f
+                    val pSize = 2.2f * (1f - progress * 0.4f)
+                    val pColor = if (i % 2 == 0) Color(0xFFFFEA00) else themeAccent
+                    drawCircle(
+                        color = pColor.copy(alpha = pAlpha),
+                        radius = pSize,
+                        center = Offset(pX, pY)
                     )
                 }
 
@@ -6027,6 +7014,60 @@ fun ActiveBounceQuestGame(
                         radius = 1.2f,
                         center = Offset(ballX + 1.8f + headingOffset * 1.2f, ballY - 2f)
                     )
+                }
+
+                // --- VISUAL DEBUG OVERLAY FOR EXIT SYSTEM ---
+                if (isDebugExitOverlayEnabled) {
+                    val exitPlat = dynamicObstacles.firstOrNull { it.isExitPlatform }
+                    if (exitPlat != null) {
+                        // 1. Highlight Exit Platform (dashed neon cyan frame)
+                        drawRoundRect(
+                            color = Color(0xFF00FFCC),
+                            topLeft = Offset(exitPlat.x, exitPlat.y),
+                            size = Size(exitPlat.width, exitPlat.height),
+                            cornerRadius = CornerRadius(10f, 10f),
+                            style = Stroke(width = 4f, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f))
+                        )
+                        drawRect(
+                            color = Color(0xFF00FFCC).copy(alpha = 0.15f),
+                            topLeft = Offset(exitPlat.x, exitPlat.y),
+                            size = Size(exitPlat.width, exitPlat.height)
+                        )
+                        
+                        // 2. Draw Exit Position (Neon Magenta Target Crosshair at exitPlatform.topCenter)
+                        val topCenterPos = exitPlat.topCenter
+                        drawCircle(
+                            color = Color(0xFFFF00D6),
+                            radius = 6f,
+                            center = topCenterPos
+                        )
+                        drawLine(
+                            color = Color(0xFFFF00D6),
+                            start = Offset(topCenterPos.x - 20f, topCenterPos.y),
+                            end = Offset(topCenterPos.x + 20f, topCenterPos.y),
+                            strokeWidth = 3f
+                        )
+                        drawLine(
+                            color = Color(0xFFFF00D6),
+                            start = Offset(topCenterPos.x, topCenterPos.y - 20f),
+                            end = Offset(topCenterPos.x, topCenterPos.y + 20f),
+                            strokeWidth = 3f
+                        )
+
+                        // 3. Draw Exit Collider Boundary Circle (Neon Magenta, matching portal collision radius)
+                        val colliderRadius = 24f
+                        drawCircle(
+                            color = Color(0xFFFF00D6).copy(alpha = 0.22f),
+                            radius = colliderRadius,
+                            center = Offset(activeLevel.portalX, activeLevel.portalY)
+                        )
+                        drawCircle(
+                            color = Color(0xFFFF00D6),
+                            radius = colliderRadius,
+                            center = Offset(activeLevel.portalX, activeLevel.portalY),
+                            style = Stroke(width = 2.5f)
+                        )
+                    }
                 }
             }
         }
@@ -6335,6 +7376,7 @@ fun ActiveBounceQuestGame(
                     ) {
                         Text("Resume Play", color = Color.White)
                     }
+
                     Button(
                         onClick = { showSettingsDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1B2C)),
@@ -6474,182 +7516,509 @@ fun ActiveBounceQuestGame(
         )
     }
 
-    // --- VICTORY GAME OVERLAY DIALOG ---
-    if (gameCompleted) {
+    // --- VICTORY TRANSITION FLOW CONTROLLER ---
+    fun triggerNextLevelTransition(adWatched: Boolean) {
         val coinsReward = level.baseRewardCoins + (starsCollected * 10) + coinsCollected
-        var rewardClaimed by remember { mutableStateOf(false) }
+        scope.launch {
+            val messages = listOf(
+                "Loading Next Adventure...",
+                "Generating New World...",
+                "Preparing Next Challenge..."
+            )
+            loadingMessage = messages.random()
+            isLoadingNextLevel = true
+
+            // Smooth fade-in
+            val fadeDuration = 300L
+            val steps = 15
+            for (step in 1..steps) {
+                transitionAlpha = step / steps.toFloat()
+                delay(fadeDuration / steps)
+            }
+
+            // Save progress and update level
+            onLevelCompleted(
+                starsCollected,
+                coinsCollected,
+                currentScore,
+                levelAttemptDeaths,
+                missedJumps,
+                elapsedTimeSeconds,
+                checkpointRespawns,
+                dynamicCollectibles.any { it.isCollected && it.isBonus }
+            )
+
+            // Hold transition screen for premium game feel
+            delay(1000L)
+
+            // Smooth fade-out
+            for (step in steps downTo 0) {
+                transitionAlpha = step / steps.toFloat()
+                delay(fadeDuration / steps)
+            }
+
+            isLoadingNextLevel = false
+        }
+    }
+
+    // --- VICTORY GAME OVERLAY DIALOG ---
+    if (gameCompleted && showVictoryDialog && !isLoadingNextLevel) {
+        val coinsReward = level.baseRewardCoins + (starsCollected * 10) + coinsCollected
 
         AlertDialog(
             onDismissRequest = {},
             containerColor = Color(0xFF13111C),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
+            tonalElevation = 8.dp,
             title = {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                    Text("🎉 LEVEL COMPLETED!", color = Color(0xFF00E5FF), fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Box(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                    IconButton(
+                        onClick = { showVictoryDialog = false },
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back to Level",
+                            tint = Color.White
+                        )
+                    }
+                    Text(
+                        text = "🎉 LEVEL COMPLETE!",
+                        color = Color(0xFFFFD700),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
                 }
             },
             text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Splendid work! Purple Ball reached the finish portal.", color = Color.Gray, textAlign = TextAlign.Center, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(14.dp))
+                    val dialogWidth = maxWidth
+                    val dialogHeight = maxHeight
 
-                    // Reward summary box
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF7C3AED).copy(alpha = 0.15f), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0xFF7C3AED).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("+$coinsReward", color = Color(0xFFFFD700), fontWeight = FontWeight.Black, fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("🪙", fontSize = 22.sp)
+                        Text(
+                            text = "Ready for your next challenge?",
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center,
+                            fontSize = 12.sp
+                        )
+
+                        // 1. Comparison Box
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E1B2C).copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                                .padding(vertical = 10.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            // Left: Normal Reward
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text("🪙", fontSize = 18.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "+$coinsReward",
+                                        color = Color(0xFFFFD700),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 20.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Coins Earned",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
-                            Text("PlayWin Reward Coins", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp)
+
+                            // Divider
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(36.dp)
+                                    .background(Color.White.copy(alpha = 0.15f))
+                            )
+
+                            // Right: 2X Reward
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text("💰", fontSize = 18.sp)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "+${coinsReward * 2}",
+                                        color = Color(0xFFFF00D6),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 20.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .background(Color(0xFFFF00D6), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = "2X",
+                                            color = Color.White,
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "With Ad (2X Coins)",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        // 2. Interactive Buttons Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val isPending = rewardState == "Pending"
+                            val txId = "bounce_lvl_${level.number}_reward_v2"
+
+                            // Left Button: Watch Ad
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color(0xFFFF00D6),
+                                                Color(0xFF8000FF)
+                                            )
+                                        )
+                                    )
+                                    .graphicsLayer { alpha = if (isPending && !isProcessingReward) 1f else 0.4f }
+                                    .clickable(enabled = isPending && !isProcessingReward) {
+                                        if (rewardState == "Pending" && !isProcessingReward) {
+                                            isProcessingReward = true
+                                            val activity = context as? Activity
+                                            if (activity != null) {
+                                                if (RewardedManager.isAdReady(activity)) {
+                                                    RewardedManager.showAd(
+                                                        activity = activity,
+                                                        rewardType = RewardType.BONUS_COINS,
+                                                        callbacks = object : RewardCallback {
+                                                            override fun onRewardEarned(rewardType: RewardType, amount: Int, token: String) {
+                                                                if (rewardState == "Pending") {
+                                                                    rewardState = "2X Claimed"
+                                                                    prefs.edit().putString("bounce_reward_state_level_${level.number}", "2X Claimed").commit()
+
+                                                                    viewModel.addCoins(coinsReward * 2, "Bounce Quest Lvl ${level.number} (2x Ad Bonus)", txId) { success ->
+                                                                        triggerCoinFlyAnimation {
+                                                                            android.widget.Toast.makeText(context, "Claimed 2X Bonus (+${coinsReward} extra coins)!", android.widget.Toast.LENGTH_SHORT).show()
+                                                                            triggerNextLevelTransition(adWatched = true)
+                                                                            isProcessingReward = false
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    isProcessingReward = false
+                                                                }
+                                                            }
+
+                                                            override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                                                android.widget.Toast.makeText(context, "Ad failed. Please try again or claim normal reward.", android.widget.Toast.LENGTH_SHORT).show()
+                                                                RewardedManager.preload(activity)
+                                                                isProcessingReward = false
+                                                            }
+
+                                                            override fun onAdFailedToShow(errorMessage: String) {
+                                                                android.widget.Toast.makeText(context, "Ad failed. Please try again or claim normal reward.", android.widget.Toast.LENGTH_SHORT).show()
+                                                                RewardedManager.preload(activity)
+                                                                isProcessingReward = false
+                                                            }
+
+                                                            override fun onAdClosed(userEarnedReward: Boolean) {
+                                                                RewardedManager.preload(activity)
+                                                                if (!userEarnedReward) {
+                                                                    isProcessingReward = false
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                } else {
+                                                    android.widget.Toast.makeText(context, "Ad not ready. Preloading... please try again or claim normal reward.", android.widget.Toast.LENGTH_SHORT).show()
+                                                    RewardedManager.preload(activity)
+                                                    isProcessingReward = false
+                                                }
+                                            } else {
+                                                isProcessingReward = false
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text("🎥", fontSize = 16.sp)
+                                    Column(horizontalAlignment = Alignment.Start) {
+                                        Text("Watch Ad", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("+${coinsReward * 2} (2X)", color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.ExtraBold, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+
+                            // Right Button: Claim Reward
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color(0xFFFACC15),
+                                                Color(0xFFEAB308)
+                                            )
+                                        )
+                                    )
+                                    .graphicsLayer { alpha = if (isPending && !isProcessingReward) 1f else 0.4f }
+                                    .clickable(enabled = isPending && !isProcessingReward) {
+                                        if (rewardState == "Pending" && !isProcessingReward) {
+                                            isProcessingReward = true
+                                            rewardState = "Claimed"
+                                            prefs.edit().putString("bounce_reward_state_level_${level.number}", "Claimed").commit()
+
+                                            viewModel.addCoins(coinsReward, "Bounce Quest Lvl ${level.number}", txId) { success ->
+                                                triggerCoinFlyAnimation {
+                                                    android.widget.Toast.makeText(context, "Claimed $coinsReward coins successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    triggerNextLevelTransition(adWatched = false)
+                                                    isProcessingReward = false
+                                                }
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text("🪙", fontSize = 16.sp)
+                                    Column(horizontalAlignment = Alignment.Start) {
+                                        Text("Claim Reward", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text("+${coinsReward}", color = Color.Black.copy(alpha = 0.8f), fontWeight = FontWeight.ExtraBold, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        // 3. Continue Button
+                        Button(
+                            onClick = {
+                                if (!isProcessingReward) {
+                                    isProcessingReward = true
+                                    val txId = "bounce_lvl_${level.number}_reward_v2"
+                                    if (rewardState == "Pending") {
+                                        rewardState = "Claimed"
+                                        prefs.edit().putString("bounce_reward_state_level_${level.number}", "Claimed").commit()
+                                        viewModel.addCoins(coinsReward, "Bounce Quest Lvl ${level.number}", txId) { success ->
+                                            triggerCoinFlyAnimation {
+                                                triggerNextLevelTransition(adWatched = false)
+                                                isProcessingReward = false
+                                            }
+                                        }
+                                    } else {
+                                        triggerNextLevelTransition(adWatched = false)
+                                        isProcessingReward = false
+                                    }
+                                }
+                            },
+                            enabled = !isProcessingReward,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1E1B2C),
+                                contentColor = Color.White
+                            ),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Text("Continue", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+
+                        // 4. Exit Button (Red link at the bottom)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isProcessingReward) {
+                                    if (!isProcessingReward) {
+                                        isProcessingReward = true
+                                        val txId = "bounce_lvl_${level.number}_reward_v2"
+                                        if (rewardState == "Pending") {
+                                            rewardState = "Claimed"
+                                            prefs.edit().putString("bounce_reward_state_level_${level.number}", "Claimed").commit()
+                                            viewModel.addCoins(coinsReward, "Bounce Quest Lvl ${level.number}", txId) { success ->
+                                                triggerCoinFlyAnimation {
+                                                    onBackToMenu()
+                                                    isProcessingReward = false
+                                                }
+                                            }
+                                        } else {
+                                            onBackToMenu()
+                                            isProcessingReward = false
+                                        }
+                                    }
+                                }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Exit",
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Exit",
+                                color = Color(0xFFEF4444),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    // 5. Coin Particles Flying Animation Overlay
+                    if (showCoinAnimation) {
+                        coinParticles.forEach { particle ->
+                            val globalProgress = coinAnimProgress.value
+                            val totalAnimTime = 1400f
+                            val particleStartFraction = particle.delayMs / totalAnimTime
+                            val particleEndFraction = (particle.delayMs + particle.durationMs) / totalAnimTime
+                            val pProgress = ((globalProgress - particleStartFraction) / (particleEndFraction - particleStartFraction)).coerceIn(0f, 1f)
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("STARS", color = Color.Gray, fontSize = 10.sp)
-                            Text("$starsCollected / $totalLevelStars", color = Color(0xFFFFD700), fontWeight = FontWeight.Black, fontSize = 16.sp)
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("TIME TAKEN", color = Color.Gray, fontSize = 10.sp)
-                            Text(formattedTime, color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp)
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("SCORE", color = Color.Gray, fontSize = 10.sp)
-                            Text("$currentScore", color = Color(0xFFFF00D6), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                            if (pProgress > 0f && pProgress < 1f) {
+                                val dialogWidthPx = dialogWidth.value
+                                val dialogHeightPx = dialogHeight.value
+
+                                // Map particle positions dynamically relative to dialog width & height
+                                val startX = dialogWidthPx * (particle.startX / 300f)
+                                val startY = dialogHeightPx * (particle.startY / 500f)
+                                val endX = dialogWidthPx * (particle.endX / 300f)
+                                val endY = dialogHeightPx * (particle.endY / 500f)
+
+                                // Curved trajectory
+                                val currentX = startX + (endX - startX) * pProgress + (Math.sin(pProgress * Math.PI) * 25f).toFloat()
+                                val currentY = startY + (endY - startY) * pProgress
+                                val scale = 1.2f - (pProgress * 0.6f)
+                                val alpha = if (pProgress > 0.8f) (1f - pProgress) / 0.2f else 1f
+
+                                Text(
+                                    text = "🪙",
+                                    fontSize = 18.sp,
+                                    modifier = Modifier
+                                        .graphicsLayer {
+                                            translationX = currentX
+                                            translationY = currentY
+                                            scaleX = scale
+                                            scaleY = scale
+                                            this.alpha = alpha
+                                            rotationZ = pProgress * 360f
+                                        }
+                                )
+                            }
                         }
                     }
                 }
             },
-            confirmButton = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            if (!rewardClaimed) {
-                                val activity = context as? Activity
-                                if (activity != null) {
-                                    if (RewardedManager.isAdReady(activity)) {
-                                        RewardedManager.showAd(
-                                            activity = activity,
-                                            rewardType = RewardType.BONUS_COINS,
-                                            callbacks = object : RewardCallback {
-                                                override fun onRewardEarned(rewardType: RewardType, amount: Int, token: String) {
-                                                    viewModel.addCoins(coinsReward * 2, "Bounce Quest Lvl ${level.number} (2x Ad Bonus)")
-                                                    rewardClaimed = true
-                                                    android.widget.Toast.makeText(context, "📺 Claimed 2X Bonus (+${coinsReward * 2} coins)!", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
+            confirmButton = {}
+        )
+    }
 
-                                                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
-                                                    android.widget.Toast.makeText(context, "Advertisement not available. Please try again.", android.widget.Toast.LENGTH_SHORT).show()
-                                                    RewardedManager.preload(activity)
-                                                }
-
-                                                override fun onAdFailedToShow(errorMessage: String) {
-                                                    android.widget.Toast.makeText(context, "Advertisement not available. Please try again.", android.widget.Toast.LENGTH_SHORT).show()
-                                                    RewardedManager.preload(activity)
-                                                }
-
-                                                override fun onAdClosed(userEarnedReward: Boolean) {
-                                                    if (!userEarnedReward) {
-                                                        android.widget.Toast.makeText(context, "Ad skipped. No bonus granted.", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                    RewardedManager.preload(activity)
-                                                }
-                                            }
-                                        )
-                                    } else {
-                                        android.widget.Toast.makeText(context, "Advertisement not available. Please try again.", android.widget.Toast.LENGTH_SHORT).show()
-                                        RewardedManager.preload(activity)
-                                    }
-                                } else {
-                                    android.widget.Toast.makeText(context, "Advertisement not available. Please try again.", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        enabled = !rewardClaimed,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF00D6),
-                            disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = if (rewardClaimed) "2X REWARD CLAIMED ✓" else "WATCH AD FOR 2X COINS (+${coinsReward * 2} 🪙) 📺",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            if (!rewardClaimed) {
-                                viewModel.addCoins(coinsReward, "Bounce Quest Lvl ${level.number}")
-                                rewardClaimed = true
-                                android.widget.Toast.makeText(context, "Claimed $coinsReward coins successfully!", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        enabled = !rewardClaimed,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFFD700),
-                            disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = if (rewardClaimed) "REWARD CLAIMED ✓" else "CLAIM REWARD (+${coinsReward} 🪙)",
-                            color = if (rewardClaimed) Color.White.copy(alpha = 0.6f) else Color.Black,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = { restartActiveGame() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1B2C)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Replay", color = Color.White)
-                        }
-                        Button(
-                            onClick = {
-                                onLevelCompleted(
-                                    starsCollected,
-                                    coinsCollected,
-                                    currentScore,
-                                    levelAttemptDeaths,
-                                    missedJumps,
-                                    elapsedTimeSeconds,
-                                    checkpointRespawns,
-                                    dynamicCollectibles.any { it.isCollected && it.isBonus }
-                                )
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Next / Map", color = Color.White)
-                        }
-                    }
+    // --- REOPEN VICTORY DIALOG BUTTON ---
+    if (gameCompleted && !showVictoryDialog && !isLoadingNextLevel) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.TopEnd
+        ) {
+            Button(
+                onClick = { showVictoryDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = "Show Level Summary",
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Level Summary 🏆", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
-        )
+        }
+    }
+
+    // --- PREMIUM LOADING TRANSITION OVERLAY ---
+    if (isLoadingNextLevel) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F0E17).copy(alpha = transitionAlpha))
+                .clickable(enabled = false) {}, // absorb touch events
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(
+                    color = Color(0xFF00E5FF),
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(42.dp)
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = loadingMessage,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 
     // --- SETTINGS OVERLAY DIALOG ---
