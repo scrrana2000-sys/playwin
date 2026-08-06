@@ -37,7 +37,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import android.app.Activity
+import android.content.ContextWrapper
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -66,6 +72,14 @@ import androidx.compose.ui.graphics.nativeCanvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.ui.graphics.StrokeJoin
+
+private tailrec fun Context.findActivity(): Activity? {
+    return when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+}
 
 class SnakeSoundManager(context: Context) {
     private val prefs = context.getSharedPreferences("snake_sound_prefs", Context.MODE_PRIVATE)
@@ -670,6 +684,39 @@ fun SnakeClassicScreen(
 
     // --- Progression & Achievements States ---
     var currentScreenState by remember { mutableStateOf("LOBBY") }
+    val view = LocalView.current
+
+    // Immersive Sticky Full-Screen Management for Gameplay
+    DisposableEffect(currentScreenState) {
+        val activity = context.findActivity()
+        if (activity != null) {
+            val window = activity.window
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            if (currentScreenState == "GAMEPLAY") {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                insetsController.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                insetsController.hide(
+                    WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars()
+                )
+            } else {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                insetsController.show(
+                    WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars()
+                )
+            }
+        }
+        onDispose {
+            val activity = context.findActivity()
+            if (activity != null) {
+                val window = activity.window
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.show(
+                    WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars()
+                )
+            }
+        }
+    }
     var dailyMissions by remember { mutableStateOf(SnakeProgressionManager.loadMissions(context)) }
     var achievements by remember { mutableStateOf(SnakeProgressionManager.loadAchievements(context)) }
     var stats by remember { mutableStateOf(SnakeProgressionManager.loadStats(context)) }
@@ -2337,12 +2384,15 @@ fun SnakeClassicScreen(
     // Main layout
     Scaffold(
         containerColor = Color(0xFF090615),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF0D0A1B))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .statusBarsPadding()
+                    .displayCutoutPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -4348,6 +4398,7 @@ fun SnakeClassicScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(top = 4.dp),
                 contentAlignment = Alignment.Center
             ) {
