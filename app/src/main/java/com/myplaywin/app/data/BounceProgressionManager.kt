@@ -37,14 +37,14 @@ data class BounceDailyMission(
 object BounceProgressionManager {
 
     val INITIAL_ACHIEVEMENTS = listOf(
-        BounceAchievement("ach_first_level", "First Bounce", "Complete Level 1", "🎯", rewardCoins = 100),
-        BounceAchievement("ach_coin_100", "Coin Collector", "Collect 100 total Coins", "🪙", rewardCoins = 150),
-        BounceAchievement("ach_coin_1000", "Treasury Tycoon", "Collect 1,000 total Coins", "💎", rewardCoins = 500),
-        BounceAchievement("ach_world_1", "World 1 Champion", "Complete World 1 (Levels 1-5)", "🏆", rewardCoins = 300),
-        BounceAchievement("ach_game_complete", "Bounce Legend", "Conquer all 20 Levels", "👑", rewardCoins = 1000),
-        BounceAchievement("ach_speed_runner", "Speed Demon", "Finish any level in under 30 seconds", "⚡", rewardCoins = 250),
-        BounceAchievement("ach_star_hunter", "Star Collector", "Earn 30 total Stars", "⭐", rewardCoins = 300),
-        BounceAchievement("ach_no_damage", "Flawless Bouncer", "Finish a level without taking damage", "🛡️", rewardCoins = 200)
+        BounceAchievement("ach_first_level", "First Bounce", "Complete Level 1", "🎯", rewardCoins = 40),
+        BounceAchievement("ach_coin_100", "Coin Collector", "Collect 100 total Coins", "🪙", rewardCoins = 50),
+        BounceAchievement("ach_coin_1000", "Treasury Tycoon", "Collect 1,000 total Coins", "💎", rewardCoins = 100),
+        BounceAchievement("ach_world_1", "World 1 Champion", "Complete World 1 (Levels 1-5)", "🏆", rewardCoins = 80),
+        BounceAchievement("ach_game_complete", "Bounce Legend", "Conquer all 20 Levels", "👑", rewardCoins = 100),
+        BounceAchievement("ach_speed_runner", "Speed Demon", "Finish any level in under 30 seconds", "⚡", rewardCoins = 60),
+        BounceAchievement("ach_star_hunter", "Star Collector", "Earn 30 total Stars", "⭐", rewardCoins = 80),
+        BounceAchievement("ach_no_damage", "Flawless Bouncer", "Finish a level without taking damage", "🛡️", rewardCoins = 50)
     )
 
     fun getAchievements(prefs: SharedPreferences): List<BounceAchievement> {
@@ -138,7 +138,7 @@ object BounceProgressionManager {
                 description = "Collect 50 Coins in Bounce Quest",
                 currentProgress = prefs.getInt("daily_progress_mission_coins", 0),
                 maxProgress = 50,
-                rewardCoins = 150,
+                rewardCoins = 50,
                 isClaimed = prefs.getBoolean("daily_claimed_mission_coins", false)
             ),
             BounceDailyMission(
@@ -147,7 +147,7 @@ object BounceProgressionManager {
                 description = "Complete 3 Levels",
                 currentProgress = prefs.getInt("daily_progress_mission_levels", 0),
                 maxProgress = 3,
-                rewardCoins = 200,
+                rewardCoins = 70,
                 isClaimed = prefs.getBoolean("daily_claimed_mission_levels", false)
             ),
             BounceDailyMission(
@@ -156,7 +156,7 @@ object BounceProgressionManager {
                 description = "Collect 5 Stars across levels",
                 currentProgress = prefs.getInt("daily_progress_mission_stars", 0),
                 maxProgress = 5,
-                rewardCoins = 250,
+                rewardCoins = 85,
                 isClaimed = prefs.getBoolean("daily_claimed_mission_stars", false)
             ),
             BounceDailyMission(
@@ -165,7 +165,7 @@ object BounceProgressionManager {
                 description = "Finish 1 Level without taking damage",
                 currentProgress = prefs.getInt("daily_progress_mission_nodamage", 0),
                 maxProgress = 1,
-                rewardCoins = 300,
+                rewardCoins = 90,
                 isClaimed = prefs.getBoolean("daily_claimed_mission_nodamage", false)
             )
         )

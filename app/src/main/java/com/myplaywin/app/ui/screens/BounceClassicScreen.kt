@@ -732,11 +732,11 @@ object SmartProceduralLevelGenerator {
             }
         }
 
-        // 3. Track recently used chunk variations in the last 20 levels
+        // 3. Track recently used chunk variations in the last 25 levels
         val recentlyUsedChunks = mutableSetOf<Pair<ChunkType, Int>>()
         if (context != null) {
             val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
-            val startCheck = maxOf(1, levelNum - 20)
+            val startCheck = maxOf(1, levelNum - 25)
             for (i in startCheck until levelNum) {
                 val savedChunks = prefs.getString("infinite_level_chunks_$i", null)
                 if (savedChunks != null) {
@@ -820,10 +820,10 @@ object SmartProceduralLevelGenerator {
             chunkConfigList.add(Pair(type, chosenVar))
         }
 
-        // 6. Similarity checker: avoid repeating the same configurations within the last 20 generated levels
+        // 6. Similarity checker: avoid repeating the same configurations within the last 25 generated levels
         if (context != null) {
             val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
-            val startCheck = maxOf(1, levelNum - 20)
+            val startCheck = maxOf(1, levelNum - 25)
             var similarityAttempts = 0
             var tooSimilar = true
             while (tooSimilar && similarityAttempts < 15) {
@@ -1381,6 +1381,64 @@ object SmartProceduralLevelGenerator {
             collectibles.add(BounceCollectible(x = shortX + 100f, y = 300f, isStar = true, isBonus = true))
             collectibles.add(BounceCollectible(x = shortX + 160f, y = 340f, isStar = false, isBonus = true))
         }
+
+        // 7. DYNAMIC ENEMY SPEED SCALING, STAR GUARDIANS & DIFFICULTY ENHANCEMENTS
+        val speedMult = 1f + (levelNum - 1) * 0.05f
+        val updatedEnemies = enemies.map { enemy ->
+            val scaledSpeed = (enemy.moveSpeed * speedMult).coerceAtMost(220f)
+            enemy.copy(moveSpeed = scaledSpeed)
+        }.toMutableList()
+        enemies.clear()
+        enemies.addAll(updatedEnemies)
+
+        // Place enemies near stars to increase risk / reward challenge
+        val stars = collectibles.filter { it.isStar }
+        var enemyIdCounter = levelNum * 1000 + 800
+        for (star in stars) {
+            val hasNearbyEnemy = enemies.any { kotlin.math.abs(it.x - star.x) < 140f && kotlin.math.abs(it.y - star.y) < 140f }
+            if (!hasNearbyEnemy) {
+                if (random.nextBoolean()) {
+                    enemies.add(
+                        BounceEnemy(
+                            id = enemyIdCounter++,
+                            type = EnemyType.FLYING,
+                            x = star.x,
+                            y = (star.y - 40f).coerceAtLeast(60f),
+                            moveRangeX = 60f,
+                            moveRangeY = 35f,
+                            moveSpeed = (65f * speedMult).coerceAtMost(200f)
+                        )
+                    )
+                } else {
+                    enemies.add(
+                        BounceEnemy(
+                            id = enemyIdCounter++,
+                            type = EnemyType.ROTATING_HAZARD,
+                            x = star.x,
+                            y = star.y + 20f,
+                            moveSpeed = (160f * speedMult).coerceAtMost(250f)
+                        )
+                    )
+                }
+            }
+        }
+
+        // Add moving spikes in later levels (Level 3+)
+        if (levelNum >= 3 && random.nextFloat() < 0.6f) {
+            val spikeX = startZone + random.nextFloat() * (endZone - startZone - 200f)
+            platforms.add(
+                BounceObstacle(
+                    x = spikeX,
+                    y = 450f,
+                    width = 35f,
+                    height = 25f,
+                    isSpike = true,
+                    isMoving = true,
+                    moveRangeX = 80f,
+                    moveSpeed = 0.06f * speedMult
+                )
+            )
+        }
     }
 
     private fun appendChunk(
@@ -1860,10 +1918,11 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         }
     }
 
-    // Check enemy counts by level phase
+    // Check enemy counts by level phase (supporting 30-50% higher enemy density)
     val enemyCount = level.enemies.size
-    if (levelNum <= 5 && enemyCount > 2) return false
-    if (levelNum in 6..15 && enemyCount > 5) return false
+    if (levelNum <= 5 && enemyCount > 10) return false
+    if (levelNum in 6..15 && enemyCount > 20) return false
+    if (levelNum > 15 && enemyCount > 30) return false
 
     return true
 }
@@ -3699,28 +3758,28 @@ fun BounceClassicScreen(
                     prefs.edit().putInt("level_score_$selectedLevelNum", finalScore).apply()
                 }
 
-                // Dynamic Reward System: Increase rewards for accomplishments
-                var baseReward = activeLevel.baseRewardCoins + (starsCollected * 10) + coinsCollected
+                // Dynamic Reward System: Rebalanced rewards for accomplishments
+                var baseReward = 10 + (starsCollected * 1) + coinsCollected
                 var bonusCoins = 0
                 val bonusesEarned = mutableListOf<String>()
 
                 val totalStars = activeLevel.collectibles.count { it.isStar }
                 if (totalStars > 0 && starsCollected == totalStars) {
-                    bonusCoins += 100
-                    bonusesEarned.add("⭐ 100% Stars Perfect (+100)")
+                    bonusCoins += 15
+                    bonusesEarned.add("⭐ 100% Stars Perfect (+15)")
                 }
                 if (deaths == 0) {
-                    bonusCoins += 150
-                    bonusesEarned.add("🛡️ No-Death Flawless Run (+150)")
+                    bonusCoins += 20
+                    bonusesEarned.add("🛡️ No-Death Flawless Run (+20)")
                 }
                 val isFastRun = time < (activeLevel.width * 0.025f).coerceAtMost(60f)
                 if (isFastRun) {
-                    bonusCoins += 100
-                    bonusesEarned.add("⚡ Speed Demon Finish (+100)")
+                    bonusCoins += 15
+                    bonusesEarned.add("⚡ Speed Demon Finish (+15)")
                 }
                 if (discoveredSecret) {
-                    bonusCoins += 80
-                    bonusesEarned.add("🔍 Secret Cave Discovered (+80)")
+                    bonusCoins += 10
+                    bonusesEarned.add("🔍 Secret Cave Discovered (+10)")
                 }
 
                 val totalReward = baseReward + bonusCoins
@@ -3755,7 +3814,7 @@ fun BounceClassicScreen(
 
     // --- DAILY LOGIN REWARDS DIALOG ---
     if (showDailyRewardDialog) {
-        val dailyRewards = listOf(50, 100, 150, 200, 300, 450, 750)
+        val dailyRewards = listOf(50, 50, 50, 50, 50, 50, 50)
 
         AlertDialog(
             onDismissRequest = { showDailyRewardDialog = false },
@@ -4446,9 +4505,16 @@ fun ActiveBounceQuestGame(
 
     // Control preferences & settings state
     val prefs = remember { context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE) }
+    var activeSkinId by remember(selectedSkinId) {
+        mutableStateOf(prefs.getString("selected_skin", selectedSkinId) ?: selectedSkinId)
+    }
+    val currentSkin = remember(activeSkinId) {
+        BALL_SKINS.find { it.id == activeSkinId } ?: BALL_SKINS.first()
+    }
     var controlScale by remember { mutableFloatStateOf(prefs.getFloat("control_scale", 1.0f)) }
     var vibrationEnabled by remember { mutableStateOf(prefs.getBoolean("vibration_enabled", true)) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showSkinsInGameDialog by remember { mutableStateOf(false) }
     val isDebugExitOverlayEnabled = false
     var joystickXAmount by remember { mutableFloatStateOf(0f) }
 
@@ -4666,7 +4732,7 @@ fun ActiveBounceQuestGame(
                     vy = sin(angle).toFloat() * speed - 15f,
                     alpha = 0.85f,
                     size = 2.5f + Math.random().toFloat() * 3.5f,
-                    color = Color(0xFFA855F7).copy(alpha = 0.75f)
+                    color = currentSkin.trailColor.copy(alpha = 0.75f)
                 )
             )
         }
@@ -4684,7 +4750,24 @@ fun ActiveBounceQuestGame(
                     vy = sin(angle).toFloat() * speed,
                     alpha = 0.75f,
                     size = 2f + Math.random().toFloat() * 3f,
-                    color = Color(0xFF00E5FF).copy(alpha = 0.7f)
+                    color = currentSkin.primaryColor.copy(alpha = 0.75f)
+                )
+            )
+        }
+    }
+
+    fun spawnSkinMotionTrail(x: Float, y: Float, vx: Float) {
+        if (Math.random() < 0.35) {
+            particles.add(
+                BounceParticle(
+                    x = x + (Math.random().toFloat() - 0.5f) * 6f,
+                    y = y + (Math.random().toFloat() - 0.5f) * 6f,
+                    vx = -vx * 0.12f + (Math.random().toFloat() - 0.5f) * 15f,
+                    vy = (Math.random().toFloat() - 0.5f) * 15f - 8f,
+                    alpha = 0.65f,
+                    size = 2f + Math.random().toFloat() * 2.5f,
+                    color = currentSkin.trailColor,
+                    isSparkle = (currentSkin.id == "skin_rainbow_sparkle" || currentSkin.id == "skin_cyber_cyan") && Math.random() < 0.4
                 )
             )
         }
@@ -5390,6 +5473,9 @@ fun ActiveBounceQuestGame(
                     // 8. Resolve X Axis Collision
                     ballX += ballVx * subDt
                     ballX = ballX.coerceIn(ballRadius, activeLevel.width - ballRadius)
+                    if (kotlin.math.abs(ballVx) > 20f) {
+                        spawnSkinMotionTrail(ballX, ballY, ballVx)
+                    }
 
                     // X Collision with Locked Doors & Interactive Blocks & Platforms
                     for (door in dynamicDoors) {
@@ -6305,9 +6391,21 @@ fun ActiveBounceQuestGame(
                     scale(squashX, squashY, pivot = Offset(ballX, ballY))
                     rotate(rollAngle, pivot = Offset(ballX, ballY))
                 }) {
+                    // Outer Skin Glow/Aura
+                    drawCircle(
+                        color = currentSkin.trailColor.copy(alpha = 0.35f * ballAlpha),
+                        radius = ballRadius + 3.5f,
+                        center = Offset(ballX, ballY)
+                    )
+
+                    // Equipped Ball Skin Radial Gradient
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFFA855F7).copy(alpha = ballAlpha), Color(0xFF7C3AED).copy(alpha = ballAlpha), Color(0xFF3B0764).copy(alpha = ballAlpha)),
+                            colors = listOf(
+                                currentSkin.primaryColor.copy(alpha = ballAlpha),
+                                currentSkin.secondaryColor.copy(alpha = ballAlpha),
+                                currentSkin.darkColor.copy(alpha = ballAlpha)
+                            ),
                             center = Offset(ballX - 3f, ballY - 3f),
                             radius = ballRadius
                         ),
@@ -6428,13 +6526,12 @@ fun ActiveBounceQuestGame(
                     Icon(Icons.Default.ArrowBack, contentDescription = "Exit to Menu", tint = Color.White, modifier = Modifier.size(18.dp))
                 }
                 Text(
-                    text = "Lvl ${level.number}: ${level.name}",
+                    text = "Level ${level.number}",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 130.dp)
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -6707,6 +6804,14 @@ fun ActiveBounceQuestGame(
                     }
 
                     Button(
+                        onClick = { showSkinsInGameDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1B2C)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Ball Skins 🎨", color = Color.White)
+                    }
+
+                    Button(
                         onClick = { showSettingsDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1B2C)),
                         modifier = Modifier.fillMaxWidth()
@@ -6847,7 +6952,7 @@ fun ActiveBounceQuestGame(
 
     // --- VICTORY TRANSITION FLOW CONTROLLER ---
     fun triggerNextLevelTransition(adWatched: Boolean) {
-        val coinsReward = level.baseRewardCoins + (starsCollected * 10) + coinsCollected
+        val coinsReward = 10 + (starsCollected * 1) + coinsCollected
         scope.launch {
             val messages = listOf(
                 "Loading Next Adventure...",
@@ -6892,7 +6997,7 @@ fun ActiveBounceQuestGame(
 
     // --- VICTORY GAME OVERLAY DIALOG ---
     if (gameCompleted && showVictoryDialog && !isLoadingNextLevel) {
-        val coinsReward = level.baseRewardCoins + (starsCollected * 10) + coinsCollected
+        val coinsReward = 10 + (starsCollected * 1) + coinsCollected
 
         AlertDialog(
             onDismissRequest = {},
@@ -7065,9 +7170,9 @@ fun ActiveBounceQuestGame(
                                                                 rewardState = "2X Claimed"
                                                                 prefs.edit().putString("bounce_reward_state_level_${level.number}", "2X Claimed").commit()
 
-                                                                viewModel.addCoins(coinsReward * 2, "Bounce Quest Lvl ${level.number} (2x Ad Bonus)", txId) { success ->
+                                                                 viewModel.addCoins(coinsReward + 15, "Bounce Quest Lvl ${level.number} (+15 Ad Bonus)", txId) { success ->
                                                                     triggerCoinFlyAnimation {
-                                                                        android.widget.Toast.makeText(context, "Claimed 2X Bonus (+${coinsReward} extra coins)!", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        android.widget.Toast.makeText(context, "Claimed Bonus (+15 ad coins)!", android.widget.Toast.LENGTH_SHORT).show()
                                                                         triggerNextLevelTransition(adWatched = true)
                                                                         isProcessingReward = false
                                                                     }
@@ -7113,7 +7218,7 @@ fun ActiveBounceQuestGame(
                                     Text("🎥", fontSize = 16.sp)
                                     Column(horizontalAlignment = Alignment.Start) {
                                         Text("Watch Ad", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                        Text("+${coinsReward * 2} (2X)", color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.ExtraBold, fontSize = 9.sp)
+                                        Text("+15 Ad Bonus", color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.ExtraBold, fontSize = 9.sp)
                                     }
                                 }
                             }
@@ -7414,6 +7519,134 @@ fun ActiveBounceQuestGame(
             confirmButton = {
                 Button(
                     onClick = { showSettingsDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Done", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showSkinsInGameDialog) {
+        var ownedSkins by remember {
+            val setStr = prefs.getStringSet("owned_skins", setOf("skin_neon_violet")) ?: setOf("skin_neon_violet")
+            mutableStateOf(setStr)
+        }
+        val walletState by viewModel.walletState.collectAsStateWithLifecycle()
+
+        AlertDialog(
+            onDismissRequest = { showSkinsInGameDialog = false },
+            containerColor = Color(0xFF13111C),
+            shape = RoundedCornerShape(16.dp),
+            title = {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("🎨 BALL SKINS STORE", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp)
+                    IconButton(onClick = { showSkinsInGameDialog = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray)
+                    }
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Equip a skin to apply instantly to your ball!", color = Color.Gray, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.height(280.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(BALL_SKINS) { skin ->
+                            val isOwned = ownedSkins.contains(skin.id)
+                            val isSelected = activeSkinId == skin.id
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isSelected) Color(0xFF7C3AED).copy(alpha = 0.25f)
+                                        else Color(0xFF1E1B2C),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) Color(0xFFA855F7)
+                                        else Color.Gray.copy(alpha = 0.2f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(
+                                                Brush.radialGradient(
+                                                    colors = listOf(skin.primaryColor, skin.secondaryColor, skin.darkColor)
+                                                ),
+                                                CircleShape
+                                            )
+                                            .border(1.5.dp, skin.trailColor, CircleShape)
+                                    )
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(skin.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(skin.description, color = Color.Gray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    if (isSelected) {
+                                        Text("EQUIPPED ✓", color = Color(0xFF00E5FF), fontWeight = FontWeight.Black, fontSize = 10.sp)
+                                    } else if (isOwned) {
+                                        Button(
+                                            onClick = {
+                                                activeSkinId = skin.id
+                                                prefs.edit().putString("selected_skin", skin.id).apply()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("EQUIP", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = {
+                                                if (walletState.coins >= skin.priceCoins) {
+                                                    viewModel.addCoins(-skin.priceCoins, "Unlocked Skin ${skin.name}")
+                                                    val updatedSkins = ownedSkins + skin.id
+                                                    ownedSkins = updatedSkins
+                                                    prefs.edit().putStringSet("owned_skins", updatedSkins).apply()
+
+                                                    activeSkinId = skin.id
+                                                    prefs.edit().putString("selected_skin", skin.id).apply()
+
+                                                    android.widget.Toast.makeText(context, "Unlocked ${skin.name}!", android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    android.widget.Toast.makeText(context, "Need ${skin.priceCoins} coins!", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700)),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("${skin.priceCoins} 🪙", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showSkinsInGameDialog = false },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
                     modifier = Modifier.fillMaxWidth()
                 ) {

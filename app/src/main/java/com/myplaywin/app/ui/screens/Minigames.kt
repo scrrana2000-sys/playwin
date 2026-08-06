@@ -4848,7 +4848,7 @@ fun MathSolverScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                         val answerTimeMs = (System.currentTimeMillis() - startTime).coerceAtMost(10000L)
                         
                         if (isCorrectAnswer) {
-                            viewModel.addCoins(15, "Math Solver Challenge")
+                            viewModel.addCoins(5, "Math Solver Challenge")
                             viewModel.trackQuizStats(timeOut = false, lifelineLostByTimeout = false, answerTimeMs = answerTimeMs)
                         } else {
                             viewModel.trackQuizStats(timeOut = false, lifelineLostByTimeout = false, answerTimeMs = answerTimeMs)
@@ -4869,7 +4869,7 @@ fun MathSolverScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
             val displayFeedback = if (resultMessage.isNotEmpty()) {
                 resultMessage
             } else if (isCorrectAnswer) {
-                "✔ Correct Response! +15 Coins."
+                "✔ Correct Response! +5 Coins."
             } else {
                 "❌ Wrong answer. Try next calculation!"
             }

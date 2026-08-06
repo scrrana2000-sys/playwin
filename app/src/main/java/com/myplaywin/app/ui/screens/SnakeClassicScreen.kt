@@ -1520,9 +1520,9 @@ fun SnakeClassicScreen(
                 if (activeLevel?.isBonus == true) {
                     bonusTimeLeftSeconds = (bonusTimeLeftSeconds - 1).coerceAtLeast(0)
                     if (bonusTimeLeftSeconds <= 0) {
-                        // Bonus level rewards: 5 coins per fruit collected!
+                        // Bonus level rewards: 2 coins per fruit collected!
                         val stars = 3
-                        val coinsReward = levelFruitsCollected * 5
+                        val coinsReward = levelFruitsCollected * 2
                         SnakeProgressionManager.saveLevelStars(context, currentLevelNumber, stars)
                         SnakeProgressionManager.saveLevelHighScore(context, currentLevelNumber, score)
                         
@@ -2087,7 +2087,7 @@ fun SnakeClassicScreen(
                     
                     if (ateBonus) {
                         bonusFood = null
-                        val baseCoins = 10
+                        val baseCoins = 5
                         val coinsBonus = if (doubleCoinsTimeLeft > 0 || isDoubleCoinsActive) baseCoins * 2 else baseCoins
                         viewModel.addCoins(coinsBonus, "Snake Bonus Fruit")
                         val oldStats = SnakeProgressionManager.loadStats(context)
@@ -2257,7 +2257,7 @@ fun SnakeClassicScreen(
                                     levelTimeElapsedSeconds <= 60 -> 2
                                     else -> 1
                                 }
-                                val coinsReward = 100 + (stars * 25)
+                                val coinsReward = 10 + (stars * 1)
                                 SnakeProgressionManager.saveLevelStars(context, currentLevelNumber, stars)
                                 SnakeProgressionManager.saveLevelHighScore(context, currentLevelNumber, score)
                                 SnakeProgressionManager.saveLevelBestTime(context, currentLevelNumber, levelTimeElapsedSeconds)
@@ -4416,7 +4416,7 @@ fun SnakeClassicScreen(
             levelTimeElapsedSeconds <= 60 -> 2
             else -> 1
         }
-        val coinsReward = if (isBonus) levelFruitsCollected * 5 else (100 + (stars * 25))
+        val coinsReward = if (isBonus) levelFruitsCollected * 2 else (10 + (stars * 1))
 
         AlertDialog(
             onDismissRequest = {},
@@ -4621,7 +4621,7 @@ fun SnakeClassicScreen(
 
     // Game Over dialog with rewards
     if (isGameOver) {
-        val coinsEarned = (score / 10 * 5).coerceAtMost(100)
+        val coinsEarned = (score / 10 * 1).coerceAtMost(25)
 
         AlertDialog(
             onDismissRequest = {
@@ -5025,15 +5025,15 @@ fun SnakeClassicScreen(
                                     
                                     when (chosen.first) {
                                         "COINS_15" -> {
-                                            viewModel.addCoins(15, "Snake Mystery Box")
+                                            viewModel.addCoins(5, "Snake Mystery Box")
                                             val oldStats = SnakeProgressionManager.loadStats(context)
-                                            SnakeProgressionManager.saveStats(context, oldStats.copy(totalCoinsEarned = oldStats.totalCoinsEarned + 15))
+                                            SnakeProgressionManager.saveStats(context, oldStats.copy(totalCoinsEarned = oldStats.totalCoinsEarned + 5))
                                             stats = SnakeProgressionManager.loadStats(context)
                                         }
                                         "COINS_30" -> {
-                                            viewModel.addCoins(30, "Snake Mystery Box")
+                                            viewModel.addCoins(10, "Snake Mystery Box")
                                             val oldStats = SnakeProgressionManager.loadStats(context)
-                                            SnakeProgressionManager.saveStats(context, oldStats.copy(totalCoinsEarned = oldStats.totalCoinsEarned + 30))
+                                            SnakeProgressionManager.saveStats(context, oldStats.copy(totalCoinsEarned = oldStats.totalCoinsEarned + 10))
                                             stats = SnakeProgressionManager.loadStats(context)
                                         }
                                         "SHIELD" -> {

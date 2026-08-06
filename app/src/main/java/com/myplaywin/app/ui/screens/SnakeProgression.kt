@@ -125,14 +125,14 @@ object SnakeProgressionManager {
         if (todayStr != lastResetDay) {
             // Create 3 brand new random missions
             val pool = listOf(
-                DailyMission("m1", "Eat 20 Fruits", "Eat 20 fruits today", "EAT_FRUITS", 20, 0, "Easy", 20),
-                DailyMission("m2", "Reach Score 100", "Reach a score of 100 in a single game", "REACH_SCORE_100", 100, 0, "Medium", 40),
-                DailyMission("m3", "Reach Score 200", "Reach a score of 200 in a single game", "REACH_SCORE_200", 200, 0, "Hard", 75),
-                DailyMission("m4", "Play 3 Games", "Play 3 games of Snake", "PLAY_3_GAMES", 3, 0, "Easy", 20),
-                DailyMission("m5", "Survive for 2 Minutes", "Survive for 2 minutes (120s) in a single game", "SURVIVE_2_MIN", 120, 0, "Medium", 40),
-                DailyMission("m6", "Complete 5 Levels", "Reach Speed Level 5 in a single game", "COMPLETE_5_LEVELS", 5, 0, "Medium", 40),
-                DailyMission("m7", "Collect 50 Fruits", "Collect 50 fruits today", "COLLECT_50_FRUITS", 50, 0, "Hard", 75),
-                DailyMission("m8", "Finish One Game Without Pause", "Finish one game without ever pausing", "NO_PAUSE", 1, 0, "Easy", 20)
+                DailyMission("m1", "Eat 20 Fruits", "Eat 20 fruits today", "EAT_FRUITS", 20, 0, "Easy", 8),
+                DailyMission("m2", "Reach Score 100", "Reach a score of 100 in a single game", "REACH_SCORE_100", 100, 0, "Medium", 15),
+                DailyMission("m3", "Reach Score 200", "Reach a score of 200 in a single game", "REACH_SCORE_200", 200, 0, "Hard", 25),
+                DailyMission("m4", "Play 3 Games", "Play 3 games of Snake", "PLAY_3_GAMES", 3, 0, "Easy", 8),
+                DailyMission("m5", "Survive for 2 Minutes", "Survive for 2 minutes (120s) in a single game", "SURVIVE_2_MIN", 120, 0, "Medium", 15),
+                DailyMission("m6", "Complete 5 Levels", "Reach Speed Level 5 in a single game", "COMPLETE_5_LEVELS", 5, 0, "Medium", 15),
+                DailyMission("m7", "Collect 50 Fruits", "Collect 50 fruits today", "COLLECT_50_FRUITS", 50, 0, "Hard", 25),
+                DailyMission("m8", "Finish One Game Without Pause", "Finish one game without ever pausing", "NO_PAUSE", 1, 0, "Easy", 8)
             )
             val selected = pool.shuffled().take(3)
             prefs.edit()
@@ -146,9 +146,9 @@ object SnakeProgressionManager {
         if (stored.isEmpty()) {
             // Initial boot
             val pool = listOf(
-                DailyMission("m1", "Eat 20 Fruits", "Eat 20 fruits today", "EAT_FRUITS", 20, 0, "Easy", 20),
-                DailyMission("m4", "Play 3 Games", "Play 3 games of Snake", "PLAY_3_GAMES", 3, 0, "Easy", 20),
-                DailyMission("m8", "Finish One Game Without Pause", "Finish one game without ever pausing", "NO_PAUSE", 1, 0, "Easy", 20)
+                DailyMission("m1", "Eat 20 Fruits", "Eat 20 fruits today", "EAT_FRUITS", 20, 0, "Easy", 8),
+                DailyMission("m4", "Play 3 Games", "Play 3 games of Snake", "PLAY_3_GAMES", 3, 0, "Easy", 8),
+                DailyMission("m8", "Finish One Game Without Pause", "Finish one game without ever pausing", "NO_PAUSE", 1, 0, "Easy", 8)
             )
             prefs.edit()
                 .putString("last_reset_day", todayStr)
@@ -171,13 +171,13 @@ object SnakeProgressionManager {
         val stored = prefs.getString("achievements", "") ?: ""
         if (stored.isEmpty()) {
             val initial = listOf(
-                Achievement("a1", "🐍", "First Snake", "Play your first game of Snake", 1, 0, 50),
-                Achievement("a2", "🍎", "Fruit Collector", "Collect 100 Fruits in total", 100, 0, 100),
-                Achievement("a3", "⚡", "Speed Master", "Reach Speed Level 10", 10, 0, 150),
-                Achievement("a4", "🏆", "Score Hunter", "Reach Score 500 in a single game", 500, 0, 200),
-                Achievement("a5", "👑", "Snake King", "Reach Score 1000 in a single game", 1000, 0, 500),
-                Achievement("a6", "🔥", "Survivor", "Survive for 5 Minutes (300s) in a single game", 300, 0, 250),
-                Achievement("a7", "💎", "Coin Collector", "Earn 1000 PlayWin Coins from Snake", 1000, 0, 300)
+                Achievement("a1", "🐍", "First Snake", "Play your first game of Snake", 1, 0, 20),
+                Achievement("a2", "🍎", "Fruit Collector", "Collect 100 Fruits in total", 100, 0, 40),
+                Achievement("a3", "⚡", "Speed Master", "Reach Speed Level 10", 10, 0, 50),
+                Achievement("a4", "🏆", "Score Hunter", "Reach Score 500 in a single game", 500, 0, 75),
+                Achievement("a5", "👑", "Snake King", "Reach Score 1000 in a single game", 1000, 0, 100),
+                Achievement("a6", "🔥", "Survivor", "Survive for 5 Minutes (300s) in a single game", 300, 0, 80),
+                Achievement("a7", "💎", "Coin Collector", "Earn 1000 PlayWin Coins from Snake", 1000, 0, 90)
             )
             prefs.edit().putString("achievements", serializeAchievements(initial)).apply()
             return initial

@@ -558,10 +558,10 @@ fun com.google.firebase.database.MutableData.getSafeBoolean(fieldName: String, d
 data class FirebaseWatchAdsConfig(
     val adsEnabled: Boolean = true,
     val maxAdsPerDay: Int = 10,
-    val rewardCoins: Int = 50,
+    val rewardCoins: Int = 15,
     val cooldownSeconds: Int = 60,
     val bonusRuleWatchCount: Int = 10,
-    val bonusCoins: Int = 100,
+    val bonusCoins: Int = 30,
     val minWatchPercentage: Int = 100,
     val maintenanceMode: Boolean = false,
     val retryCount: Int = 3,

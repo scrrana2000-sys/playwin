@@ -51,11 +51,11 @@ class FirebaseDbManager {
                 if (!snapshot.exists() || snapshot.childrenCount == 0L) {
                     val initialTasks = listOf(
                         FirebaseTask("task_profile", "Complete Profile", "Complete your profile to earn coins", "+5 Coins", 5, "profile"),
-                        FirebaseTask("task_share", "Share App", "Share Play Win with your friends", "+10 Coins", 10, "share"),
-                        FirebaseTask("task_video", "Watch 1 Video Ad", "Watch video ad and earn coins", "+50 Coins", 50, "video"),
-                        FirebaseTask("task_invite", "Refer & Earn", "Invite friends & earn rewards", "+100 Coins", 100, "referral"),
+                        FirebaseTask("task_share", "Share App", "Share Play Win with your friends", "+5 Coins", 5, "share"),
+                        FirebaseTask("task_video", "Watch 1 Video Ad", "Watch video ad and earn coins", "+15 Coins", 15, "video"),
+                        FirebaseTask("task_invite", "Refer & Earn", "Invite friends & earn rewards", "+30 Coins", 30, "referral"),
                         FirebaseTask("task_daily", "Claim Today's Daily Check-In", "Available once per day", "+5 Coins", 5, "daily"),
-                        FirebaseTask("task_streak", "7-Day Streak Complete", "Claim after 7 consecutive check-ins", "+50 Coins", 50, "streak"),
+                        FirebaseTask("task_streak", "7-Day Streak Complete", "Claim after 7 consecutive check-ins", "+20 Coins", 20, "streak"),
                         FirebaseTask("task_spin", "Play Lucky Spin & Win", "Test your luck", "Varies", 0, "spin"),
                         FirebaseTask("task_scratch", "Scratch Card Treasure", "Scratch & reveal rewards", "Varies", 0, "scratch"),
                         FirebaseTask("task_trivia", "Answer Trivia Challenge", "Answer questions accurately", "Varies", 0, "trivia"),
@@ -310,12 +310,12 @@ class FirebaseDbManager {
                 if (!snapshot.exists() || snapshot.childrenCount == 0L) {
                     val initialSpinRewards = listOf(
                         com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_1", name = "+5 Coins", type = "Coins", value = "5", displayOrder = 1, probabilityWeight = 35, active = true),
-                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+10 Coins", type = "Coins", value = "10", displayOrder = 2, probabilityWeight = 25, active = true),
-                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+20 Coins", type = "Coins", value = "20", displayOrder = 3, probabilityWeight = 20, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_2", name = "+8 Coins", type = "Coins", value = "8", displayOrder = 2, probabilityWeight = 25, active = true),
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_3", name = "+12 Coins", type = "Coins", value = "12", displayOrder = 3, probabilityWeight = 20, active = true),
                         com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_4", name = "Better Luck", type = "Better Luck Next Time", value = "0", displayOrder = 4, probabilityWeight = 10, active = true),
                         com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_5", name = "Retry Spin", type = "Retry", value = "1", displayOrder = 5, probabilityWeight = 7, active = true),
                         com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_6", name = "Amazon Voucher", type = "Coupon", value = "coupon_amazon", displayOrder = 6, probabilityWeight = 2, active = true),
-                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+50 Coins", type = "Coins", value = "50", displayOrder = 7, probabilityWeight = 1, active = true)
+                        com.myplaywin.app.data.model.FirebaseSpinReward(id = "spin_7", name = "+15 Coins", type = "Coins", value = "15", displayOrder = 7, probabilityWeight = 1, active = true)
                     )
                     for (reward in initialSpinRewards) {
                         spinWheelRewardsRef.child(reward.id).setValue(reward)
@@ -2366,15 +2366,15 @@ class FirebaseDbManager {
                 if (!snapshot.exists() || snapshot.childrenCount == 0L) {
                     val initialRewards = listOf(
                         com.myplaywin.app.data.model.FirebaseScratchCardReward(
-                            id = "reward_1", name = "+10 Coins", type = "Coins", value = "10",
+                            id = "reward_1", name = "+5 Coins", type = "Coins", value = "5",
                             probabilityWeight = 40, status = "Active", displayOrder = 1, active = true, icon = "🪙", color = "#FFD700"
                         ),
                         com.myplaywin.app.data.model.FirebaseScratchCardReward(
-                            id = "reward_2", name = "+50 Coins", type = "Coins", value = "50",
+                            id = "reward_2", name = "+15 Coins", type = "Coins", value = "15",
                             probabilityWeight = 20, status = "Active", displayOrder = 2, active = true, icon = "💎", color = "#00E5FF"
                         ),
                         com.myplaywin.app.data.model.FirebaseScratchCardReward(
-                            id = "reward_3", name = "+100 Coins", type = "Coins", value = "100",
+                            id = "reward_3", name = "+25 Coins", type = "Coins", value = "25",
                             probabilityWeight = 10, status = "Active", displayOrder = 3, active = true, icon = "🎁", color = "#E040FB"
                         ),
                         com.myplaywin.app.data.model.FirebaseScratchCardReward(

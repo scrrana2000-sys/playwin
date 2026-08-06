@@ -255,7 +255,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     } else {
                         val defaultSettings = com.myplaywin.app.data.model.FirebaseDailyCheckInSettings(
                             enabled = true,
-                            rewards = listOf(20, 30, 40, 50, 60, 80, 120),
+                            rewards = listOf(50, 50, 50, 50, 50, 50, 50),
                             maxRewardLimit = 500
                         )
                         checkInSettingsRef.setValue(defaultSettings)
@@ -1255,8 +1255,8 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
         score: Int,
         answeredQuestionIds: List<String>,
         totalQuestions: Int = 10,
-        rewardCoinsPerCorrect: Int = 50,
-        completionBonus: Int = 50,
+        rewardCoinsPerCorrect: Int = 10,
+        completionBonus: Int = 15,
         dayOfWeek: String = "",
         onComplete: (Int) -> Unit
     ) {
@@ -1799,7 +1799,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                     try {
                         var activeResetTime = 0L
                         var dbAdsWatched = 0
-                        val rewardAmount = 50
+                        val rewardAmount = 15
 
                         com.myplaywin.app.data.repository.WalletService.updateWallet(
                             userId = userId,
