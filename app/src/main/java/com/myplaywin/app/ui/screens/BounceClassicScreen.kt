@@ -571,6 +571,71 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
         col.copy(x = safeX, y = safeY)
     }
 
+    // --- ROTATING SAW HAZARD SAFEGUARD & PLACEMENT VALIDATION ---
+    val sawEnemies = level.enemies.filter { it.type == EnemyType.ROTATING_HAZARD }
+    val finalCollectibles = sanitizedCollectibles.toMutableList()
+
+    if (sawEnemies.isNotEmpty()) {
+        for (saw in sawEnemies) {
+            val sawDiameter = maxOf(saw.width, saw.height, 44f)
+            val sawRadius = sawDiameter / 2f
+            val sawTopY = saw.y - sawRadius
+
+            // 1. Increase platform width under the saw by 50% (40-60% wider) for safe landing space
+            val platUnderSaw = sanitizedPlatforms.firstOrNull { p ->
+                !p.isSpike && p.spikeDirection == null &&
+                saw.x >= p.x - 50f && saw.x <= p.x + p.width + 50f &&
+                p.y >= saw.y - 40f && p.y <= saw.y + 120f
+            }
+
+            if (platUnderSaw != null) {
+                val idx = sanitizedPlatforms.indexOf(platUnderSaw)
+                if (idx != -1) {
+                    val minRecommendedWidth = 180f
+                    val targetWidth = maxOf(platUnderSaw.width * 1.5f, minRecommendedWidth)
+                    if (platUnderSaw.width < targetWidth) {
+                        val widthDiff = targetWidth - platUnderSaw.width
+                        val newX = (platUnderSaw.x - widthDiff / 2f).coerceAtLeast(0f)
+                        sanitizedPlatforms[idx] = platUnderSaw.copy(x = newX, width = targetWidth)
+                    }
+                }
+            }
+
+            val effectivePlatY = platUnderSaw?.y ?: (saw.y + 35f)
+
+            // 2. Move collectible star upward above the saw with safe clearance (1.5x - 2.0x saw diameter above saw top)
+            val clearanceAboveSaw = 1.75f * sawDiameter // ~77f above saw top
+            val targetStarY = sawTopY - clearanceAboveSaw // ~saw.y - 99f
+
+            // Find any star collectible near this rotating saw
+            for (i in finalCollectibles.indices) {
+                val col = finalCollectibles[i]
+                if (col.isStar && kotlin.math.abs(col.x - saw.x) < 110f && kotlin.math.abs(col.y - saw.y) < 180f) {
+                    var safeStarY = minOf(col.y, targetStarY)
+
+                    // 3. Validate placement
+                    val jumpDistFromPlat = effectivePlatY - safeStarY
+                    if (jumpDistFromPlat > 140f) {
+                        val maxReachStarY = effectivePlatY - 135f
+                        val absoluteMinStarY = sawTopY - (1.5f * sawDiameter)
+                        safeStarY = minOf(maxReachStarY, absoluteMinStarY)
+                    }
+
+                    // Verify star does not overlap saw hitbox (distance >= 75f)
+                    val distToSaw = kotlin.math.sqrt(
+                        (col.x - saw.x) * (col.x - saw.x) + (safeStarY - saw.y) * (safeStarY - saw.y)
+                    )
+                    if (distToSaw < 75f) {
+                        safeStarY = saw.y - 99f
+                    }
+
+                    val safeStarX = saw.x
+                    finalCollectibles[i] = col.copy(x = safeStarX, y = safeStarY)
+                }
+            }
+        }
+    }
+
     return level.copy(
         platforms = sanitizedPlatforms,
         checkpoints = sanitizedCheckpoints,
@@ -578,7 +643,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
         doors = sanitizedDoors,
         portalX = safePortalX,
         portalY = safePortalY,
-        collectibles = sanitizedCollectibles
+        collectibles = finalCollectibles
     )
 }
 
