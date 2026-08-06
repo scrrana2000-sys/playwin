@@ -245,6 +245,23 @@ fun getLevelAccentColor(levelNumber: Int): Color {
     }
 }
 
+// --- SAFE COERCE IN RANGE EXTENSIONS ---
+fun Float.safeCoerceIn(minimumValue: Float, maximumValue: Float): Float {
+    if (minimumValue > maximumValue) {
+        android.util.Log.w("BounceClassic", "safeCoerceIn invalid range: min=$minimumValue, max=$maximumValue, value=$this. Falling back to minimumValue.")
+        return minimumValue
+    }
+    return this.coerceIn(minimumValue, maximumValue)
+}
+
+fun Int.safeCoerceIn(minimumValue: Int, maximumValue: Int): Int {
+    if (minimumValue > maximumValue) {
+        android.util.Log.w("BounceClassic", "safeCoerceIn invalid range: min=$minimumValue, max=$maximumValue, value=$this. Falling back to minimumValue.")
+        return minimumValue
+    }
+    return this.coerceIn(minimumValue, maximumValue)
+}
+
 // --- STRICT LEVEL DESIGN & VALIDATION ENGINE ---
 // Validates and auto-balances every level according to strict gameplay rules:
 // 1. Normal Jump Rule: Max vertical rise <= 110f (80% of player max normal jump height ~140f)
@@ -258,7 +275,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
     val maxSpringJumpRise = 210f // Max safe vertical reach for spring pads (~270f launch)
     val maxHorizontalGap = 220f  // Max safe horizontal gap between platform edges
     val minPlatformY = 80f
-    val maxPlatformY = (level.height - 100f).coerceAtLeast(200f)
+    val maxPlatformY = (level.height - 100f).coerceAtLeast(minPlatformY + 50f)
 
     val originalPlatforms = level.platforms
     val walkable = mutableListOf<BounceObstacle>()
@@ -279,14 +296,14 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
     if (walkable.isEmpty() || walkable.first().x > level.startX + 200f) {
         val startPlat = BounceObstacle(
             x = (level.startX - 50f).coerceAtLeast(0f),
-            y = (level.startY + 40f).coerceIn(minPlatformY, maxPlatformY),
+            y = (level.startY + 40f).safeCoerceIn(minPlatformY, maxPlatformY),
             width = 350f,
             height = 120f
         )
         sanitizedPlatforms.add(startPlat)
     } else {
         val first = walkable.removeAt(0)
-        val clampedY = first.y.coerceIn(minPlatformY, maxPlatformY)
+        val clampedY = first.y.safeCoerceIn(minPlatformY, maxPlatformY)
         sanitizedPlatforms.add(first.copy(y = clampedY))
     }
 
@@ -307,13 +324,13 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
         } else if (riseY < -280f) {
             newY = prev.y + 220f
         }
-        newY = newY.coerceIn(minPlatformY, maxPlatformY)
+        newY = newY.safeCoerceIn(minPlatformY, maxPlatformY)
 
         // Horizontal bridge insertion for wide gaps
         if (gapX > maxHorizontalGap) {
             val bridgeX = prev.x + prev.width + 40f
-            val bridgeWidth = (gapX - 80f).coerceIn(120f, 200f)
-            val bridgeY = ((prev.y + newY) / 2f).coerceIn(minPlatformY, maxPlatformY)
+            val bridgeWidth = (gapX - 80f).safeCoerceIn(120f, 200f)
+            val bridgeY = ((prev.y + newY) / 2f).safeCoerceIn(minPlatformY, maxPlatformY)
 
             sanitizedPlatforms.add(
                 BounceObstacle(
@@ -330,7 +347,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
         // Spring landing pad rule
         if (prev.isSpring) {
             val springLandingX = prev.x + 80f
-            val springLandingY = (prev.y - 180f).coerceIn(minPlatformY, maxPlatformY)
+            val springLandingY = (prev.y - 180f).safeCoerceIn(minPlatformY, maxPlatformY)
             if (newY < prev.y - maxSpringJumpRise || newX > prev.x + 350f) {
                 newX = springLandingX
                 newY = springLandingY
@@ -341,7 +358,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
     }
 
     for (h in hazards) {
-        val clampedHY = h.y.coerceIn(minPlatformY, level.height - 40f)
+        val clampedHY = h.y.safeCoerceIn(minPlatformY, (level.height - 40f).coerceAtLeast(minPlatformY))
         sanitizedPlatforms.add(h.copy(y = clampedHY))
     }
 
@@ -354,7 +371,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
 
     val sanitizedDoors = level.doors.map { door ->
         val plat = findClosestPlatform(door.x)
-        val clampedDoorY = (plat.y - door.height).coerceIn(minPlatformY, maxPlatformY)
+        val clampedDoorY = (plat.y - door.height).safeCoerceIn(minPlatformY, maxPlatformY)
         door.copy(y = clampedDoorY)
     }
 
@@ -368,8 +385,8 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
             val minPY = if (p.isMoving) minOf(p.y, p.y + p.moveRangeY) else p.y
             val maxPY = if (p.isMoving) maxOf(p.y + p.height, p.y + p.height + p.moveRangeY) else p.y + p.height
 
-            val closestX = cx.coerceIn(minPX, maxPX)
-            val closestY = cy.coerceIn(minPY, maxPY)
+            val closestX = cx.safeCoerceIn(minPX, maxPX)
+            val closestY = cy.safeCoerceIn(minPY, maxPY)
 
             val distSq = (cx - closestX) * (cx - closestX) + (cy - closestY) * (cy - closestY)
             val overlapRadius = if (p.isSpike || p.spikeDirection != null) r + 25f else r
@@ -383,15 +400,15 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
         }
 
         for (door in sanitizedDoors) {
-            val closestX = cx.coerceIn(door.x, door.x + door.width)
-            val closestY = cy.coerceIn(door.y, door.y + door.height)
+            val closestX = cx.safeCoerceIn(door.x, door.x + door.width)
+            val closestY = cy.safeCoerceIn(door.y, door.y + door.height)
             val distSq = (cx - closestX) * (cx - closestX) + (cy - closestY) * (cy - closestY)
             if (distSq < (r + 10f) * (r + 10f)) return true
         }
 
         for (block in level.interactiveBlocks) {
-            val closestX = cx.coerceIn(block.x, block.x + block.width)
-            val closestY = cy.coerceIn(block.y, block.y + block.height)
+            val closestX = cx.safeCoerceIn(block.x, block.x + block.width)
+            val closestY = cy.safeCoerceIn(block.y, block.y + block.height)
             val distSq = (cx - closestX) * (cx - closestX) + (cy - closestY) * (cy - closestY)
             if (distSq < (r + 12f) * (r + 12f)) return true
         }
@@ -402,8 +419,8 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
             val minEY = if (enemy.moveRangeY != 0f) minOf(enemy.y, enemy.y + enemy.moveRangeY) else enemy.y
             val maxEY = if (enemy.moveRangeY != 0f) maxOf(enemy.y, enemy.y + enemy.moveRangeY) else enemy.y
 
-            val closestX = cx.coerceIn(minEX, maxEX)
-            val closestY = cy.coerceIn(minEY, maxEY)
+            val closestX = cx.safeCoerceIn(minEX, maxEX)
+            val closestY = cy.safeCoerceIn(minEY, maxEY)
             val distSq = (cx - closestX) * (cx - closestX) + (cy - closestY) * (cy - closestY)
             if (distSq < 55f * 55f) return true
         }
@@ -431,7 +448,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
             val xPositions = mutableListOf<Float>()
             val midX = p.x + p.width / 2f
             
-            xPositions.add(initX.coerceIn(p.x + 25f, p.x + p.width - 25f))
+            xPositions.add(initX.safeCoerceIn(p.x + 25f, p.x + p.width - 25f))
             xPositions.add(midX)
             if (p.width > 120f) {
                 xPositions.add(midX - 35f)
@@ -522,7 +539,7 @@ fun sanitizeAndValidateLevel(level: BounceLevel): BounceLevel {
     // Centered visually on the platform.
     val initialPortalX = exitPlatform.x + exitPlatform.width * 0.5f
     // Position the flag on top of the platform (32f is the portal's visual radius, so it sits nicely on top of the platform top 'exitPlatform.y')
-    val initialPortalY = (exitPlatform.y - 32f).coerceIn(minPlatformY, maxPlatformY)
+    val initialPortalY = (exitPlatform.y - 32f).safeCoerceIn(minPlatformY, maxPlatformY)
 
     var safePortalX = initialPortalX
     var safePortalY = initialPortalY
@@ -618,24 +635,339 @@ data class LevelChunk(
 
 object SmartProceduralLevelGenerator {
 
-    fun generateLevel(levelNum: Int): BounceLevel {
+    enum class LevelLength { SMALL, MEDIUM, LARGE }
+
+    private fun getLevelLength(levelNum: Int): LevelLength {
+        return when {
+            levelNum <= 5 -> LevelLength.SMALL
+            levelNum <= 12 -> LevelLength.MEDIUM
+            else -> LevelLength.LARGE
+        }
+    }
+
+    fun generateLevel(levelNum: Int, context: Context? = null): BounceLevel {
+        if (context != null) {
+            val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+            val savedTheme = prefs.getString("infinite_level_theme_$levelNum", null)
+            val savedDiff = prefs.getFloat("infinite_level_difficulty_$levelNum", -1f)
+            val savedChunks = prefs.getString("infinite_level_chunks_$levelNum", null)
+            if (savedTheme != null && savedDiff >= 0f && savedChunks != null) {
+                try {
+                    val theme = ProceduralTheme.valueOf(savedTheme)
+                    val chunks = savedChunks.split(",").map {
+                        val parts = it.split(":")
+                        Pair(ChunkType.valueOf(parts[0]), parts[1].toInt())
+                    }
+                    return buildLevelFromConfig(levelNum, theme, savedDiff, chunks, context)
+                } catch (e: Exception) {
+                    // Fallback to fresh generation
+                }
+            }
+        }
+
         var attempts = 0
         while (attempts < 100) {
-            val candidate = buildCandidateLevel(levelNum, seed = (levelNum * 1337 + attempts).toLong())
-            if (verifyAndPlaytestLevel(candidate)) {
-                return candidate
+            val candidate = buildSmartCandidateLevel(levelNum, seed = (levelNum * 1337 + attempts).toLong(), context)
+            if (verifyAndPlaytestLevel(candidate.first)) {
+                if (context != null) {
+                    val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+                    val chunkStr = candidate.second.joinToString(",") { "${it.first.name}:${it.second}" }
+                    prefs.edit()
+                        .putString("infinite_level_theme_$levelNum", candidate.third.name)
+                        .putFloat("infinite_level_difficulty_$levelNum", candidate.fourth)
+                        .putString("infinite_level_chunks_$levelNum", chunkStr)
+                        .apply()
+                }
+                return candidate.first
             }
             attempts++
         }
-        return buildCandidateLevel(levelNum, seed = levelNum.toLong())
+
+        val fallbackCandidate = buildSmartCandidateLevel(levelNum, seed = levelNum.toLong(), context)
+        return fallbackCandidate.first
     }
 
-    private fun buildCandidateLevel(levelNum: Int, seed: Long): BounceLevel {
+    private fun buildSmartCandidateLevel(
+        levelNum: Int,
+        seed: Long,
+        context: Context?
+    ): Tuple4<BounceLevel, List<Pair<ChunkType, Int>>, ProceduralTheme, Float> {
         val random = java.util.Random(seed)
-        val themes = ProceduralTheme.values()
-        val theme = themes[(levelNum - 1) % themes.size]
 
-        val difficulty = ((levelNum - 1) / 99f).coerceIn(0f, 1f)
+        // 1. Adaptive Difficulty Settings & progression
+        val adaptiveSettings = if (context != null) {
+            com.myplaywin.app.data.AdaptiveDifficultyManager.getAdaptiveSettings(context, levelNum)
+        } else {
+            com.myplaywin.app.data.AdaptiveDifficultySettings(
+                difficultyOffset = 0f,
+                increaseSafePlatforms = false,
+                reduceEnemyDensity = false,
+                addBonusPaths = true,
+                addRiskRewardShortcuts = true,
+                hiddenCavesChance = 0.25f,
+                secretStarRoutesChance = 0.25f,
+                verticalExplorationChance = 0.3f,
+                bonusCoinRoomChance = 0.2f
+            )
+        }
+
+        val baseDifficulty = when {
+            levelNum <= 5 -> 0.05f + (levelNum - 1) * 0.03f
+            levelNum <= 15 -> 0.2f + (levelNum - 6) * 0.04f
+            else -> (0.6f + (levelNum - 16) * 0.015f).coerceAtMost(1.0f)
+        }
+        val difficulty = (baseDifficulty + adaptiveSettings.difficultyOffset).coerceIn(0.01f, 1.0f)
+
+        // 2. Theme Selection (Avoiding repetition of theme in last 4 levels for rich rotation)
+        val themes = ProceduralTheme.values()
+        val recentlyUsedThemes = mutableSetOf<ProceduralTheme>()
+        if (context != null) {
+            val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+            for (i in maxOf(1, levelNum - 4) until levelNum) {
+                val savedThemeStr = prefs.getString("infinite_level_theme_$i", null)
+                try {
+                    savedThemeStr?.let { recentlyUsedThemes.add(ProceduralTheme.valueOf(it)) }
+                } catch (e: Exception) {}
+            }
+        }
+        val allowedThemes = themes.filter { it !in recentlyUsedThemes }
+        val theme = if (allowedThemes.isNotEmpty()) {
+            allowedThemes[random.nextInt(allowedThemes.size)]
+        } else {
+            // Fallback: avoid only immediate back-to-back theme
+            val prevTheme = if (levelNum > 1 && context != null) {
+                val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+                val savedThemeStr = prefs.getString("infinite_level_theme_${levelNum - 1}", null)
+                try { savedThemeStr?.let { ProceduralTheme.valueOf(it) } } catch (e: Exception) { null }
+            } else null
+            if (prevTheme != null) {
+                val rem = themes.filter { it != prevTheme }
+                rem[random.nextInt(rem.size)]
+            } else {
+                themes[random.nextInt(themes.size)]
+            }
+        }
+
+        // 3. Track recently used chunk variations in the last 20 levels
+        val recentlyUsedChunks = mutableSetOf<Pair<ChunkType, Int>>()
+        if (context != null) {
+            val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+            val startCheck = maxOf(1, levelNum - 20)
+            for (i in startCheck until levelNum) {
+                val savedChunks = prefs.getString("infinite_level_chunks_$i", null)
+                if (savedChunks != null) {
+                    try {
+                        savedChunks.split(",").forEach {
+                            val parts = it.split(":")
+                            recentlyUsedChunks.add(Pair(ChunkType.valueOf(parts[0]), parts[1].toInt()))
+                        }
+                    } catch (e: Exception) {}
+                }
+            }
+        }
+
+        // 4. Construct exact chunk sequence as mandated by user request
+        val chunkTypes = listOf(
+            ChunkType.START,
+            ChunkType.EASY,
+            ChunkType.MEDIUM,
+            ChunkType.CHECKPOINT,
+            ChunkType.SECRET,
+            // Hard chunk selection (one of 5 types, avoiding repeating L-1 type)
+            listOf(ChunkType.VERTICAL, ChunkType.MOVING_PLATFORM, ChunkType.SPRING, ChunkType.ENEMY, ChunkType.PUZZLE).let { hardTypes ->
+                val prevHardType = if (levelNum > 1 && context != null) {
+                    val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+                    val savedChunks = prefs.getString("infinite_level_chunks_${levelNum - 1}", null)
+                    savedChunks?.split(",")?.map { it.split(":") }
+                        ?.find { it[0] in listOf("VERTICAL", "MOVING_PLATFORM", "SPRING", "ENEMY", "PUZZLE") }
+                        ?.let { try { ChunkType.valueOf(it[0]) } catch (e: Exception) { null } }
+                } else null
+                val allowedHardTypes = if (prevHardType != null) hardTypes.filter { it != prevHardType } else hardTypes
+                allowedHardTypes[random.nextInt(allowedHardTypes.size)]
+            },
+            ChunkType.CHECKPOINT,
+            ChunkType.FINAL_CHALLENGE,
+            ChunkType.EXIT
+        )
+
+        // 5. Select unique chunk variations based on difficulty range and recent usage
+        val chunkConfigList = mutableListOf<Pair<ChunkType, Int>>()
+        for (type in chunkTypes) {
+            val maxVars = ChunkLibrary.getNumVariations(type)
+            val allowedRange = when {
+                levelNum <= 5 -> {
+                    val limit = maxOf(3, (maxVars * 0.3f).toInt())
+                    0 until limit
+                }
+                levelNum <= 15 -> {
+                    val low = (maxVars * 0.25f).toInt()
+                    val high = maxOf(low + 3, (maxVars * 0.75f).toInt())
+                    low until high
+                }
+                else -> {
+                    val low = (maxVars * 0.5f).toInt()
+                    low until maxVars
+                }
+            }
+
+            var chosenVar = -1
+            val shuffledCandidates = allowedRange.shuffled(random)
+            for (cand in shuffledCandidates) {
+                if (Pair(type, cand) !in recentlyUsedChunks) {
+                    chosenVar = cand
+                    break
+                }
+            }
+
+            if (chosenVar == -1) {
+                val allShuffled = (0 until maxVars).shuffled(random)
+                for (cand in allShuffled) {
+                    if (Pair(type, cand) !in recentlyUsedChunks) {
+                        chosenVar = cand
+                        break
+                    }
+                }
+            }
+
+            if (chosenVar == -1) {
+                chosenVar = random.nextInt(maxVars)
+            }
+
+            chunkConfigList.add(Pair(type, chosenVar))
+        }
+
+        // 6. Similarity checker: avoid repeating the same configurations within the last 20 generated levels
+        if (context != null) {
+            val prefs = context.getSharedPreferences("bounce_game_prefs", Context.MODE_PRIVATE)
+            val startCheck = maxOf(1, levelNum - 20)
+            var similarityAttempts = 0
+            var tooSimilar = true
+            while (tooSimilar && similarityAttempts < 15) {
+                tooSimilar = false
+                for (i in startCheck until levelNum) {
+                    val savedChunks = prefs.getString("infinite_level_chunks_$i", null) ?: continue
+                    try {
+                        val savedList = savedChunks.split(",").map {
+                            val parts = it.split(":")
+                            Pair(ChunkType.valueOf(parts[0]), parts[1].toInt())
+                        }
+                        var matchCount = 0
+                        for (p in chunkConfigList) {
+                            if (p in savedList) matchCount++
+                        }
+                        val similarity = matchCount.toFloat() / chunkConfigList.size
+                        if (similarity > 0.5f) { // More than 50% identical variations
+                            tooSimilar = true
+                            break
+                        }
+                    } catch (e: Exception) {}
+                }
+                if (tooSimilar) {
+                    // Randomly modify a couple of variations to keep it distinct
+                    val randomIdx = random.nextInt(chunkConfigList.size)
+                    val (type, _) = chunkConfigList[randomIdx]
+                    chunkConfigList[randomIdx] = Pair(type, random.nextInt(ChunkLibrary.getNumVariations(type)))
+                    similarityAttempts++
+                }
+            }
+        }
+
+        val levelObj = buildLevelFromConfig(levelNum, theme, difficulty, chunkConfigList, context)
+        return Tuple4(levelObj, chunkConfigList, theme, difficulty)
+    }
+
+    private fun validateChunk(
+        chunk: LevelChunk,
+        type: ChunkType,
+        levelNum: Int,
+        variation: Int
+    ): Pair<Boolean, String> {
+        val reasons = mutableListOf<String>()
+
+        if (chunk.width <= 0f) {
+            reasons.add("Chunk width must be positive, got ${chunk.width}")
+        }
+        if (chunk.height <= 0f) {
+            reasons.add("Chunk height must be positive, got ${chunk.height}")
+        }
+
+        for ((pIdx, p) in chunk.platforms.withIndex()) {
+            if (p.width <= 0f) {
+                reasons.add("Platform #$pIdx width must be positive, got ${p.width}")
+            }
+            if (p.height <= 0f) {
+                reasons.add("Platform #$pIdx height must be positive, got ${p.height}")
+            }
+            if (p.isMoving) {
+                if (p.moveRangeX < 0f) {
+                    reasons.add("Platform #$pIdx moveRangeX is negative: ${p.moveRangeX}")
+                }
+                if (p.moveRangeY < 0f) {
+                    reasons.add("Platform #$pIdx moveRangeY is negative: ${p.moveRangeY}")
+                }
+            }
+        }
+
+        for ((eIdx, e) in chunk.enemies.withIndex()) {
+            if (e.moveRangeX < 0f) {
+                reasons.add("Enemy #$eIdx moveRangeX is negative: ${e.moveRangeX}")
+            }
+            if (e.moveRangeY < 0f) {
+                reasons.add("Enemy #$eIdx moveRangeY is negative: ${e.moveRangeY}")
+            }
+        }
+
+        if (reasons.isNotEmpty()) {
+            val invalidValues = "Platforms: ${chunk.platforms.size}, Enemies: ${chunk.enemies.size}"
+            val reasonStr = reasons.joinToString("; ")
+            android.util.Log.e(
+                "BounceClassic",
+                """
+                [REJECTED CHUNK]
+                Level Number: $levelNum
+                Chunk Type: $type
+                Variation: $variation
+                Generated Bounds: width=${chunk.width}, height=${chunk.height}
+                Invalid Values: $invalidValues
+                Reason for Rejection: $reasonStr
+                """.trimIndent()
+            )
+            return Pair(false, reasonStr)
+        }
+
+        return Pair(true, "")
+    }
+
+    private fun sanitizeChunkDirectly(chunk: LevelChunk): LevelChunk {
+        val sanitizedPlatforms = chunk.platforms.map { p ->
+            p.copy(
+                width = p.width.coerceAtLeast(20f),
+                height = p.height.coerceAtLeast(20f),
+                moveRangeX = p.moveRangeX.coerceAtLeast(0f),
+                moveRangeY = p.moveRangeY.coerceAtLeast(0f)
+            )
+        }
+        val sanitizedEnemies = chunk.enemies.map { enemy ->
+            enemy.copy(
+                moveRangeX = enemy.moveRangeX.coerceAtLeast(0f),
+                moveRangeY = enemy.moveRangeY.coerceAtLeast(0f)
+            )
+        }
+        return chunk.copy(
+            width = chunk.width.coerceAtLeast(100f),
+            height = chunk.height.coerceAtLeast(100f),
+            platforms = sanitizedPlatforms,
+            enemies = sanitizedEnemies
+        )
+    }
+
+    private fun buildLevelFromConfig(
+        levelNum: Int,
+        theme: ProceduralTheme,
+        difficulty: Float,
+        chunks: List<Pair<ChunkType, Int>>,
+        context: Context?
+    ): BounceLevel {
         val levelHeight = 600f
 
         val platforms = mutableListOf<BounceObstacle>()
@@ -650,53 +982,87 @@ object SmartProceduralLevelGenerator {
         var currentX = 0f
         var currentY = 440f
 
-        // Append Start Area Chunk
-        val startChunk = generateStartChunk(currentX, currentY)
-        appendChunk(startChunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += startChunk.width
-        currentY = startChunk.endY
+        var checkpointCounter = 1
 
-        // Append Easy Challenge Chunk
-        val easyChunk = generateEasyChunk(currentX, currentY, difficulty, random, theme, levelNum)
-        appendChunk(easyChunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += easyChunk.width
-        currentY = easyChunk.endY
+        for ((index, chunkPair) in chunks.withIndex()) {
+            val type = chunkPair.first
+            var variation = chunkPair.second
 
-        // Append Checkpoint 1 Chunk
-        val cp1Chunk = generateCheckpointChunk(currentX, currentY, 1)
-        appendChunk(cp1Chunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += cp1Chunk.width
-        currentY = cp1Chunk.endY
+            var chunk: LevelChunk? = null
+            var attempts = 0
+            val maxVars = ChunkLibrary.getNumVariations(type)
 
-        // Append Medium Challenge Chunk
-        val medChunk = generateMediumChunk(currentX, currentY, difficulty, random, theme, levelNum)
-        appendChunk(medChunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += medChunk.width
-        currentY = medChunk.endY
+            while (attempts < 50) {
+                val tempChunk = generateChunk(
+                    type = type,
+                    variation = variation,
+                    startX = currentX,
+                    startY = currentY,
+                    difficulty = difficulty,
+                    levelNum = levelNum,
+                    checkpointId = if (type == ChunkType.CHECKPOINT) checkpointCounter else 0
+                )
 
-        // Append Secret Area Chunk
-        val secretChunk = generateSecretChunk(currentX, currentY, difficulty, random)
-        appendChunk(secretChunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += secretChunk.width
-        currentY = secretChunk.endY
+                val (isValid, _) = validateChunk(tempChunk, type, levelNum, variation)
+                if (isValid) {
+                    chunk = tempChunk
+                    break
+                } else {
+                    variation = (variation + 1) % maxVars
+                    attempts++
+                }
+            }
 
-        // Append Checkpoint 2 Chunk
-        val cp2Chunk = generateCheckpointChunk(currentX, currentY, 2)
-        appendChunk(cp2Chunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += cp2Chunk.width
-        currentY = cp2Chunk.endY
+            if (chunk == null) {
+                android.util.Log.w("BounceClassic", "Fallback sanitizing chunk for Level $levelNum, Type $type, Var $variation")
+                val fallbackChunk = generateChunk(
+                    type = type,
+                    variation = 0,
+                    startX = currentX,
+                    startY = currentY,
+                    difficulty = difficulty,
+                    levelNum = levelNum,
+                    checkpointId = if (type == ChunkType.CHECKPOINT) checkpointCounter else 0
+                )
+                chunk = sanitizeChunkDirectly(fallbackChunk)
+            }
 
-        // Append Hard Challenge Chunk
-        val hardChunk = generateHardChunk(currentX, currentY, difficulty, random, theme, levelNum)
-        appendChunk(hardChunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += hardChunk.width
-        currentY = hardChunk.endY
+            if (type == ChunkType.CHECKPOINT) {
+                checkpointCounter++
+            }
 
-        // Append Exit Chunk
-        val exitChunk = generateExitChunk(currentX, currentY)
-        appendChunk(exitChunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
-        currentX += exitChunk.width
-        currentY = exitChunk.endY
+            appendChunk(chunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
+            currentX += chunk.width
+            currentY = chunk.endY
+        }
+
+        // Apply Adaptive Difficulty and Variety injection
+        val adaptiveSettings = if (context != null) {
+            com.myplaywin.app.data.AdaptiveDifficultyManager.getAdaptiveSettings(context, levelNum)
+        } else {
+            com.myplaywin.app.data.AdaptiveDifficultySettings(
+                difficultyOffset = 0f,
+                increaseSafePlatforms = false,
+                reduceEnemyDensity = false,
+                addBonusPaths = true,
+                addRiskRewardShortcuts = true,
+                hiddenCavesChance = 0.25f,
+                secretStarRoutesChance = 0.25f,
+                verticalExplorationChance = 0.3f,
+                bonusCoinRoomChance = 0.2f
+            )
+        }
+
+        injectLevelVarietyFeatures(
+            platforms = platforms,
+            collectibles = collectibles,
+            enemies = enemies,
+            interactiveBlocks = interactiveBlocks,
+            adaptiveSettings = adaptiveSettings,
+            levelNum = levelNum,
+            totalWidth = currentX,
+            random = java.util.Random(levelNum.toLong() * 1337 + 999)
+        )
 
         val titleThemeName = theme.themeName
         val titleChunk = when ((levelNum - 1) % 10) {
@@ -716,7 +1082,7 @@ object SmartProceduralLevelGenerator {
         val levelName = "Level $levelNum: $titleThemeName $titleChunk"
         val levelDesc = "Explore the treacherous terrains of $titleThemeName. Complete all challenges, find the secret chamber, and exit safely."
 
-        val exitPlatform = exitChunk.platforms.first()
+        val exitPlatform = platforms.lastOrNull() ?: BounceObstacle(currentX - 400f, currentY, 400f, 100f)
         val calculatedPortalX = exitPlatform.x + exitPlatform.width * 0.5f
         val calculatedPortalY = exitPlatform.y - 32f
 
@@ -744,6 +1110,191 @@ object SmartProceduralLevelGenerator {
         return sanitizeAndValidateLevel(levelObj)
     }
 
+    private fun injectLevelVarietyFeatures(
+        platforms: MutableList<BounceObstacle>,
+        collectibles: MutableList<BounceCollectible>,
+        enemies: MutableList<BounceEnemy>,
+        interactiveBlocks: MutableList<BounceInteractiveBlock>,
+        adaptiveSettings: com.myplaywin.app.data.AdaptiveDifficultySettings,
+        levelNum: Int,
+        totalWidth: Float,
+        random: java.util.Random
+    ) {
+        val startZone = 450f
+        val endZone = totalWidth - 550f
+        if (endZone <= startZone) return
+
+        // 1. INCREASE SAFE PLATFORMS (EMPATHY HELPERS)
+        if (adaptiveSettings.increaseSafePlatforms) {
+            var checkX = startZone
+            while (checkX < endZone) {
+                val hasPlatformNearby = platforms.any { p -> checkX >= p.x - 30f && checkX <= p.x + p.width + 30f }
+                if (!hasPlatformNearby) {
+                    platforms.add(
+                        BounceObstacle(
+                            x = checkX,
+                            y = 440f,
+                            width = 160f,
+                            height = 25f
+                        )
+                    )
+                    collectibles.add(
+                        BounceCollectible(
+                            x = checkX + 80f,
+                            y = 390f,
+                            isStar = false,
+                            isBonus = true
+                        )
+                    )
+                    checkX += 200f
+                } else {
+                    checkX += 100f
+                }
+            }
+
+            // Convert falling platforms to solid ones
+            val stablePlatforms = platforms.map { p ->
+                if (p.isFallingPlatform) p.copy(isFallingPlatform = false) else p
+            }
+            platforms.clear()
+            platforms.addAll(stablePlatforms)
+        }
+
+        // 2. REDUCE ENEMY DENSITY
+        if (adaptiveSettings.reduceEnemyDensity) {
+            val reducedEnemies = enemies.filterIndexed { i, _ -> i % 3 == 0 }
+            enemies.clear()
+            enemies.addAll(reducedEnemies)
+        }
+
+        // 3. HIDDEN CAVES (Aesthetic & Secrets)
+        if (random.nextFloat() < adaptiveSettings.hiddenCavesChance) {
+            val caveX = startZone + random.nextFloat() * (endZone - startZone - 350f)
+            val caveY = 475f
+            platforms.add(BounceObstacle(x = caveX, y = 350f, width = 300f, height = 30f))
+            platforms.add(BounceObstacle(x = caveX + 20f, y = caveY, width = 260f, height = 30f))
+            interactiveBlocks.add(
+                BounceInteractiveBlock(
+                    id = 30000 + levelNum,
+                    type = InteractiveType.BREAKABLE,
+                    x = caveX - 10f,
+                    y = caveY - 40f,
+                    width = 40f,
+                    height = 40f
+                )
+            )
+            for (c in 0 until 4) {
+                collectibles.add(
+                    BounceCollectible(
+                        x = caveX + 60f + c * 50f,
+                        y = caveY - 35f,
+                        isStar = false,
+                        isBonus = true
+                    )
+                )
+            }
+            if (random.nextBoolean()) {
+                collectibles.add(
+                    BounceCollectible(
+                        x = caveX + 150f,
+                        y = caveY - 70f,
+                        isStar = true,
+                        isBonus = true
+                    )
+                )
+            }
+        }
+
+        // 4. BONUS COIN ROOMS
+        if (random.nextFloat() < adaptiveSettings.bonusCoinRoomChance) {
+            val roomX = startZone + random.nextFloat() * (endZone - startZone - 200f)
+            val roomY = 180f
+            platforms.add(BounceObstacle(x = roomX, y = roomY, width = 160f, height = 20f))
+            platforms.add(BounceObstacle(x = roomX, y = roomY, width = 20f, height = 100f))
+            platforms.add(BounceObstacle(x = roomX + 140f, y = roomY, width = 20f, height = 100f))
+            interactiveBlocks.add(
+                BounceInteractiveBlock(
+                    id = 31000 + levelNum,
+                    type = InteractiveType.BREAKABLE,
+                    x = roomX + 20f,
+                    y = roomY + 100f,
+                    width = 40f,
+                    height = 20f
+                )
+            )
+            interactiveBlocks.add(
+                BounceInteractiveBlock(
+                    id = 31100 + levelNum,
+                    type = InteractiveType.BREAKABLE,
+                    x = roomX + 60f,
+                    y = roomY + 100f,
+                    width = 40f,
+                    height = 20f
+                )
+            )
+            interactiveBlocks.add(
+                BounceInteractiveBlock(
+                    id = 31200 + levelNum,
+                    type = InteractiveType.BREAKABLE,
+                    x = roomX + 100f,
+                    y = roomY + 100f,
+                    width = 40f,
+                    height = 20f
+                )
+            )
+            collectibles.add(BounceCollectible(x = roomX + 45f, y = roomY + 40f, isStar = false, isBonus = true))
+            collectibles.add(BounceCollectible(x = roomX + 80f, y = roomY + 40f, isStar = false, isBonus = true))
+            collectibles.add(BounceCollectible(x = roomX + 115f, y = roomY + 40f, isStar = false, isBonus = true))
+            collectibles.add(BounceCollectible(x = roomX + 45f, y = roomY + 70f, isStar = false, isBonus = true))
+            collectibles.add(BounceCollectible(x = roomX + 80f, y = roomY + 70f, isStar = false, isBonus = true))
+            collectibles.add(BounceCollectible(x = roomX + 115f, y = roomY + 70f, isStar = false, isBonus = true))
+        }
+
+        // 5. SECRET STAR ROUTES (High altitude vertical challenge)
+        if (random.nextFloat() < adaptiveSettings.secretStarRoutesChance) {
+            val routeX = startZone + random.nextFloat() * (endZone - startZone - 400f)
+            platforms.add(
+                BounceObstacle(
+                    x = routeX,
+                    y = 380f,
+                    width = 40f,
+                    height = 20f,
+                    isSpring = true,
+                    springForce = -720f
+                )
+            )
+            platforms.add(BounceObstacle(x = routeX + 120f, y = 240f, width = 60f, height = 20f))
+            platforms.add(BounceObstacle(x = routeX + 240f, y = 140f, width = 60f, height = 20f))
+            collectibles.add(
+                BounceCollectible(
+                    x = routeX + 270f,
+                    y = 90f,
+                    isStar = true,
+                    isBonus = true
+                )
+            )
+        }
+
+        // 6. RISK VS REWARD SHORTCUTS
+        if (adaptiveSettings.addRiskRewardShortcuts && random.nextFloat() < 0.4f) {
+            val shortX = startZone + random.nextFloat() * (endZone - startZone - 300f)
+            platforms.add(BounceObstacle(x = shortX, y = 390f, width = 200f, height = 20f))
+            platforms.add(
+                BounceObstacle(
+                    x = shortX + 85f,
+                    y = 370f,
+                    width = 30f,
+                    height = 20f,
+                    isSpike = true,
+                    spikeDirection = SpikeDirection.UP
+                )
+            )
+            collectibles.add(BounceCollectible(x = shortX + 40f, y = 340f, isStar = false, isBonus = true))
+            collectibles.add(BounceCollectible(x = shortX + 100f, y = 300f, isStar = true, isBonus = true))
+            collectibles.add(BounceCollectible(x = shortX + 160f, y = 340f, isStar = false, isBonus = true))
+        }
+    }
+
     private fun appendChunk(
         chunk: LevelChunk,
         platforms: MutableList<BounceObstacle>,
@@ -765,457 +1316,178 @@ object SmartProceduralLevelGenerator {
         interactiveBlocks.addAll(chunk.interactiveBlocks)
     }
 
-    private fun generateStartChunk(startX: Float, startY: Float): LevelChunk {
-        val width = 400f
-        val platforms = listOf(
-            BounceObstacle(x = startX, y = startY, width = width, height = 120f)
-        )
-        val collectibles = listOf(
-            BounceCollectible(x = startX + 220f, y = startY - 55f, isStar = true, isBonus = false)
-        )
-        return LevelChunk(
-            width = width,
-            height = 600f,
-            platforms = platforms,
-            collectibles = collectibles,
-            endY = startY
-        )
+    enum class ChunkType {
+        START,
+        EASY,
+        MEDIUM,
+        VERTICAL,
+        MOVING_PLATFORM,
+        SPRING,
+        ENEMY,
+        SECRET,
+        PUZZLE,
+        CHECKPOINT,
+        FINAL_CHALLENGE,
+        EXIT
     }
 
-    private fun generateEasyChunk(startX: Float, startY: Float, difficulty: Float, random: java.util.Random, theme: ProceduralTheme, levelNum: Int): LevelChunk {
-        val platforms = mutableListOf<BounceObstacle>()
-        val collectibles = mutableListOf<BounceCollectible>()
-        val enemies = mutableListOf<BounceEnemy>()
-        val waterZones = mutableListOf<BounceWaterZone>()
-
-        var cx = startX + 60f
-        var cy = startY
-
-        val design = random.nextInt(3)
-        when (design) {
-            0 -> {
-                for (i in 0..2) {
-                    val stepW = 140f + random.nextFloat() * 40f
-                    val stepY = (cy + (if (i % 2 == 0) -35f else 30f)).coerceIn(250f, 480f)
-                    val gap = 110f + random.nextFloat() * 40f
-                    cx += gap
-                    platforms.add(BounceObstacle(x = cx, y = stepY, width = stepW, height = 35f))
-                    if (i == 1) {
-                        collectibles.add(BounceCollectible(x = cx + stepW / 2f, y = stepY - 50f, isStar = true, isBonus = false))
-                    } else {
-                        collectibles.add(BounceCollectible(x = cx + stepW / 2f, y = stepY - 45f, isStar = false, isBonus = false))
-                    }
-                    cx += stepW
-                    cy = stepY
-                }
-            }
-            1 -> {
-                val stepW1 = 180f
-                cx += 120f
-                platforms.add(BounceObstacle(x = cx, y = cy - 60f, width = stepW1, height = 35f))
-                collectibles.add(BounceCollectible(x = cx + 90f, y = cy - 110f, isStar = true, isBonus = false))
-                cx += stepW1
-
-                val stepW2 = 200f
-                cx += 130f
-                val nextY = (cy + 20f).coerceIn(250f, 480f)
-                platforms.add(BounceObstacle(x = cx, y = nextY, width = stepW2, height = 35f))
-                collectibles.add(BounceCollectible(x = cx + 100f, y = nextY - 45f, isStar = false, isBonus = false))
-                cx += stepW2
-                cy = nextY
-            }
-            else -> {
-                val zoneW = 350f
-                if (theme == ProceduralTheme.UNDERWATER || theme == ProceduralTheme.LAVA) {
-                    waterZones.add(
-                        BounceWaterZone(
-                            x = cx + 20f,
-                            y = cy - 80f,
-                            width = zoneW - 40f,
-                            height = 140f,
-                            waterColor = if (theme == ProceduralTheme.LAVA) Color(0x99FF3D00) else Color(0x6600B0FF)
-                        )
-                    )
-                }
-                cx += 50f
-                platforms.add(BounceObstacle(x = cx, y = cy, width = 100f, height = 35f))
-                cx += 100f
-
-                val bridgeY = cy + 20f
-                cx += 80f
-                platforms.add(BounceObstacle(x = cx, y = bridgeY, width = 120f, height = 35f))
-                collectibles.add(BounceCollectible(x = cx + 60f, y = bridgeY - 50f, isStar = true, isBonus = false))
-                cx += 120f
-
-                cx += 80f
-                platforms.add(BounceObstacle(x = cx, y = cy, width = 100f, height = 35f))
-                cx += 100f
-            }
+    private fun generateChunk(
+        type: ChunkType,
+        variation: Int,
+        startX: Float,
+        startY: Float,
+        difficulty: Float,
+        levelNum: Int,
+        checkpointId: Int
+    ): LevelChunk {
+        return when (type) {
+            ChunkType.START -> ChunkLibrary.generateStartChunk(startX, startY, variation)
+            ChunkType.EASY -> ChunkLibrary.generateEasyChunk(startX, startY, variation)
+            ChunkType.MEDIUM -> ChunkLibrary.generateMediumChunk(startX, startY, variation)
+            ChunkType.VERTICAL -> ChunkLibrary.generateVerticalChunk(startX, startY, variation)
+            ChunkType.MOVING_PLATFORM -> ChunkLibrary.generateMovingPlatformChunk(startX, startY, variation)
+            ChunkType.SPRING -> ChunkLibrary.generateSpringChunk(startX, startY, variation)
+            ChunkType.ENEMY -> ChunkLibrary.generateEnemyChunk(startX, startY, variation, levelNum, difficulty)
+            ChunkType.SECRET -> ChunkLibrary.generateSecretChunk(startX, startY, variation)
+            ChunkType.PUZZLE -> ChunkLibrary.generatePuzzleChunk(startX, startY, variation, levelNum)
+            ChunkType.CHECKPOINT -> ChunkLibrary.generateCheckpointChunk(startX, startY, variation, checkpointId)
+            ChunkType.FINAL_CHALLENGE -> ChunkLibrary.generateFinalChallengeChunk(startX, startY, variation, levelNum, difficulty)
+            ChunkType.EXIT -> ChunkLibrary.generateExitChunk(startX, startY, variation)
         }
-
-        return LevelChunk(
-            width = cx - startX + 60f,
-            height = 600f,
-            platforms = platforms,
-            collectibles = collectibles,
-            enemies = enemies,
-            waterZones = waterZones,
-            endY = cy
-        )
     }
 
-    private fun generateCheckpointChunk(startX: Float, startY: Float, checkpointId: Int): LevelChunk {
-        val width = 280f
-        val platforms = listOf(
-            BounceObstacle(x = startX, y = startY, width = width, height = 40f)
-        )
-        val checkpoints = listOf(
-            BounceCheckpoint(id = checkpointId, x = startX + width / 2f, y = startY - 50f)
-        )
-        return LevelChunk(
-            width = width,
-            height = 600f,
-            platforms = platforms,
-            checkpoints = checkpoints,
-            endY = startY
-        )
-    }
-
-    private fun generateMediumChunk(startX: Float, startY: Float, difficulty: Float, random: java.util.Random, theme: ProceduralTheme, levelNum: Int): LevelChunk {
-        val platforms = mutableListOf<BounceObstacle>()
-        val collectibles = mutableListOf<BounceCollectible>()
-        val enemies = mutableListOf<BounceEnemy>()
-        val keys = mutableListOf<BounceKey>()
-        val doors = mutableListOf<BounceDoor>()
-        val waterZones = mutableListOf<BounceWaterZone>()
-
-        var cx = startX + 60f
-        var cy = startY
-
-        val design = random.nextInt(3)
-        when (design) {
-            0 -> {
-                val speed = 0.04f + difficulty * 0.04f
-                val platW = 150f
-                cx += 100f
-                platforms.add(
-                    BounceObstacle(
-                        x = cx,
-                        y = cy - 20f,
-                        width = platW,
-                        height = 35f,
-                        isMoving = true,
-                        moveRangeX = 140f,
-                        moveSpeed = speed
-                    )
-                )
-                collectibles.add(BounceCollectible(x = cx + platW / 2f + 70f, y = cy - 80f, isStar = true, isBonus = false))
-                cx += platW + 160f
-
-                val landW = 250f
-                val landY = (cy - 30f).coerceIn(240f, 480f)
-                platforms.add(BounceObstacle(x = cx, y = landY, width = landW, height = 40f))
-                enemies.add(
-                    BounceEnemy(
-                        id = levelNum * 1000 + 1,
-                        type = EnemyType.WALKING,
-                        x = cx + 80f,
-                        y = landY - 28f,
-                        moveRangeX = 100f,
-                        moveSpeed = 60f + difficulty * 20f
-                    )
-                )
-                cx += landW
-                cy = landY
-            }
-            1 -> {
-                val keyPlatY = (cy - 100f).coerceIn(150f, 350f)
-                cx += 100f
-                platforms.add(BounceObstacle(x = cx, y = keyPlatY, width = 140f, height = 35f))
-                keys.add(BounceKey(id = levelNum, x = cx + 70f, y = keyPlatY - 55f, colorHex = 0xFFFFD700))
-                cx += 200f
-
-                val doorPlatY = cy
-                platforms.add(BounceObstacle(x = cx, y = doorPlatY, width = 260f, height = 40f))
-                doors.add(
-                    BounceDoor(
-                        id = levelNum,
-                        x = cx + 110f,
-                        y = doorPlatY - 90f,
-                        width = 24f,
-                        height = 90f,
-                        keyIdNeeded = levelNum,
-                        keyColorHex = 0xFFFFD700
-                    )
-                )
-                collectibles.add(BounceCollectible(x = cx + 200f, y = doorPlatY - 55f, isStar = true, isBonus = false))
-                cx += 260f
-                cy = doorPlatY
-            }
-            else -> {
-                cx += 100f
-                platforms.add(BounceObstacle(x = cx, y = cy, width = 120f, height = 35f, isSpring = true, springForce = -670f))
-                cx += 120f
-
-                val pitW = 280f
-                platforms.add(
-                    BounceObstacle(
-                        x = cx,
-                        y = 550f,
-                        width = pitW,
-                        height = 40f,
-                        isSpike = true,
-                        spikeDirection = SpikeDirection.UP
-                    )
-                )
-                cx += pitW
-
-                val landingY = (cy - 120f).coerceIn(180f, 380f)
-                platforms.add(BounceObstacle(x = cx, y = landingY, width = 180f, height = 35f))
-                collectibles.add(BounceCollectible(x = cx + 90f, y = landingY - 55f, isStar = true, isBonus = false))
-                cx += 180f
-                cy = landingY
-            }
-        }
-
-        return LevelChunk(
-            width = cx - startX + 60f,
-            height = 600f,
-            platforms = platforms,
-            collectibles = collectibles,
-            enemies = enemies,
-            keys = keys,
-            doors = doors,
-            waterZones = waterZones,
-            endY = cy
-        )
-    }
-
-    private fun generateSecretChunk(startX: Float, startY: Float, difficulty: Float, random: java.util.Random): LevelChunk {
-        val platforms = mutableListOf<BounceObstacle>()
-        val collectibles = mutableListOf<BounceCollectible>()
-
-        var cx = startX + 60f
-        var cy = startY
-
-        val design = random.nextInt(2)
-        when (design) {
-            0 -> {
-                platforms.add(BounceObstacle(x = cx, y = cy, width = 150f, height = 35f, isSpring = true, springForce = -670f))
-                val secretY = (cy - 190f).coerceIn(100f, 250f)
-                val secretX = cx + 180f
-                platforms.add(BounceObstacle(x = secretX, y = secretY, width = 250f, height = 35f))
-                collectibles.add(BounceCollectible(x = secretX + 80f, y = secretY - 55f, isStar = true, isBonus = true))
-                collectibles.add(BounceCollectible(x = secretX + 160f, y = secretY - 55f, isStar = true, isBonus = true))
-
-                cx = secretX + 250f + 100f
-                val rejoinY = (cy + 20f).coerceIn(240f, 480f)
-                platforms.add(BounceObstacle(x = cx, y = rejoinY, width = 200f, height = 40f))
-                cx += 200f
-                cy = rejoinY
-            }
-            else -> {
-                platforms.add(BounceObstacle(x = cx, y = cy, width = 120f, height = 35f))
-                cx += 120f
-
-                val fallingX = cx + 80f
-                val fallingY = cy - 30f
-                platforms.add(BounceObstacle(x = fallingX, y = fallingY, width = 150f, height = 35f, isFallingPlatform = true))
-                collectibles.add(BounceCollectible(x = fallingX + 75f, y = fallingY - 55f, isStar = true, isBonus = true))
-                cx = fallingX + 150f
-
-                val rejoinX = cx + 90f
-                val rejoinY = cy
-                platforms.add(BounceObstacle(x = rejoinX, y = rejoinY, width = 140f, height = 35f))
-                cx = rejoinX + 140f
-                cy = rejoinY
-            }
-        }
-
-        return LevelChunk(
-            width = cx - startX + 60f,
-            height = 600f,
-            platforms = platforms,
-            collectibles = collectibles,
-            endY = cy
-        )
-    }
-
-    private fun generateHardChunk(startX: Float, startY: Float, difficulty: Float, random: java.util.Random, theme: ProceduralTheme, levelNum: Int): LevelChunk {
-        val platforms = mutableListOf<BounceObstacle>()
-        val collectibles = mutableListOf<BounceCollectible>()
-        val enemies = mutableListOf<BounceEnemy>()
-        val keys = mutableListOf<BounceKey>()
-        val doors = mutableListOf<BounceDoor>()
-
-        var cx = startX + 60f
-        var cy = startY
-
-        val design = random.nextInt(3)
-        when (design) {
-            0 -> {
-                val speed = 0.06f + difficulty * 0.05f
-                val mPlatW = 130f
-                cx += 90f
-                platforms.add(
-                    BounceObstacle(
-                        x = cx,
-                        y = cy - 30f,
-                        width = mPlatW,
-                        height = 35f,
-                        isMoving = true,
-                        moveRangeX = 160f,
-                        moveSpeed = speed
-                    )
-                )
-                collectibles.add(BounceCollectible(x = cx + mPlatW / 2f + 80f, y = cy - 90f, isStar = true, isBonus = false))
-                cx += mPlatW + 180f
-
-                enemies.add(
-                    BounceEnemy(
-                        id = levelNum * 1000 + 10,
-                        type = EnemyType.FLYING,
-                        x = cx + 40f,
-                        y = cy - 140f,
-                        moveRangeX = 80f,
-                        moveRangeY = 60f,
-                        moveSpeed = 70f + difficulty * 30f
-                    )
-                )
-
-                val landW = 180f
-                val landY = (cy - 40f).coerceIn(200f, 440f)
-                platforms.add(BounceObstacle(x = cx, y = landY, width = landW, height = 35f))
-                cx += landW
-                cy = landY
-            }
-            1 -> {
-                val pitW = 450f
-                platforms.add(
-                    BounceObstacle(
-                        x = cx + 40f,
-                        y = 550f,
-                        width = pitW,
-                        height = 40f,
-                        isSpike = true,
-                        spikeDirection = SpikeDirection.UP
-                    )
-                )
-
-                cx += 80f
-                val f1Y = cy - 10f
-                platforms.add(BounceObstacle(x = cx, y = f1Y, width = 130f, height = 35f, isFallingPlatform = true))
-                collectibles.add(BounceCollectible(x = cx + 65f, y = f1Y - 55f, isStar = true, isBonus = false))
-                cx += 180f
-
-                val f2Y = cy - 40f
-                platforms.add(BounceObstacle(x = cx, y = f2Y, width = 130f, height = 35f, isFallingPlatform = true))
-                cx += 180f
-
-                val landY = (cy - 60f).coerceIn(200f, 440f)
-                platforms.add(BounceObstacle(x = cx, y = landY, width = 150f, height = 35f))
-                cx += 150f
-                cy = landY
-            }
-            else -> {
-                val landW = 180f
-                platforms.add(BounceObstacle(x = cx, y = cy, width = landW, height = 35f))
-                cx += landW
-
-                val gap = 160f
-                enemies.add(
-                    BounceEnemy(
-                        id = levelNum * 1000 + 20,
-                        type = EnemyType.ROTATING_HAZARD,
-                        x = cx + gap / 2f - 14f,
-                        y = cy - 70f,
-                        moveSpeed = 180f + difficulty * 100f
-                    )
-                )
-                cx += gap
-
-                val nextY = (cy + 20f).coerceIn(240f, 480f)
-                platforms.add(BounceObstacle(x = cx, y = nextY, width = landW, height = 35f))
-                collectibles.add(BounceCollectible(x = cx + landW / 2f, y = nextY - 55f, isStar = true, isBonus = false))
-                cx += landW
-                cy = nextY
-            }
-        }
-
-        return LevelChunk(
-            width = cx - startX + 60f,
-            height = 600f,
-            platforms = platforms,
-            collectibles = collectibles,
-            enemies = enemies,
-            keys = keys,
-            doors = doors,
-            endY = cy
-        )
-    }
-
-    private fun generateExitChunk(startX: Float, startY: Float): LevelChunk {
-        val width = 480f
-        val platforms = listOf(
-            BounceObstacle(x = startX, y = startY, width = width, height = 100f)
-        )
-        return LevelChunk(
-            width = width,
-            height = 600f,
-            platforms = platforms,
-            endY = startY
-        )
-    }
+    private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 }
+
 
 // --- AUTOMATED AI PLAY-TEST SIMULATION SOLVER ---
 fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
-    val minPlatformY = 80f
-    val maxPlatformY = level.height - 80f
-
-    // 1. Basic validation
+    // 1. Basic level structure integrity validation
     if (level.platforms.isEmpty()) return false
     for (p in level.platforms) {
-        if (p.y < 70f || p.y > level.height - 80f) return false
+        if (p.y < 50f || p.y > level.height - 40f) return false
     }
 
-    val walkable = level.platforms.filter { !it.isSpike && it.spikeDirection == null }.sortedBy { it.x }
+    // 2. Classify walkable (non-spike) platforms
+    val walkable = level.platforms.filter { !it.isSpike }.sortedBy { it.x }
     if (walkable.isEmpty()) return false
 
-    // Find starting platform
+    // Locate player start and portal platforms
     val startPlatIndex = walkable.indexOfFirst { level.startX >= it.x - 30f && level.startX <= it.x + it.width + 30f }
     if (startPlatIndex == -1) return false
 
-    // Find portal platform
     val portalPlatIndex = walkable.indexOfFirst { level.portalX >= it.x - 60f && level.portalX <= it.x + it.width + 60f }
     if (portalPlatIndex == -1) return false
 
-    // Ensure exit is after all objectives geometrically (Never place exit before mandatory objectives)
-    for (star in level.collectibles) {
-        if (star.x >= level.portalX - 50f) return false
-    }
-    for (key in level.keys) {
-        if (key.x >= level.portalX - 50f) return false
-    }
-    for (cp in level.checkpoints) {
-        if (cp.x >= level.portalX - 50f) return false
+    // 3. Platform Safety & Overlap Checks (No collectibles, keys, doors, checkpoints, portal or enemies inside solid platforms)
+    fun overlapsSolid(x: Float, y: Float, radius: Float = 12f): Boolean {
+        for (p in level.platforms) {
+            if (p.isSpike) continue
+            // Platform box
+            val bufferY = 4f
+            if (x + radius > p.x && x - radius < p.x + p.width &&
+                y + radius > p.y + bufferY && y - radius < p.y + p.height) {
+                return true
+            }
+        }
+        return false
     }
 
-    val numStars = level.collectibles.size
+    // Check collectibles & keys placement
+    for (col in level.collectibles) {
+        if (overlapsSolid(col.x, col.y, 10f)) return false
+        if (col.y > level.height - 30f) return false // below terrain / abyss
+    }
+    for (key in level.keys) {
+        if (overlapsSolid(key.x, key.y, 10f)) return false
+        if (key.y > level.height - 30f) return false // below terrain / abyss
+    }
+    for (cp in level.checkpoints) {
+        if (overlapsSolid(cp.x, cp.y, 12f)) return false
+        if (cp.y > level.height - 30f) return false // below terrain / abyss
+    }
+    // Exit Portal placement check
+    if (overlapsSolid(level.portalX, level.portalY, 15f)) return false
+    if (level.portalY > level.height - 30f) return false
+
+    // Enemies inside terrain check
+    for (enemy in level.enemies) {
+        if (overlapsSolid(enemy.x, enemy.y, 12f)) return false
+    }
+
+    // 4. Exit / Portal Standing Space Validation
+    val exitPlatform = walkable[portalPlatIndex]
+    if (exitPlatform.width < 80f) return false // Needs enough standing space around exit flag
+    // Ensure the portal sits nicely on the platform vertically
+    val distToPortalPlatform = exitPlatform.y - level.portalY
+    if (distToPortalPlatform < 0f || distToPortalPlatform > 90f) return false
+
+    // Ensure exit is after all objectives geometrically
+    for (star in level.collectibles.filter { it.isStar }) {
+        if (star.x >= level.portalX - 40f) return false
+    }
+    for (key in level.keys) {
+        if (key.x >= level.portalX - 40f) return false
+    }
+    for (cp in level.checkpoints) {
+        if (cp.x >= level.portalX - 40f) return false
+    }
+
+    // 5. Checkpoint Safety Validation (safe respawn coordinates)
+    for (cp in level.checkpoints) {
+        // Respawn position cannot be too close to spikes
+        for (p in level.platforms.filter { it.isSpike }) {
+            val distSq = (cp.x - (p.x + p.width / 2f)) * (cp.x - (p.x + p.width / 2f)) +
+                         (cp.y - (p.y + p.height / 2f)) * (cp.y - (p.y + p.height / 2f))
+            if (distSq < 50f * 50f) return false
+        }
+        // Respawn position cannot be too close to enemies initial position
+        for (enemy in level.enemies) {
+            val distSq = (cp.x - enemy.x) * (cp.x - enemy.x) + (cp.y - enemy.y) * (cp.y - enemy.y)
+            if (distSq < 80f * 80f) return false
+        }
+        // Must have a platform beneath
+        val hasUnderlyingPlat = walkable.any { p ->
+            cp.x >= p.x - 20f && cp.x <= p.x + p.width + 20f && p.y >= cp.y && p.y - cp.y <= 130f
+        }
+        if (!hasUnderlyingPlat) return false
+    }
+
+    // 6. Camera / Screen Boundary Visibility Validation
+    // All gameplay-essential assets must remain visible on screen
+    for (p in level.platforms) {
+        if (p.x < -100f || p.x > level.width + 100f) return false
+    }
+
+    // 7. Level Flow Progression Verification
+    // Level must flow from Left (START) to Right (EXIT)
+    if (level.startX > 800f) return false
+    if (level.portalX < level.width - 600f) return false
+    if (level.checkpoints.size >= 2) {
+        // Checkpoints should be ordered in progressive flow
+        val sortedCP = level.checkpoints.sortedBy { it.x }
+        for (i in 0 until sortedCP.size - 1) {
+            if (sortedCP[i].x >= sortedCP[i+1].x) return false
+        }
+    }
+
+    // 8. Separating Stars and Coins for high performance playtest bitmasking
+    val stars = level.collectibles.filter { it.isStar }
+    val coins = level.collectibles.filter { !it.isStar }
+
+    val numStars = stars.size
     val numKeys = level.keys.size
     val numCheckpoints = level.checkpoints.size
 
-    // Map keys and checkpoints to indices 0..size-1 for bitmasking
     val keyIndices = level.keys.mapIndexed { index, key -> key.id to index }.toMap()
     val cpIndices = level.checkpoints.mapIndexed { index, cp -> cp.id to index }.toMap()
 
-    // Map platforms to stars, keys, checkpoints
     val platformStars = IntArray(walkable.size) { 0 }
     val platformKeys = IntArray(walkable.size) { 0 }
     val platformCheckpoints = IntArray(walkable.size) { 0 }
 
-    for (i in level.collectibles.indices) {
-        val star = level.collectibles[i]
+    for (i in stars.indices) {
+        val star = stars[i]
         val platIndex = walkable.indexOfFirst { star.x >= it.x - 80f && star.x <= it.x + it.width + 80f }
         if (platIndex != -1) {
             platformStars[platIndex] = platformStars[platIndex] or (1 shl i)
@@ -1240,12 +1512,12 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         }
     }
 
-    // Define transition helper
+    // BFS Transition Helper matching exact player physical capability
     fun canTransition(fromIndex: Int, toIndex: Int, currentKeys: Int): Boolean {
         val p1 = walkable[fromIndex]
         val p2 = walkable[toIndex]
 
-        // Check if any locked door blocks the horizontal path
+        // Check door blockages
         for (door in level.doors) {
             val keyBit = keyIndices[door.keyIdNeeded]
             val isUnlocked = keyBit != null && ((currentKeys and (1 shl keyBit)) != 0)
@@ -1253,7 +1525,7 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
                 val minX = minOf(p1.x + p1.width/2f, p2.x + p2.width/2f)
                 val maxX = maxOf(p1.x + p1.width/2f, p2.x + p2.width/2f)
                 if (door.x in minX..maxX) {
-                    return false // blocked!
+                    return false
                 }
             }
         }
@@ -1265,7 +1537,7 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         } else {
             0f
         }
-        val riseY = p1.y - p2.y // positive if p2 is higher than p1
+        val riseY = p1.y - p2.y
 
         // 1. Direct Walk/Roll or short jump
         if (Math.abs(riseY) <= 30f && gapX <= 220f) return true
@@ -1273,7 +1545,7 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         // 2. Normal Jump Up
         if (riseY > 0f && riseY <= 125f && gapX <= 220f) return true
 
-        // 3. Spring Jump Up
+        // 3. Spring Jump Up (Spring launches player higher)
         if (p1.isSpring && riseY > 0f && riseY <= 240f && gapX <= 350f) return true
 
         // 4. Dropping Down / Falling
@@ -1285,7 +1557,7 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         return false
     }
 
-    // State class
+    // BFS state
     data class State(
         val platform: Int,
         val stars: Int,
@@ -1293,7 +1565,6 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         val checkpoints: Int
     )
 
-    // BFS to find all reachable states
     val queue = java.util.ArrayDeque<State>()
     val visited = mutableSetOf<State>()
 
@@ -1305,19 +1576,17 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
     queue.add(initialState)
     visited.add(initialState)
 
-    // Limit iterations to prevent heavy computations
     var iterations = 0
     val maxIterations = 20000
 
     while (queue.isNotEmpty()) {
         iterations++
         if (iterations > maxIterations) {
-            return false // Reject if state space is too complex
+            return false // Too complex / rejected
         }
 
         val curr = queue.poll() ?: break
 
-        // Generate next transitions
         for (nextPlat in walkable.indices) {
             if (nextPlat == curr.platform) continue
             if (canTransition(curr.platform, nextPlat, curr.keys)) {
@@ -1333,9 +1602,9 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         }
     }
 
-    // --- RULES VALIDATION ---
+    // --- PLAY-TEST CHECKS ---
 
-    // 1. We must be able to reach 100% completion (all stars + all checkpoints) and then reach the exit portal platform
+    // 1. All stars and checkpoints reachable to exit portal
     val allStarsMask = (1 shl numStars) - 1
     val allCheckpointsMask = (1 shl numCheckpoints) - 1
     val canComplete100Percent = visited.any {
@@ -1345,7 +1614,7 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
     }
     if (!canComplete100Percent) return false
 
-    // 2. The player never gets trapped (softlocked): from EVERY reachable state, there must exist a path to reach the exit portal platform
+    // 2. Trapped / Softlock Verification (every reached state must be able to reach exit portal platform)
     val canReachPortal = mutableSetOf<State>()
     val reverseEdges = mutableMapOf<State, MutableList<State>>()
 
@@ -1383,10 +1652,10 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
     }
 
     if (canReachPortal.size != visited.size) {
-        return false // Some reachable states cannot reach the portal (trapped/softlocked)
+        return false // Left trapped
     }
 
-    // 3. No collectible is permanently left behind after crossing/activating a checkpoint
+    // 3. Collectible Star/Key lockout after checkpoint check
     fun hasPathToPlatform(fromPlat: Int, toPlat: Int, currentKeys: Int): Boolean {
         val platQueue = java.util.ArrayDeque<Int>()
         val platVisited = mutableSetOf<Int>()
@@ -1411,19 +1680,17 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
         for (k in level.checkpoints.indices) {
             val cpActivated = (curr.checkpoints and (1 shl k)) != 0
             if (cpActivated) {
-                // All stars must either be already collected, or reachable from current platform
-                for (s_idx in level.collectibles.indices) {
+                for (s_idx in stars.indices) {
                     val starCollected = (curr.stars and (1 shl s_idx)) != 0
                     if (!starCollected) {
-                        val starPlat = walkable.indexOfFirst { level.collectibles[s_idx].x >= it.x - 80f && level.collectibles[s_idx].x <= it.x + it.width + 80f }
+                        val starPlat = walkable.indexOfFirst { stars[s_idx].x >= it.x - 80f && stars[s_idx].x <= it.x + it.width + 80f }
                         if (starPlat != -1) {
                             if (!hasPathToPlatform(curr.platform, starPlat, curr.keys)) {
-                                return false // Permanent lock out of a star after checkpoint activation
+                                return false // Softlocked from star
                             }
                         }
                     }
                 }
-                // All keys must either be already collected, or reachable from current platform
                 for (key_idx in level.keys.indices) {
                     val keyBit = keyIndices[level.keys[key_idx].id] ?: 0
                     val keyCollected = (curr.keys and (1 shl keyBit)) != 0
@@ -1431,7 +1698,7 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
                         val keyPlat = walkable.indexOfFirst { level.keys[key_idx].x >= it.x - 80f && level.keys[key_idx].x <= it.x + it.width + 80f }
                         if (keyPlat != -1) {
                             if (!hasPathToPlatform(curr.platform, keyPlat, curr.keys)) {
-                                return false // Permanent lock out of a key after checkpoint activation
+                                return false // Softlocked from key
                             }
                         }
                     }
@@ -1439,6 +1706,45 @@ fun verifyAndPlaytestLevel(level: BounceLevel): Boolean {
             }
         }
     }
+
+    // 4. Verify Every Coin is fully reachable
+    val visitedPlatforms = visited.map { it.platform }.toSet()
+    for (coin in coins) {
+        val coinPlatIndex = walkable.indexOfFirst { coin.x >= it.x - 80f && coin.x <= it.x + it.width + 80f }
+        if (coinPlatIndex == -1 || coinPlatIndex !in visitedPlatforms) {
+            return false // Coin is unreachable
+        }
+    }
+
+    // 5. Difficulty Progression Jump Distance Checks (Ensure no sudden spikes)
+    val levelNum = level.number
+    val maxAllowedGap = when {
+        levelNum <= 5 -> 160f
+        levelNum <= 15 -> 190f
+        else -> 220f
+    }
+    // Verify that the actual jumps executed along visited paths do not exceed the maxAllowedGap
+    for (curr in visited) {
+        for (nextPlat in walkable.indices) {
+            if (canTransition(curr.platform, nextPlat, curr.keys)) {
+                val p1 = walkable[curr.platform]
+                val p2 = walkable[nextPlat]
+                val gapX = if (p2.x > p1.x + p1.width) {
+                    p2.x - (p1.x + p1.width)
+                } else if (p1.x > p2.x + p2.width) {
+                    p1.x - (p2.x + p2.width)
+                } else 0f
+                if (gapX > maxAllowedGap && !p1.isSpring) {
+                    return false // Sudden difficulty spike / too far jump
+                }
+            }
+        }
+    }
+
+    // Check enemy counts by level phase
+    val enemyCount = level.enemies.size
+    if (levelNum <= 5 && enemyCount > 2) return false
+    if (levelNum in 6..15 && enemyCount > 5) return false
 
     return true
 }
@@ -3235,14 +3541,26 @@ fun BounceClassicScreen(
     } else {
         // --- ACTIVE GAMEPLAY SCREEN (LANDSCAPE) ---
         val activeLevel = remember(selectedLevelNum) {
-            SmartProceduralLevelGenerator.generateLevel(selectedLevelNum)
+            SmartProceduralLevelGenerator.generateLevel(selectedLevelNum, context)
         }
         ActiveBounceQuestGame(
             level = activeLevel,
             viewModel = viewModel,
             selectedSkinId = selectedSkinId,
             onBackToMenu = { isPlaying = false },
-            onLevelCompleted = { starsCollected, coinsCollected, finalScore ->
+            onLevelCompleted = { starsCollected, coinsCollected, finalScore, deaths, missedJumps, time, checkpointRespawns, discoveredSecret ->
+                // Record session performance to adaptive difficulty engine
+                com.myplaywin.app.data.AdaptiveDifficultyManager.recordSessionPerformance(
+                    context = context,
+                    levelNum = selectedLevelNum,
+                    deaths = deaths,
+                    missedJumps = missedJumps,
+                    starsCollected = starsCollected,
+                    totalLevelStars = activeLevel.collectibles.count { it.isStar },
+                    timeSeconds = time,
+                    checkpointRespawns = checkpointRespawns
+                )
+
                 // Mark Level as complete & update unlocked level
                 val nextLevel = selectedLevelNum + 1
                 if (nextLevel > unlockedLevel) {
@@ -3262,15 +3580,49 @@ fun BounceClassicScreen(
                     prefs.edit().putInt("level_score_$selectedLevelNum", finalScore).apply()
                 }
 
+                // Dynamic Reward System: Increase rewards for accomplishments
+                var baseReward = activeLevel.baseRewardCoins + (starsCollected * 10) + coinsCollected
+                var bonusCoins = 0
+                val bonusesEarned = mutableListOf<String>()
+
+                val totalStars = activeLevel.collectibles.count { it.isStar }
+                if (totalStars > 0 && starsCollected == totalStars) {
+                    bonusCoins += 100
+                    bonusesEarned.add("⭐ 100% Stars Perfect (+100)")
+                }
+                if (deaths == 0) {
+                    bonusCoins += 150
+                    bonusesEarned.add("🛡️ No-Death Flawless Run (+150)")
+                }
+                val isFastRun = time < (activeLevel.width * 0.025f).coerceAtMost(60f)
+                if (isFastRun) {
+                    bonusCoins += 100
+                    bonusesEarned.add("⚡ Speed Demon Finish (+100)")
+                }
+                if (discoveredSecret) {
+                    bonusCoins += 80
+                    bonusesEarned.add("🔍 Secret Cave Discovered (+80)")
+                }
+
+                val totalReward = baseReward + bonusCoins
+                if (bonusCoins > 0) {
+                    viewModel.addCoins(bonusCoins, "Bounce Performance Bonuses Lvl $selectedLevelNum")
+                    val bonusText = bonusesEarned.joinToString("\n")
+                    android.widget.Toast.makeText(
+                        context,
+                        "🎉 PERFORMANCE BONUSES (+${bonusCoins} 🪙):\n$bonusText",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+
                 // Append to history log
                 val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
                 val currentDateStr = sdf.format(Date())
-                val reward = activeLevel.baseRewardCoins + (starsCollected * 10) + coinsCollected
                 val entry = BounceHistoryEntry(
                     date = currentDateStr,
                     levelName = activeLevel.name,
                     stars = starsCollected,
-                    coins = reward,
+                    coins = totalReward,
                     score = finalScore
                 )
                 val updated = listOf(entry) + historyList.take(19)
@@ -3957,7 +4309,7 @@ fun ActiveBounceQuestGame(
     viewModel: PlayWinViewModel,
     selectedSkinId: String = "skin_neon_violet",
     onBackToMenu: () -> Unit,
-    onLevelCompleted: (stars: Int, coins: Int, score: Int) -> Unit
+    onLevelCompleted: (stars: Int, coins: Int, score: Int, deaths: Int, missedJumps: Int, time: Float, checkpointRespawns: Int, discoveredSecret: Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val activeLevel = remember(level) { sanitizeAndValidateLevel(level) }
@@ -3995,8 +4347,8 @@ fun ActiveBounceQuestGame(
     var squashX by remember { mutableFloatStateOf(1f) }
     var squashY by remember { mutableFloatStateOf(1f) }
     var rollAngle by remember { mutableFloatStateOf(0f) }
-    var cameraX by remember(activeLevel) { mutableFloatStateOf((activeLevel.startX - 800f / 2f).coerceIn(0f, (activeLevel.width - 800f).coerceAtLeast(0f))) }
-    var cameraY by remember(activeLevel) { mutableFloatStateOf((activeLevel.startY - 500f * 0.42f).coerceIn(0f, (activeLevel.height - 500f).coerceAtLeast(0f))) }
+    var cameraX by remember(activeLevel) { mutableFloatStateOf((activeLevel.startX - 800f / 2f).safeCoerceIn(0f, (activeLevel.width - 800f).coerceAtLeast(0f))) }
+    var cameraY by remember(activeLevel) { mutableFloatStateOf((activeLevel.startY - 500f * 0.42f).safeCoerceIn(0f, (activeLevel.height - 500f).coerceAtLeast(0f))) }
     var viewportWidthWorld by remember { mutableFloatStateOf(800f) }
     var viewportHeightWorld by remember { mutableFloatStateOf(500f) }
 
@@ -4025,6 +4377,11 @@ fun ActiveBounceQuestGame(
     var isPaused by remember { mutableStateOf(false) }
     var isGameOver by remember { mutableStateOf(false) }
     var gameCompleted by remember { mutableStateOf(false) }
+
+    // Performance telemetry states
+    var levelAttemptDeaths by remember { mutableIntStateOf(0) }
+    var missedJumps by remember { mutableIntStateOf(0) }
+    var checkpointRespawns by remember { mutableIntStateOf(0) }
 
     // Water states
     var isSubmergedInWater by remember { mutableStateOf(false) }
@@ -4338,6 +4695,12 @@ fun ActiveBounceQuestGame(
         cameraShakeIntensity = 0f
         invincibilityTimer = 1.2f
 
+        // Telemetry tracking
+        levelAttemptDeaths++
+        if (isSpikeHit) {
+            missedJumps++
+        }
+
         if (isSpikeHit) {
             spawnSpikeHitBurst(ballX, ballY)
         } else {
@@ -4352,8 +4715,8 @@ fun ActiveBounceQuestGame(
             ballVy = 0f
             squashX = 1.2f
             squashY = 0.8f
-            cameraX = (lastCheckpointX - viewportWidthWorld / 2f).coerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
-            cameraY = (lastCheckpointY - viewportHeightWorld * 0.42f).coerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
+            cameraX = (lastCheckpointX - viewportWidthWorld / 2f).safeCoerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
+            cameraY = (lastCheckpointY - viewportHeightWorld * 0.42f).safeCoerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
             spawnCheckpointBeam(lastCheckpointX, lastCheckpointY)
         } else {
             BounceAudioEngine.playGameOver()
@@ -4362,6 +4725,7 @@ fun ActiveBounceQuestGame(
     }
 
     fun respawnAtCheckpoint() {
+        checkpointRespawns++
         livesRemaining = 3
         ballX = lastCheckpointX
         ballY = lastCheckpointY - 10f
@@ -4371,8 +4735,8 @@ fun ActiveBounceQuestGame(
         squashY = 1f
         invincibilityTimer = 0f
         cameraShakeTimer = 0f
-        cameraX = (lastCheckpointX - viewportWidthWorld / 2f).coerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
-        cameraY = (lastCheckpointY - viewportHeightWorld * 0.42f).coerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
+        cameraX = (lastCheckpointX - viewportWidthWorld / 2f).safeCoerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
+        cameraY = (lastCheckpointY - viewportHeightWorld * 0.42f).safeCoerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
         isGameOver = false
         isGrounded = false
         particles.clear()
@@ -4391,8 +4755,8 @@ fun ActiveBounceQuestGame(
         squashX = 1f
         squashY = 1f
         rollAngle = 0f
-        cameraX = (activeLevel.startX - viewportWidthWorld / 2f).coerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
-        cameraY = (activeLevel.startY - viewportHeightWorld * 0.42f).coerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
+        cameraX = (activeLevel.startX - viewportWidthWorld / 2f).safeCoerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
+        cameraY = (activeLevel.startY - viewportHeightWorld * 0.42f).safeCoerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
         invincibilityTimer = 0f
         cameraShakeTimer = 0f
         isGrounded = false
@@ -4799,6 +5163,7 @@ fun ActiveBounceQuestGame(
                     // Pit fall check
                     if (ballY - ballRadius > activeLevel.height) {
                         handlePlayerDeath(isSpikeHit = false)
+                        missedJumps++
                         break
                     }
 
@@ -4949,10 +5314,10 @@ fun ActiveBounceQuestGame(
 
                 // Smooth Camera Follow: keeps player centered ~42% from top
                 val lookAhead = ballVx * 0.25f
-                val targetCamX = (ballX - viewportWidthWorld / 2f + lookAhead).coerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
+                val targetCamX = (ballX - viewportWidthWorld / 2f + lookAhead).safeCoerceIn(0f, (activeLevel.width - viewportWidthWorld).coerceAtLeast(0f))
                 cameraX += (targetCamX - cameraX) * (1f - exp(-11f * dt))
 
-                val targetCamY = (ballY - viewportHeightWorld * 0.42f).coerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
+                val targetCamY = (ballY - viewportHeightWorld * 0.42f).safeCoerceIn(0f, (activeLevel.height - viewportHeightWorld).coerceAtLeast(0f))
                 cameraY += (targetCamY - cameraY) * (1f - exp(-11f * dt))
             }
         }
@@ -4987,6 +5352,11 @@ fun ActiveBounceQuestGame(
                 scale(worldScale, worldScale, pivot = Offset.Zero)
                 translate(-cameraX, -cameraY)
             }) {
+                val leftBound = cameraX - 120f
+                val rightBound = cameraX + viewportWidthWorld + 120f
+                val topBound = cameraY - 120f
+                val bottomBound = cameraY + viewportHeightWorld + 120f
+
                 // Theme-Based Visual Background Atmosphere
                 val themeAccent = getLevelAccentColor(level.number)
                 var ambientX = 200f
@@ -5115,6 +5485,7 @@ fun ActiveBounceQuestGame(
 
                 // 1. Draw Water Zones
                 for (water in activeLevel.waterZones) {
+                    if (water.x + water.width < leftBound || water.x > rightBound) continue
                     drawRect(
                         color = water.waterColor,
                         topLeft = Offset(water.x, water.y),
@@ -5136,6 +5507,7 @@ fun ActiveBounceQuestGame(
 
                 // 2. Draw Checkpoint Flags
                 for (cp in dynamicCheckpoints) {
+                    if (cp.x + 40f < leftBound || cp.x - 40f > rightBound) continue
                     val flagX = cp.x
                     val flagY = cp.y
                     // Pole
@@ -5174,6 +5546,7 @@ fun ActiveBounceQuestGame(
 
                 // 3. Draw Doors & Keys
                 for (key in dynamicKeys) {
+                    if (key.x + 30f < leftBound || key.x - 30f > rightBound) continue
                     if (!key.isCollected) {
                         val rot = elapsedTimeSeconds * 90f
                         withTransform({
@@ -5202,6 +5575,7 @@ fun ActiveBounceQuestGame(
                 }
 
                 for (door in dynamicDoors) {
+                    if (door.x + door.width < leftBound || door.x > rightBound) continue
                     val offsetY = door.unlockAnimProgress * door.height
                     if (door.unlockAnimProgress < 0.95f) {
                         drawRoundRect(
@@ -5229,6 +5603,7 @@ fun ActiveBounceQuestGame(
                 // 4. Draw Interactive Objects
                 for (block in dynamicInteractiveBlocks) {
                     if (block.isDestroyed) continue
+                    if (block.currentX + block.width < leftBound || block.currentX > rightBound) continue
                     when (block.type) {
                         InteractiveType.SECRET_PASSAGEWAY -> {
                             drawRect(
@@ -5284,6 +5659,8 @@ fun ActiveBounceQuestGame(
 
                     val drawX = obs.x + (if (obs.isFallingPlatform) fs.shakeX else 0f)
                     val drawY = obs.y + (if (obs.isFallingPlatform) fs.offsetY else 0f)
+
+                    if (drawX + obs.width < leftBound || drawX > rightBound) continue
 
                     if (obs.isSpike) {
                         // Hazard Spikes
@@ -5403,6 +5780,10 @@ fun ActiveBounceQuestGame(
 
                 // 6. Draw Enemies & Rotating Hazards
                 for (enemy in dynamicEnemies) {
+                    val exApprox = if (enemy.type == EnemyType.ROTATING_HAZARD) enemy.x else enemy.initialX
+                    val rangeX = if (enemy.type == EnemyType.ROTATING_HAZARD) 20f else enemy.moveRangeX + 30f
+                    if (exApprox + rangeX < leftBound || exApprox - rangeX > rightBound) continue
+
                     val ex: Float
                     val ey: Float
                     when (enemy.type) {
@@ -5464,6 +5845,7 @@ fun ActiveBounceQuestGame(
 
                 // 7. Draw Collectibles
                 for (item in dynamicCollectibles) {
+                    if (item.x + 20f < leftBound || item.x - 20f > rightBound) continue
                     if (!item.isCollected) {
                         if (item.isStar) {
                             drawStar(
@@ -6183,7 +6565,18 @@ fun ActiveBounceQuestGame(
                             Text("Replay", color = Color.White)
                         }
                         Button(
-                            onClick = { onLevelCompleted(starsCollected, coinsCollected, currentScore) },
+                            onClick = {
+                                onLevelCompleted(
+                                    starsCollected,
+                                    coinsCollected,
+                                    currentScore,
+                                    levelAttemptDeaths,
+                                    missedJumps,
+                                    elapsedTimeSeconds,
+                                    checkpointRespawns,
+                                    dynamicCollectibles.any { it.isCollected && it.isBonus }
+                                )
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
                             modifier = Modifier.weight(1f)
                         ) {
@@ -6485,8 +6878,8 @@ fun VirtualJumpButton(
 // --- COLLISION SOLVERS ---
 private fun checkCollision(bx: Float, by: Float, br: Float, obs: BounceObstacle): Boolean {
     // Closest point on platform to circle center
-    val closestX = bx.coerceIn(obs.x, obs.x + obs.width)
-    val closestY = by.coerceIn(obs.y, obs.y + obs.height)
+    val closestX = bx.safeCoerceIn(obs.x, obs.x + obs.width)
+    val closestY = by.safeCoerceIn(obs.y, obs.y + obs.height)
 
     // Distance squared
     val distSq = (bx - closestX) * (bx - closestX) + (by - closestY) * (by - closestY)
