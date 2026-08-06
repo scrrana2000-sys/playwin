@@ -630,7 +630,9 @@ data class LevelChunk(
     val doors: List<BounceDoor> = emptyList(),
     val waterZones: List<BounceWaterZone> = emptyList(),
     val interactiveBlocks: List<BounceInteractiveBlock> = emptyList(),
-    val endY: Float
+    val endY: Float,
+    val portalX: Float? = null,
+    val portalY: Float? = null
 )
 
 object SmartProceduralLevelGenerator {
@@ -917,6 +919,62 @@ object SmartProceduralLevelGenerator {
             }
         }
 
+        if (type == ChunkType.EXIT) {
+            val px = chunk.portalX
+            val py = chunk.portalY
+            if (px == null || py == null) {
+                reasons.add("Exit chunk must define portalX and portalY coordinates")
+            } else {
+                val plat = chunk.platforms.firstOrNull { !it.isSpike && it.spikeDirection == null }
+                if (plat == null) {
+                    reasons.add("Exit chunk must contain a walkable platform")
+                } else {
+                    // 1. Must never spawn below the platform, under the platform, or inside terrain
+                    if (py >= plat.y) {
+                        reasons.add("Exit portal must be placed strictly on top of the platform, got py=$py, plat.y=${plat.y}")
+                    }
+                    
+                    // 2. Must never spawn beyond the platform edge
+                    if (px < plat.x || px > plat.x + plat.width) {
+                        reasons.add("Exit portal must be on the platform horizontally, got px=$px, plat range=[${plat.x}, ${plat.x + plat.width}]")
+                    }
+
+                    // 3. Must never spawn outside the camera (height is 600f)
+                    if (py < 40f || py > 560f || px < 0f) {
+                        reasons.add("Exit portal must be within safe camera bounds, got px=$px, py=$py")
+                    }
+
+                    // 4. Must never spawn inside a wall / solid terrain
+                    for (p in chunk.platforms) {
+                        if (p != plat && !p.isSpike && p.spikeDirection == null) {
+                            val bufferY = 4f
+                            if (px + 15f > p.x && px - 15f < p.x + p.width &&
+                                py + 15f > p.y + bufferY && py - 15f < p.y + p.height) {
+                                reasons.add("Exit portal spawns inside an obstacle/wall/terrain")
+                            }
+                        }
+                    }
+
+                    // 5. Standing space validation: at least one player-width of standing space before the Exit (player width = 28f)
+                    val standingSpaceLeft = px - plat.x
+                    val standingSpaceRight = (plat.x + plat.width) - px
+                    val minStandingSpace = 28f
+                    if (standingSpaceLeft < minStandingSpace && standingSpaceRight < minStandingSpace) {
+                        reasons.add("Exit portal does not have enough standing space on either side, left=$standingSpaceLeft, right=$standingSpaceRight")
+                    }
+
+                    // 6. Reachability validation: no spikes or obstacles block the player's horizontal path to the exit portal
+                    for (p in chunk.platforms) {
+                        if (p.isSpike || p.spikeDirection != null) {
+                            if (p.x + p.width > plat.x && p.x < px) {
+                                reasons.add("Exit path is blocked by hazard spikes")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (reasons.isNotEmpty()) {
             val invalidValues = "Platforms: ${chunk.platforms.size}, Enemies: ${chunk.enemies.size}"
             val reasonStr = reasons.joinToString("; ")
@@ -983,6 +1041,8 @@ object SmartProceduralLevelGenerator {
         var currentY = 440f
 
         var checkpointCounter = 1
+        var levelPortalX: Float? = null
+        var levelPortalY: Float? = null
 
         for ((index, chunkPair) in chunks.withIndex()) {
             val type = chunkPair.first
@@ -1032,6 +1092,10 @@ object SmartProceduralLevelGenerator {
             }
 
             appendChunk(chunk, platforms, collectibles, checkpoints, enemies, keys, doors, waterZones, interactiveBlocks)
+            if (chunk.portalX != null && chunk.portalY != null) {
+                levelPortalX = chunk.portalX
+                levelPortalY = chunk.portalY
+            }
             currentX += chunk.width
             currentY = chunk.endY
         }
@@ -1083,8 +1147,8 @@ object SmartProceduralLevelGenerator {
         val levelDesc = "Explore the treacherous terrains of $titleThemeName. Complete all challenges, find the secret chamber, and exit safely."
 
         val exitPlatform = platforms.lastOrNull() ?: BounceObstacle(currentX - 400f, currentY, 400f, 100f)
-        val calculatedPortalX = exitPlatform.x + exitPlatform.width * 0.5f
-        val calculatedPortalY = exitPlatform.y - 32f
+        val calculatedPortalX = levelPortalX ?: (exitPlatform.x + exitPlatform.width * 0.5f)
+        val calculatedPortalY = levelPortalY ?: (exitPlatform.y - 32f)
 
         val levelObj = BounceLevel(
             number = levelNum,

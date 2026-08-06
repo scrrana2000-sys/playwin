@@ -602,13 +602,26 @@ object ChunkLibrary {
         val varIndex = variation % 20
         val width = 420f + varIndex * 15f
         
-        platforms.add(BounceObstacle(x = startX, y = startY, width = width, height = 100f))
+        // Final Exit Platform
+        val platform = BounceObstacle(x = startX, y = startY, width = width, height = 100f)
+        platforms.add(platform)
+
+        // Portal coordinates on top of final platform according to placement rules
+        val useCenterX = (variation % 2 == 0)
+        val pX = if (useCenterX) {
+            platform.x + platform.width * 0.5f
+        } else {
+            platform.x + platform.width - 80f
+        }
+        val pY = platform.y - 32f
 
         return LevelChunk(
             width = width,
             height = 600f,
             platforms = platforms,
-            endY = startY
+            endY = startY,
+            portalX = pX,
+            portalY = pY
         )
     }
 }
