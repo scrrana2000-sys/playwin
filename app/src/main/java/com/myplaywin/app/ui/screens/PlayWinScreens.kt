@@ -3750,6 +3750,7 @@ fun HomeScreen(
             }
         }
 
+        /*
         Spacer(modifier = Modifier.height(12.dp))
 
         // Play Block Master Card
@@ -3835,6 +3836,7 @@ fun HomeScreen(
                 }
             }
         }
+        */
 
         Spacer(modifier = Modifier.height(16.dp))
 
