@@ -65,6 +65,12 @@ object RewardController {
                     }
                 }
             }
+            RewardType.BLOCK_MASTER_CONTINUE,
+            RewardType.BLOCK_MASTER_DOUBLE_REWARD,
+            RewardType.BLOCK_MASTER_EXTRA_COINS,
+            RewardType.BLOCK_MASTER_POWERUP -> {
+                callback.onSuccess("Block Master ad reward granted successfully!")
+            }
         }
     }
 }

@@ -68,6 +68,7 @@ sealed interface AppScreen {
     object Referral : AppScreen
     object SnakeGame : AppScreen
     object BounceGame : AppScreen
+    object BlockMaster : AppScreen
 }
 
 enum class AppTab {
@@ -128,6 +129,7 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
                 is AppScreen.Referral -> putString("type", "Referral")
                 is AppScreen.SnakeGame -> putString("type", "SnakeGame")
                 is AppScreen.BounceGame -> putString("type", "BounceGame")
+                is AppScreen.BlockMaster -> putString("type", "BlockMaster")
             }
         }
     },
@@ -147,6 +149,7 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
             "Referral" -> AppScreen.Referral
             "SnakeGame" -> AppScreen.SnakeGame
             "BounceGame" -> AppScreen.BounceGame
+            "BlockMaster" -> AppScreen.BlockMaster
             else -> AppScreen.MainTabs
         }
         NavEntry(screen, tab)
@@ -173,6 +176,7 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                     is AppScreen.Referral -> putString("type", "Referral")
                     is AppScreen.SnakeGame -> putString("type", "SnakeGame")
                     is AppScreen.BounceGame -> putString("type", "BounceGame")
+                    is AppScreen.BlockMaster -> putString("type", "BlockMaster")
                 }
             }
         }
@@ -195,6 +199,7 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                 "Referral" -> AppScreen.Referral
                 "SnakeGame" -> AppScreen.SnakeGame
                 "BounceGame" -> AppScreen.BounceGame
+                "BlockMaster" -> AppScreen.BlockMaster
                 else -> AppScreen.MainTabs
             }
             list.add(NavEntry(screen, tab))
@@ -330,6 +335,9 @@ fun PlayWinMainFlow(viewModel: PlayWinViewModel) {
                 )
                 is AppScreen.BounceGame -> BounceClassicScreen(
                     viewModel = viewModel,
+                    onBack = navigateBack
+                )
+                is AppScreen.BlockMaster -> com.myplaywin.app.blockmaster.ui.BlockMasterScreen(
                     onBack = navigateBack
                 )
             }
@@ -3736,6 +3744,92 @@ fun HomeScreen(
                         imageVector = Icons.Default.KeyboardArrowRight,
                         contentDescription = "Play Bounce Classic",
                         tint = Color(0xFFA855F7),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Play Block Master Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(86.dp)
+                .clickable { onNavigateToGame(AppScreen.BlockMaster) },
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.2.dp, Color(0xFF00E5FF).copy(alpha = 0.4f)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF13111C))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(Color(0xFF141928), Color(0xFF101422))
+                        )
+                    )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .background(
+                                color = Color(0xFF00E5FF).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = "🧱", fontSize = 28.sp)
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = com.myplaywin.app.blockmaster.constants.BlockMasterConstants.GAME_TITLE,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "EARN COINS",
+                                    color = Color(0xFFFFD700),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 8.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = com.myplaywin.app.blockmaster.constants.BlockMasterConstants.GAME_SUBTITLE,
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Play Block Master",
+                        tint = Color(0xFF00E5FF),
                         modifier = Modifier.size(24.dp)
                     )
                 }
