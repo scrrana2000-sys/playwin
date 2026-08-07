@@ -106,8 +106,9 @@ object BannerManager {
             return
         }
         retryCount++
-        val delayMillis = (retryCount * 5000L).coerceAtMost(30000L)
-        AdLogger.d("Scheduling banner ad retry #$retryCount in ${delayMillis / 1000}s")
+        val delaySec = Math.pow(2.0, retryCount.toDouble()).toLong().coerceAtMost(60L)
+        val delayMillis = delaySec * 1000L
+        AdLogger.d("Scheduling banner ad retry #$retryCount with exponential backoff in ${delaySec}s")
         scope.launch {
             delay(delayMillis)
             loadBanner(context, callbacks)
