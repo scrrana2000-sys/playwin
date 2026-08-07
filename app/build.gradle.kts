@@ -104,6 +104,8 @@ dependencies {
   implementation(libs.androidx.credentials.play.services.auth)
   implementation(libs.googleid)
   implementation(libs.play.services.ads)
+  implementation(libs.unity.ads)
+  implementation(libs.play.services.ads.mediation.unity)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
