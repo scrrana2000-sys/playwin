@@ -891,13 +891,6 @@ fun BingoGamePlayScreen(
                     }
 
                     // 10. PLAYER STATUS SECTION (At the very bottom)
-                    // 10A. TOP PLAYER HUD PANEL
-                    BingoMatchPlayerHeader(
-                        matchTimeSeconds = matchTimeSeconds,
-                        completedLinesCount = completedLines.size,
-                        difficulty = difficulty
-                    )
-
                     // 10B. LIVE AI OPPONENT HUD CARD
                     BingoAiOpponentHeader(
                         aiProfile = aiProfile,

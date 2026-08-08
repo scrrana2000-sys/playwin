@@ -56,7 +56,7 @@ fun BingoOnlineGameplayScreen(
 
     // Generate local player board generated deterministically or initialized
     val localBoard = remember(currentRoom?.roomId) {
-        generateBingoBoardForSeed(currentRoom?.boardSeedP1 ?: System.currentTimeMillis())
+        generateBingoBoardForSeed(System.currentTimeMillis())
     }
 
     var boardState by remember { mutableStateOf(localBoard) }
@@ -68,6 +68,16 @@ fun BingoOnlineGameplayScreen(
     val progressionRepo = remember { com.myplaywin.app.data.repository.BingoProgressionRepository(context) }
     var isResultProcessed by remember { mutableStateOf(false) }
     var showRewardPopup by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentRoom) {
+        val room = currentRoom ?: return@LaunchedEffect
+        val localPlayerObj = room.players[engine.localPlayerUid]
+        if (localPlayerObj != null && localPlayerObj.card.isNotEmpty() && localPlayerObj.marked.isNotEmpty()) {
+            val reconstructedBoard = listsToBoard(localPlayerObj.card, localPlayerObj.marked)
+            boardState = reconstructedBoard
+            completedLines = evaluateLinesLocal(reconstructedBoard)
+        }
+    }
 
     LaunchedEffect(matchStatus) {
         if (!isResultProcessed) {
@@ -219,13 +229,15 @@ fun BingoOnlineGameplayScreen(
                     }
                 }
 
-                // 2. SERVER CALLED NUMBER BALL DISPLAY
+                // 2. SERVER CALLED NUMBER BALL DISPLAY & TURN STATUS
+                val isMyTurn = currentRoom?.game?.currentTurn == engine.localPlayerUid
                 val activeNum = currentRoom?.activeCalledNumber
                 val activeLet = currentRoom?.activeLetter ?: ""
 
                 AaaGlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    borderColor = Color(0xFFFFD700)
+                    borderColor = if (isMyTurn) Color(0xFFFFD700) else Color(0xFF00E5FF),
+                    glowColor = if (isMyTurn) Color(0xFFFFA000) else Color(0xFF0288D1)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -255,14 +267,14 @@ fun BingoOnlineGameplayScreen(
 
                             Column {
                                 Text(
-                                    text = "SERVER CALLING",
-                                    color = Color(0xFFFFD700),
+                                    text = if (isMyTurn) "👉 YOUR TURN TO CALL" else "⏳ OPPONENT'S TURN",
+                                    color = if (isMyTurn) Color(0xFFFFD700) else Color(0xFF80D8FF),
                                     fontWeight = FontWeight.Black,
                                     fontSize = 12.sp,
                                     letterSpacing = 1.sp
                                 )
                                 Text(
-                                    text = if (activeNum != null) "Number $activeLet-$activeNum" else "Preparing sequence...",
+                                    text = if (isMyTurn) "Tap an unmarked tile to CALL!" else "Waiting for ${opponent?.displayName ?: "opponent"}...",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -326,12 +338,14 @@ fun BingoOnlineGameplayScreen(
                             for (c in 0..4) {
                                 val tile = boardState[r][c]
                                 val isWinning = isTileInWinningLine(tile.row, tile.col, completedLines)
+                                val isMatching = !tile.isMarked && currentRoom?.calledNumbersHistory?.contains(tile.number) == true
 
                                 AaaBingoTile(
                                     number = tile.number,
                                     isFreeTile = tile.isFreeTile,
                                     isMarked = tile.isMarked,
                                     isWinningTile = isWinning,
+                                    isMatchingCalledTile = isMatching,
                                     onClick = {
                                         // Submit Daub Move to Engine for Anti-Cheat Validation
                                         val movePayload = BingoMovePayload(
@@ -346,14 +360,6 @@ fun BingoOnlineGameplayScreen(
                                         val result = engine.submitMove(movePayload, boardState)
                                         if (result.isValid) {
                                             AaaBingoAudioHaptics.playTileDaubSound()
-                                            // Mark tile locally
-                                            val newBoard = boardState.map { row ->
-                                                row.map { item ->
-                                                    if (item.row == tile.row && item.col == tile.col) item.copy(isMarked = true) else item
-                                                }
-                                            }
-                                            boardState = newBoard
-                                            completedLines = evaluateLinesLocal(newBoard)
                                         } else {
                                             AaaBingoAudioHaptics.playWrongTileSound()
                                         }
@@ -666,3 +672,25 @@ private fun BingoOnlineRewardPopup(
         }
     }
 }
+
+private fun listsToBoard(card: List<Int>, marked: List<Boolean>): List<List<BingoTile>> {
+    val grid = MutableList(5) { r ->
+        MutableList(5) { c ->
+            val idx = r * 5 + c
+            val num = if (idx < card.size) card[idx] else 0
+            val isMarked = if (idx < marked.size) marked[idx] else (r == 2 && c == 2)
+            val isFree = (r == 2 && c == 2)
+            val letters = listOf("B", "I", "N", "G", "O")
+            BingoTile(
+                row = r,
+                col = c,
+                number = num,
+                columnLetter = letters[c],
+                isFreeTile = isFree,
+                isMarked = isMarked || isFree
+            )
+        }
+    }
+    return grid
+}
+

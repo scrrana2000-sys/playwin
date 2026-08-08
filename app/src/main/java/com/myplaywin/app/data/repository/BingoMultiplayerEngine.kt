@@ -2,10 +2,7 @@ package com.myplaywin.app.data.repository
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.*
 import com.myplaywin.app.data.model.*
 import com.myplaywin.app.ui.screens.BingoLineType
 import com.myplaywin.app.ui.screens.BingoTile
@@ -39,7 +36,6 @@ class BingoMultiplayerEngine(private val context: Context) {
     private val _antiCheatAlert = MutableStateFlow<String?>(null)
     val antiCheatAlert: StateFlow<String?> = _antiCheatAlert.asStateFlow()
 
-    private var numberCallerJob: Job? = null
     private var matchmakingJob: Job? = null
     private var pingMonitorJob: Job? = null
     private var searchCountdownJob: Job? = null
@@ -52,7 +48,7 @@ class BingoMultiplayerEngine(private val context: Context) {
     private val prefs = context.getSharedPreferences("bingo_progression_prefs", Context.MODE_PRIVATE)
 
     val localPlayerUid: String
-        get() = auth.currentUser?.uid ?: "local_player_${prefs.getString("fallback_uid", "") ?: run {
+        get() = auth.currentUser?.uid ?: "local_${prefs.getString("fallback_uid", "") ?: run {
             val id = UUID.randomUUID().toString().take(8)
             prefs.edit().putString("fallback_uid", id).apply()
             id
@@ -71,16 +67,34 @@ class BingoMultiplayerEngine(private val context: Context) {
             return if (total > 0) wins.toFloat() / total else 0.68f
         }
 
-    private var queueListener: ValueEventListener? = null
+    private var myQueueListener: ValueEventListener? = null
     private var roomListener: ValueEventListener? = null
+    private var connectionStateListener: ValueEventListener? = null
     private var activeRoomId: String? = null
 
     init {
+        android.util.Log.d("BINGO_ONLINE", "FIREBASE_CONNECTED: Initializing database connection")
         startPingMonitor()
+        observeConnectionState()
+        ensureUserAuthenticated()
+    }
+
+    private fun ensureUserAuthenticated() {
+        if (auth.currentUser == null) {
+            auth.signInAnonymously().addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    android.util.Log.d("BINGO_ONLINE", "AUTH_SUCCESS: uid = ${auth.currentUser?.uid}")
+                } else {
+                    android.util.Log.e("BINGO_ONLINE", "ERROR: Anonymous authentication failed: ${task.exception?.message}")
+                }
+            }
+        } else {
+            android.util.Log.d("BINGO_ONLINE", "AUTH_SUCCESS: Already authenticated: uid = ${auth.currentUser?.uid}")
+        }
     }
 
     // ==========================================
-    // 1. MATCHMAKING ENGINE WITH FIREBASE
+    // 1. ATOMIC MATCHMAKING ENGINE WITH FIREBASE
     // ==========================================
 
     fun startMatchmaking(
@@ -92,433 +106,427 @@ class BingoMultiplayerEngine(private val context: Context) {
         _matchStatus.value = BingoMatchStatus.SEARCHING
         _searchTimeRemaining.value = 20
 
-        // Search countdown job
+        android.util.Log.d("BINGO_ONLINE", "MATCHMAKING_START: User initiating matchmaking search.")
+
+        // Start 20-second countdown
         searchCountdownJob = engineScope.launch {
             for (secondsLeft in 20 downTo 1) {
                 _searchTimeRemaining.value = secondsLeft
                 delay(1000)
             }
-            // Timeout reached
+            android.util.Log.d("BINGO_ONLINE", "ERROR: Matchmaking search timeout reached.")
             cancelMatchmaking()
             onSearchTimeout()
         }
 
         matchmakingJob = engineScope.launch {
+            // Ensure auth is active
             if (auth.currentUser == null) {
-                auth.signInAnonymously().addOnCompleteListener { task ->
-                    joinQueue(onMatchFound)
+                try {
+                    auth.signInAnonymously().addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            runAtomicMatchmaking(onMatchFound)
+                        } else {
+                            onSearchTimeout()
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("BINGO_ONLINE", "ERROR: Exception in sign in: ${e.message}")
+                    onSearchTimeout()
                 }
             } else {
-                joinQueue(onMatchFound)
+                runAtomicMatchmaking(onMatchFound)
             }
         }
     }
 
-    private fun joinQueue(onMatchFound: () -> Unit) {
-        val myEntry = MatchmakingQueueEntry(
-            uid = localPlayerUid,
-            displayName = localPlayerName,
-            level = localPlayerLevel,
-            winRate = localPlayerWinRate,
-            pingMs = _networkLatencyMs.value,
-            timestamp = System.currentTimeMillis()
-        )
+    private fun runAtomicMatchmaking(onMatchFound: () -> Unit) {
+        val coordinatorRef = db.getReference("bingoOnline/coordinator/waiting_player")
+        
+        coordinatorRef.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val waitingPlayerId = currentData.getValue(String::class.java)
+                
+                if (waitingPlayerId == null || waitingPlayerId.isEmpty() || waitingPlayerId == localPlayerUid) {
+                    // We are the host (waiting player)
+                    currentData.value = localPlayerUid
+                    return Transaction.success(currentData)
+                } else {
+                    // We found an opponent! Match atomically by setting coordinator to null
+                    currentData.value = ""
+                    return Transaction.success(currentData)
+                }
+            }
 
-        val queueRef = db.getReference("bingo/matchmaking_queue").child(localPlayerUid)
-        queueRef.setValue(myEntry)
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
+                if (error != null) {
+                    android.util.Log.e("BINGO_ONLINE", "ERROR: Matchmaking coordinator transaction failed: ${error.message}")
+                    return
+                }
 
-        queueListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                val entries = mutableListOf<MatchmakingQueueEntry>()
-                for (child in snapshot.children) {
-                    val entry = child.getValue(MatchmakingQueueEntry::class.java)
-                    if (entry != null && entry.uid != localPlayerUid) {
-                        if (System.currentTimeMillis() - entry.timestamp < 30000) {
-                            entries.add(entry)
+                if (committed) {
+                    val waitingPlayerId = snapshot?.getValue(String::class.java)
+                    if (waitingPlayerId == localPlayerUid) {
+                        // HOST MODE: We are waiting in the pool
+                        android.util.Log.d("BINGO_ONLINE", "MATCHMAKING_ENTRY_CREATED: Player added to matchmaking queue as host.")
+                        setupHostQueue(onMatchFound)
+                    } else {
+                        // GUEST MODE: Match found, we generate the room and notify the waiting host
+                        val opponentId = waitingPlayerId ?: ""
+                        if (opponentId.isNotEmpty()) {
+                            android.util.Log.d("BINGO_ONLINE", "ROOM_FOUND: Opponent discovered in pool: opponentId = $opponentId")
+                            setupGuestMatch(opponentId, onMatchFound)
+                        } else {
+                            android.util.Log.e("BINGO_ONLINE", "ERROR: Coordinator matched with an empty player ID.")
                         }
                     }
                 }
+            }
+        })
+    }
 
-                if (entries.isNotEmpty()) {
-                    val opponent = entries.first()
-                    val myUid = localPlayerUid
-                    val opUid = opponent.uid
-                    val isHost = myUid < opUid
-                    val roomId = "room_" + if (isHost) "${myUid}_$opUid" else "${opUid}_$myUid"
+    private fun setupHostQueue(onMatchFound: () -> Unit) {
+        val queueRef = db.getReference("bingoOnline/matchmaking").child(localPlayerUid)
+        val initialEntry = MatchmakingQueueEntry(
+            playerId = localPlayerUid,
+            status = "searching",
+            timestamp = System.currentTimeMillis()
+        )
 
-                    cancelQueueListenersAndEntries()
+        queueRef.setValue(initialEntry)
+        queueRef.onDisconnect().removeValue()
+
+        myQueueListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val entry = snapshot.getValue(MatchmakingQueueEntry::class.java) ?: return
+                if (entry.status == "matched" && entry.roomId.isNotEmpty()) {
+                    // Match has been found! Host joins the room created by the guest
+                    android.util.Log.d("BINGO_ONLINE", "ROOM_JOINED: Host matched! Room discovered: ${entry.roomId}")
+                    
+                    // Remove queue listener and cleanup entry
+                    queueRef.removeEventListener(this)
+                    myQueueListener = null
+                    queueRef.removeValue()
+
                     searchCountdownJob?.cancel()
-
-                    observeRoom(roomId, isHost, opponent, onMatchFound)
+                    joinRoom(entry.roomId, isHost = true, onMatchFound)
                 }
             }
 
-            override fun onCancelled(error: DatabaseError) {}
+            override fun onCancelled(error: DatabaseError) {
+                android.util.Log.e("BINGO_ONLINE", "ERROR: Queue observation cancelled: ${error.message}")
+            }
         }
 
-        db.getReference("bingo/matchmaking_queue").addValueEventListener(queueListener!!)
+        queueRef.addValueEventListener(myQueueListener!!)
     }
 
-    private fun cancelQueueListenersAndEntries() {
-        queueListener?.let {
-            db.getReference("bingo/matchmaking_queue").removeEventListener(it)
-            queueListener = null
-        }
-        db.getReference("bingo/matchmaking_queue").child(localPlayerUid).removeValue()
+    private fun setupGuestMatch(opponentId: String, onMatchFound: () -> Unit) {
+        val roomId = "room_" + UUID.randomUUID().toString()
+        android.util.Log.d("BINGO_ONLINE", "ROOM_JOINED: Guest creating new room ID: $roomId")
+
+        // First, create the room state
+        val myCard = generateCard()
+        val guestPlayer = BingoOnlinePlayer(
+            uid = localPlayerUid,
+            displayName = localPlayerName,
+            avatarUrl = "👑",
+            level = localPlayerLevel,
+            winRate = localPlayerWinRate,
+            isOnline = true,
+            isReady = true,
+            isHost = false,
+            card = myCard,
+            marked = List(25) { it == 12 }
+        )
+
+        val roomRef = db.getReference("bingoOnline/rooms").child(roomId)
+        roomRef.child("roomId").setValue(roomId)
+        roomRef.child("status").setValue("waiting")
+        roomRef.child("maxPlayers").setValue(2)
+        roomRef.child("createdAt").setValue(System.currentTimeMillis())
+        roomRef.child("players").child(localPlayerUid).setValue(guestPlayer)
+
+        // Write "matched" status to opponent's queue entry
+        val opponentQueueRef = db.getReference("bingoOnline/matchmaking").child(opponentId)
+        opponentQueueRef.updateChildren(mapOf(
+            "status" to "matched",
+            "roomId" to roomId
+        ))
+
+        // Create our own matchmaking queue entry for recording purposes
+        val myQueueRef = db.getReference("bingoOnline/matchmaking").child(localPlayerUid)
+        myQueueRef.setValue(MatchmakingQueueEntry(
+            playerId = localPlayerUid,
+            status = "matched",
+            roomId = roomId,
+            timestamp = System.currentTimeMillis()
+        ))
+        myQueueRef.removeValue()
+
+        searchCountdownJob?.cancel()
+
+        // Join the room
+        joinRoom(roomId, isHost = false, onMatchFound)
     }
 
-    private fun observeRoom(roomId: String, isHost: Boolean, opponent: MatchmakingQueueEntry, onMatchFound: () -> Unit) {
+    private fun joinRoom(roomId: String, isHost: Boolean, onMatchFound: () -> Unit) {
         activeRoomId = roomId
+        val roomRef = db.getReference("bingoOnline/rooms").child(roomId)
 
         if (isHost) {
+            val myCard = generateCard()
             val hostPlayer = BingoOnlinePlayer(
                 uid = localPlayerUid,
                 displayName = localPlayerName,
+                avatarUrl = "👑",
                 level = localPlayerLevel,
                 winRate = localPlayerWinRate,
-                pingMs = _networkLatencyMs.value,
                 isOnline = true,
                 isReady = true,
-                isHost = true
+                isHost = true,
+                card = myCard,
+                marked = List(25) { it == 12 }
             )
-
-            val guestPlayer = BingoOnlinePlayer(
-                uid = opponent.uid,
-                displayName = opponent.displayName,
-                level = opponent.level,
-                winRate = opponent.winRate,
-                pingMs = opponent.pingMs,
-                isOnline = true,
-                isReady = true,
-                isHost = false
-            )
-
-            val room = BingoOnlineRoom(
-                roomId = roomId,
-                matchType = "ONE_VS_ONE",
-                matchStatus = BingoMatchStatus.MATCHED.name,
-                player1 = hostPlayer,
-                player2 = guestPlayer,
-                boardSeedP1 = System.currentTimeMillis(),
-                boardSeedP2 = System.currentTimeMillis() + 999L,
-                serverTimestamp = System.currentTimeMillis()
-            )
-
-            db.getReference("bingo/rooms").child(roomId).setValue(room)
+            roomRef.child("players").child(localPlayerUid).setValue(hostPlayer)
         }
 
-        val myPlayerNode = if (isHost) "player1" else "player2"
-        db.getReference("bingo/rooms").child(roomId).child(myPlayerNode).child("isOnline").onDisconnect().setValue(false)
+        // Set up presence
+        val playerConnectedRef = roomRef.child("players").child(localPlayerUid).child("connected")
+        playerConnectedRef.setValue(true)
+        playerConnectedRef.onDisconnect().setValue(false)
 
         roomListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val room = snapshot.getValue(BingoOnlineRoom::class.java) ?: return
                 _currentRoom.value = room
 
-                val oppPlayerNode = if (isHost) room.player2 else room.player1
-                if (oppPlayerNode != null && !oppPlayerNode.isOnline && room.winnerUid == null && room.matchStatus == "PLAYING") {
-                    db.getReference("bingo/rooms").child(roomId).child("winnerUid").setValue(localPlayerUid)
-                }
-
-                when (room.matchStatus) {
-                    "MATCHED" -> {
-                        _matchStatus.value = BingoMatchStatus.MATCHED
-                        if (isHost) {
-                            engineScope.launch {
-                                delay(1200)
-                                db.getReference("bingo/rooms").child(roomId).child("matchStatus").setValue("COUNTDOWN")
-                            }
-                        }
+                // Handle room state transitions
+                if (room.status == "waiting") {
+                    val pList = room.players.values.toList()
+                    if (pList.size == 2 && pList.all { it.isReady && it.connected && it.card.isNotEmpty() }) {
+                        android.util.Log.d("BINGO_ONLINE", "PLAYER_READY: Both players connected and ready.")
+                        startGameIfReady(room)
                     }
-                    "COUNTDOWN" -> {
-                        _matchStatus.value = BingoMatchStatus.COUNTDOWN
-                        if (isHost) {
-                            engineScope.launch {
-                                delay(1500)
-                                db.getReference("bingo/rooms").child(roomId).child("matchStatus").setValue("PLAYING")
-                                startServerNumberCaller(roomId)
-                            }
-                        }
-                    }
-                    "PLAYING" -> {
+                } else if (room.status == "playing") {
+                    if (_matchStatus.value != BingoMatchStatus.PLAYING && _matchStatus.value != BingoMatchStatus.RECONNECTING) {
                         _matchStatus.value = BingoMatchStatus.PLAYING
+                        android.util.Log.d("BINGO_ONLINE", "GAME_START: Room status transition to playing. Local screen loading gameplay.")
                         onMatchFound()
                     }
-                    "COMPLETED", "VICTORY", "DEFEAT" -> {
-                        val winner = room.winnerUid
-                        if (winner != null) {
-                            val isLocalWin = (winner == localPlayerUid)
-                            _matchStatus.value = if (isLocalWin) BingoMatchStatus.VICTORY else BingoMatchStatus.DEFEAT
-                            numberCallerJob?.cancel()
-                        }
+
+                    // Check for active turn changes to log
+                    val currentTurn = room.game.currentTurn
+                    if (currentTurn.isNotEmpty()) {
+                        android.util.Log.d("BINGO_ONLINE", "TURN_CHANGED: Authorized player turn is now: $currentTurn")
+                    }
+
+                    // Detect disconnects of opponent
+                    val opponent = room.players.values.firstOrNull { it.uid != localPlayerUid }
+                    if (opponent != null && !opponent.connected && _matchStatus.value == BingoMatchStatus.PLAYING) {
+                        android.util.Log.d("BINGO_ONLINE", "PLAYER_DISCONNECTED: Opponent ${opponent.uid} disconnected.")
+                    }
+                } else if (room.status == "completed") {
+                    val winnerId = room.game.winnerId
+                    if (winnerId != null) {
+                        _matchStatus.value = if (winnerId == localPlayerUid) BingoMatchStatus.VICTORY else BingoMatchStatus.DEFEAT
+                        android.util.Log.d("BINGO_ONLINE", "GAME_FINISHED: Match completed. Winner = $winnerId")
                     }
                 }
             }
 
-            override fun onCancelled(error: DatabaseError) {}
+            override fun onCancelled(error: DatabaseError) {
+                android.util.Log.e("BINGO_ONLINE", "ERROR: Room listener cancelled: ${error.message}")
+                _matchStatus.value = BingoMatchStatus.DEFEAT
+            }
         }
 
-        db.getReference("bingo/rooms").child(roomId).addValueEventListener(roomListener!!)
+        roomRef.addValueEventListener(roomListener!!)
+    }
+
+    private fun startGameIfReady(room: BingoOnlineRoom) {
+        val roomRef = db.getReference("bingoOnline/rooms/${room.roomId}")
+        roomRef.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val r = currentData.getValue(BingoOnlineRoom::class.java)
+                if (r != null && r.status == "waiting") {
+                    val pList = r.players.values.toList()
+                    if (pList.size == 2 && pList.all { it.isReady && it.connected && it.card.isNotEmpty() }) {
+                        val firstPlayerId = r.players.keys.sorted().first()
+                        val updatedGame = BingoGame(
+                            status = "playing",
+                            currentTurn = firstPlayerId,
+                            calledNumbers = emptyList(),
+                            lastCalledNumber = null,
+                            gameStartedAt = System.currentTimeMillis()
+                        )
+                        currentData.child("status").value = "playing"
+                        currentData.child("game").value = updatedGame
+                        return Transaction.success(currentData)
+                    }
+                }
+                return Transaction.success(currentData) // already changed or aborting
+            }
+
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
+                if (committed) {
+                    android.util.Log.d("BINGO_ONLINE", "GAME_START: Room initialization atomic transaction completed.")
+                }
+            }
+        })
     }
 
     fun startAiFallbackMatch(onMatchStart: () -> Unit) {
-        cancelMatchmaking()
-
-        val localPlayer = BingoOnlinePlayer(
-            uid = localPlayerUid,
-            displayName = localPlayerName,
-            level = localPlayerLevel,
-            winRate = localPlayerWinRate,
-            isOnline = true,
-            isHost = true
-        )
-
-        val aiPlayer = BingoOnlinePlayer(
-            uid = "AI_BOT_PRO",
-            displayName = "PlayWin AI (Pro)",
-            level = localPlayerLevel,
-            winRate = 0.65f,
-            pingMs = 15,
-            isOnline = true,
-            isHost = false
-        )
-
-        val room = BingoOnlineRoom(
-            roomId = "ROOM_AI_" + UUID.randomUUID().toString().take(6),
-            matchType = "ONE_VS_ONE",
-            matchStatus = BingoMatchStatus.PLAYING.name,
-            player1 = localPlayer,
-            player2 = aiPlayer,
-            boardSeedP1 = System.currentTimeMillis(),
-            boardSeedP2 = System.currentTimeMillis() + 555L,
-            serverTimestamp = System.currentTimeMillis()
-        )
-
-        _currentRoom.value = room
-        _matchStatus.value = BingoMatchStatus.PLAYING
-        startLocalNumberCaller()
-        onMatchStart()
+        // Obsolete per instruction: "Do NOT create a fake player after timeout."
     }
 
     fun cancelMatchmaking() {
         searchCountdownJob?.cancel()
         matchmakingJob?.cancel()
-        numberCallerJob?.cancel()
 
         searchCountdownJob = null
         matchmakingJob = null
-        numberCallerJob = null
 
-        cancelQueueListenersAndEntries()
-
-        roomListener?.let {
-            activeRoomId?.let { rId ->
-                db.getReference("bingo/rooms").child(rId).removeEventListener(it)
+        // Remove host matchmaking coordinator lock if it was us
+        val coordinatorRef = db.getReference("bingoOnline/coordinator/waiting_player")
+        coordinatorRef.runTransaction(object : Transaction.Handler {
+            override fun doTransaction(currentData: MutableData): Transaction.Result {
+                val waiting = currentData.getValue(String::class.java)
+                if (waiting == localPlayerUid) {
+                    currentData.value = ""
+                }
+                return Transaction.success(currentData)
             }
-            roomListener = null
+            override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {}
+        })
+
+        // Remove matchmaking entry
+        db.getReference("bingoOnline/matchmaking").child(localPlayerUid).removeValue()
+
+        myQueueListener?.let {
+            db.getReference("bingoOnline/matchmaking").child(localPlayerUid).removeEventListener(it)
+            myQueueListener = null
         }
 
-        activeRoomId = null
+        // Clean up active room if we leave
+        leaveRoom()
+
         _matchStatus.value = BingoMatchStatus.SEARCHING
         _currentRoom.value = null
     }
 
-    // ==========================================
-    // 2. SYNCHRONIZED NUMBER CALLER
-    // ==========================================
+    private fun leaveRoom() {
+        val roomId = activeRoomId ?: return
+        val uid = localPlayerUid
+        activeRoomId = null
+        _currentRoom.value = null
 
-    private fun startServerNumberCaller(roomId: String) {
-        numberCallerJob?.cancel()
-        numberCallerJob = engineScope.launch {
-            val availableNumbers = (1..75).shuffled().toMutableList()
+        android.util.Log.d("BINGO_ONLINE", "ROOM_CLEANUP: Cleaning up matchmaking room state.")
 
-            while (isActive && availableNumbers.isNotEmpty() && _matchStatus.value == BingoMatchStatus.PLAYING) {
-                delay(3200)
-
-                val room = _currentRoom.value ?: break
-                val nextNumber = availableNumbers.removeAt(0)
-                val letter = columnLetterForNum(nextNumber)
-
-                val updatedCalledList = room.calledNumbersHistory + nextNumber
-
-                db.getReference("bingo/rooms").child(roomId).updateChildren(mapOf(
-                    "calledNumbersHistory" to updatedCalledList,
-                    "activeCalledNumber" to nextNumber,
-                    "activeLetter" to letter,
-                    "serverTimestamp" to System.currentTimeMillis()
-                ))
-            }
+        roomListener?.let {
+            db.getReference("bingoOnline/rooms/$roomId").removeEventListener(it)
+            roomListener = null
         }
-    }
 
-    private fun startLocalNumberCaller() {
-        numberCallerJob?.cancel()
-        numberCallerJob = engineScope.launch {
-            val availableNumbers = (1..75).shuffled().toMutableList()
+        val playerConnectedRef = db.getReference("bingoOnline/rooms/$roomId/players/$uid/connected")
+        playerConnectedRef.setValue(false)
+        db.getReference("bingoOnline/rooms/$roomId/players/$uid/isOnline").setValue(false)
 
-            while (isActive && availableNumbers.isNotEmpty() && _matchStatus.value == BingoMatchStatus.PLAYING) {
-                delay(3200)
-
-                val room = _currentRoom.value ?: break
-                val nextNumber = availableNumbers.removeAt(0)
-                val letter = columnLetterForNum(nextNumber)
-
-                val updatedCalledList = room.calledNumbersHistory + nextNumber
-
-                _currentRoom.value = room.copy(
-                    calledNumbersHistory = updatedCalledList,
-                    activeCalledNumber = nextNumber,
-                    activeLetter = letter,
-                    serverTimestamp = System.currentTimeMillis()
-                )
-
-                simulateOpponentTurn(nextNumber)
-            }
-        }
-    }
-
-    private fun simulateOpponentTurn(calledNum: Int) {
-        val room = _currentRoom.value ?: return
-        val opponent = room.player2 ?: return
-
-        if (Random.nextFloat() < 0.65f) {
-            engineScope.launch {
-                delay(Random.nextLong(600, 1800))
-                val currentOpponent = _currentRoom.value?.player2 ?: return@launch
-                val newMarked = currentOpponent.markedCount + 1
-                val newLines = if (newMarked >= 5 && newMarked % 4 == 0) currentOpponent.completedLinesCount + 1 else currentOpponent.completedLinesCount
-
-                val updatedOpponent = currentOpponent.copy(
-                    markedCount = newMarked,
-                    completedLinesCount = newLines,
-                    lastMoveTimestamp = System.currentTimeMillis()
-                )
-
-                _currentRoom.value = _currentRoom.value?.copy(player2 = updatedOpponent)
-
-                if (newLines >= 5 && _currentRoom.value?.winnerUid == null && Random.nextFloat() < 0.4f) {
-                    triggerLocalMatchCompletion(winnerUid = opponent.uid)
+        db.getReference("bingoOnline/rooms/$roomId").get().addOnSuccessListener { snapshot ->
+            val room = snapshot.getValue(BingoOnlineRoom::class.java)
+            if (room != null) {
+                val anyConnected = room.players.values.any { it.connected && it.uid != uid }
+                if (!anyConnected) {
+                    db.getReference("bingoOnline/rooms/$roomId").removeValue()
+                    android.util.Log.d("BINGO_ONLINE", "ROOM_CLEANUP: Room $roomId completely deleted as all players left.")
                 }
             }
         }
     }
 
     // ==========================================
-    // 3. SERVER-AUTHORITATIVE MOVE & ANTI-CHEAT
+    // 2. AUTHORITATIVE BINGO SYNCHRONIZATION
     // ==========================================
 
     fun submitMove(move: BingoMovePayload, currentBoard: List<List<BingoTile>>): BingoAntiCheatResult {
         val room = _currentRoom.value ?: return BingoAntiCheatResult(false, "Room Not Active", AntiCheatSanction.REJECT_MOVE)
-
-        if (move.moveType == "DAUB") {
-            if (!room.calledNumbersHistory.contains(move.tileNumber)) {
-                _antiCheatAlert.value = "❌ Anti-Cheat Violation: Number ${move.tileNumber} has NOT been called!"
-                return BingoAntiCheatResult(false, "Uncalled Number", AntiCheatSanction.REJECT_MOVE)
-            }
-        }
+        val roomId = room.roomId
+        val myPlayer = room.players[localPlayerUid] ?: return BingoAntiCheatResult(false, "Player Not in Room", AntiCheatSanction.REJECT_MOVE)
 
         if (move.moveType == "CLAIM_BINGO") {
-            val serverVerifiedLines = evaluateLinesServerSide(currentBoard, room.calledNumbersHistory)
-            if (serverVerifiedLines.size < 5) {
-                _antiCheatAlert.value = "❌ Anti-Cheat Rejection: Invalid Bingo claim. No completed lines found!"
-                return BingoAntiCheatResult(false, "Invalid Line Verification", AntiCheatSanction.REJECT_MOVE)
+            val linesCount = evaluateCompletedLines(myPlayer.marked)
+            if (linesCount < 5) {
+                _antiCheatAlert.value = "❌ Anti-Cheat Rejection: Invalid Bingo claim! Completed lines count: $linesCount"
+                android.util.Log.e("BINGO_ONLINE", "ERROR: Invalid Bingo Claim by $localPlayerUid. Expected 5 lines, had $linesCount")
+                return BingoAntiCheatResult(false, "Invalid Lines Count", AntiCheatSanction.REJECT_MOVE)
             }
 
-            if (activeRoomId != null) {
-                db.getReference("bingo/rooms").child(activeRoomId!!).updateChildren(mapOf(
-                    "winnerUid" to localPlayerUid,
-                    "matchStatus" to "COMPLETED"
-                ))
+            val updates = mapOf(
+                "bingoOnline/rooms/$roomId/game/status" to "finished",
+                "bingoOnline/rooms/$roomId/game/winnerId" to localPlayerUid,
+                "bingoOnline/rooms/$roomId/status" to "completed"
+            )
+            db.getReference().updateChildren(updates)
+            return BingoAntiCheatResult(true, "Valid Victory Accepted", AntiCheatSanction.ACCEPT)
+        }
+
+        // moveType == "DAUB"
+        val isMyTurn = (room.game.currentTurn == localPlayerUid)
+        val isTileAlreadyCalled = room.game.calledNumbers.contains(move.tileNumber)
+
+        val updatedMarked = myPlayer.marked.toMutableList()
+        val tileIdx = move.tileRow * 5 + move.tileCol
+        if (tileIdx in updatedMarked.indices) {
+            updatedMarked[tileIdx] = true
+        }
+        val linesCount = evaluateCompletedLines(updatedMarked)
+
+        if (isMyTurn) {
+            if (isTileAlreadyCalled) {
+                // Just marking a previously called tile on our board during our turn
+                val updates = mapOf(
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/marked" to updatedMarked,
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/markedCount" to updatedMarked.count { it },
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/completedLinesCount" to linesCount,
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/lastMoveTimestamp" to System.currentTimeMillis()
+                )
+                db.getReference().updateChildren(updates)
+                return BingoAntiCheatResult(true, "Daub Accepted", AntiCheatSanction.ACCEPT)
             } else {
-                triggerLocalMatchCompletion(winnerUid = localPlayerUid)
+                // CALLING a new number!
+                val opponentUid = room.players.keys.firstOrNull { it != localPlayerUid } ?: ""
+                val updatedCalledNumbers = room.game.calledNumbers + move.tileNumber
+
+                val updates = mapOf(
+                    "bingoOnline/rooms/$roomId/game/calledNumbers" to updatedCalledNumbers,
+                    "bingoOnline/rooms/$roomId/game/lastCalledNumber" to move.tileNumber,
+                    "bingoOnline/rooms/$roomId/game/currentTurn" to opponentUid,
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/marked" to updatedMarked,
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/markedCount" to updatedMarked.count { it },
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/completedLinesCount" to linesCount,
+                    "bingoOnline/rooms/$roomId/players/$localPlayerUid/lastMoveTimestamp" to System.currentTimeMillis()
+                )
+
+                android.util.Log.d("BINGO_ONLINE", "NUMBER_CALLED: Player $localPlayerUid called number ${move.tileNumber}. Opponent Turn: $opponentUid")
+                db.getReference().updateChildren(updates)
+                return BingoAntiCheatResult(true, "Number Call Sync Successful", AntiCheatSanction.ACCEPT)
             }
-            return BingoAntiCheatResult(true, "Server Verified Victory", AntiCheatSanction.ACCEPT)
-        }
-
-        val p1 = room.player1
-        val p2 = room.player2
-        val isP1 = (localPlayerUid == p1.uid)
-
-        val completedLines = evaluateLinesServerSide(currentBoard, room.calledNumbersHistory).size
-        val markedCount = currentBoard.flatten().count { it.isMarked }
-
-        if (activeRoomId != null) {
-            val myPlayerNode = if (isP1) "player1" else "player2"
-            db.getReference("bingo/rooms").child(activeRoomId!!).child(myPlayerNode).updateChildren(mapOf(
-                "markedCount" to markedCount,
-                "completedLinesCount" to completedLines,
-                "lastMoveTimestamp" to System.currentTimeMillis()
-            ))
         } else {
-            if (isP1) {
-                val updatedP1 = p1.copy(
-                    markedCount = markedCount,
-                    completedLinesCount = completedLines,
-                    lastMoveTimestamp = System.currentTimeMillis()
-                )
-                _currentRoom.value = room.copy(player1 = updatedP1)
-            } else if (p2 != null) {
-                val updatedP2 = p2.copy(
-                    markedCount = markedCount,
-                    completedLinesCount = completedLines,
-                    lastMoveTimestamp = System.currentTimeMillis()
-                )
-                _currentRoom.value = room.copy(player2 = updatedP2)
+            // Out-of-turn. Only allowed to daub already called numbers
+            if (!isTileAlreadyCalled) {
+                _antiCheatAlert.value = "⏳ Wait for your turn to call a number!"
+                return BingoAntiCheatResult(false, "Not Your Turn", AntiCheatSanction.REJECT_MOVE)
             }
+
+            val updates = mapOf(
+                "bingoOnline/rooms/$roomId/players/$localPlayerUid/marked" to updatedMarked,
+                "bingoOnline/rooms/$roomId/players/$localPlayerUid/markedCount" to updatedMarked.count { it },
+                "bingoOnline/rooms/$roomId/players/$localPlayerUid/completedLinesCount" to linesCount,
+                "bingoOnline/rooms/$roomId/players/$localPlayerUid/lastMoveTimestamp" to System.currentTimeMillis()
+            )
+            db.getReference().updateChildren(updates)
+            return BingoAntiCheatResult(true, "Reactive Daub Sync Successful", AntiCheatSanction.ACCEPT)
         }
-
-        return BingoAntiCheatResult(true, "Valid Move Accepted", AntiCheatSanction.ACCEPT)
-    }
-
-    private fun evaluateLinesServerSide(currentBoard: List<List<BingoTile>>, calledHistory: List<Int>): Set<BingoLineType> {
-        val lines = mutableSetOf<BingoLineType>()
-
-        fun isTileValid(tile: BingoTile): Boolean {
-            return tile.isMarked && (tile.isFreeTile || calledHistory.contains(tile.number))
-        }
-
-        for (r in 0..4) {
-            if (currentBoard[r].all { isTileValid(it) }) {
-                lines.add(when (r) {
-                    0 -> BingoLineType.ROW_0
-                    1 -> BingoLineType.ROW_1
-                    2 -> BingoLineType.ROW_2
-                    3 -> BingoLineType.ROW_3
-                    else -> BingoLineType.ROW_4
-                })
-            }
-        }
-
-        for (c in 0..4) {
-            if ((0..4).all { r -> isTileValid(currentBoard[r][c]) }) {
-                lines.add(when (c) {
-                    0 -> BingoLineType.COL_0
-                    1 -> BingoLineType.COL_1
-                    2 -> BingoLineType.COL_2
-                    3 -> BingoLineType.COL_3
-                    else -> BingoLineType.COL_4
-                })
-            }
-        }
-
-        if ((0..4).all { i -> isTileValid(currentBoard[i][i]) }) lines.add(BingoLineType.DIAG_MAIN)
-        if ((0..4).all { i -> isTileValid(currentBoard[i][4 - i]) }) lines.add(BingoLineType.DIAG_ANTI)
-
-        return lines
-    }
-
-    private fun triggerLocalMatchCompletion(winnerUid: String) {
-        numberCallerJob?.cancel()
-        val room = _currentRoom.value ?: return
-
-        val isLocalWin = (winnerUid == localPlayerUid)
-        _matchStatus.value = if (isLocalWin) BingoMatchStatus.VICTORY else BingoMatchStatus.DEFEAT
-
-        _currentRoom.value = room.copy(
-            matchStatus = if (isLocalWin) "VICTORY" else "DEFEAT",
-            winnerUid = winnerUid,
-            serverTimestamp = System.currentTimeMillis()
-        )
     }
 
     fun clearAntiCheatAlert() {
@@ -526,8 +534,96 @@ class BingoMultiplayerEngine(private val context: Context) {
     }
 
     // ==========================================
-    // 4. NETWORK & RECONNECTION MONITORING
+    // 3. CONNECTION PRESENCE & RECONNECTION
     // ==========================================
+
+    private fun observeConnectionState() {
+        val connectedRef = db.getReference(".info/connected")
+        connectionStateListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val connected = snapshot.getValue(Boolean::class.java) ?: false
+                if (connected) {
+                    android.util.Log.d("BINGO_ONLINE", "FIREBASE_CONNECTED: True connection established.")
+                    // Set active connection on disconnect for any active rooms
+                    activeRoomId?.let { roomId ->
+                        android.util.Log.d("BINGO_ONLINE", "PLAYER_RECONNECTED: Presence restored for room $roomId")
+                        db.getReference("bingoOnline/rooms/$roomId/players/$localPlayerUid/connected").setValue(true)
+                    }
+                } else {
+                    android.util.Log.d("BINGO_ONLINE", "FIREBASE_CONNECTED: Disconnected from Firebase.")
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        connectedRef.addValueEventListener(connectionStateListener!!)
+    }
+
+    fun simulateReconnection() {
+        val roomId = activeRoomId ?: return
+        engineScope.launch {
+            _matchStatus.value = BingoMatchStatus.RECONNECTING
+            delay(1500)
+            db.getReference("bingoOnline/rooms/$roomId").get().addOnSuccessListener { snapshot ->
+                val room = snapshot.getValue(BingoOnlineRoom::class.java)
+                if (room != null) {
+                    _currentRoom.value = room
+                    _matchStatus.value = BingoMatchStatus.PLAYING
+                    // Re-assert connected
+                    db.getReference("bingoOnline/rooms/$roomId/players/$localPlayerUid/connected").setValue(true)
+                } else {
+                    _matchStatus.value = BingoMatchStatus.DEFEAT
+                }
+            }.addOnFailureListener {
+                _matchStatus.value = BingoMatchStatus.DEFEAT
+            }
+        }
+    }
+
+    // ==========================================
+    // HELPERS
+    // ==========================================
+
+    private fun generateCard(): List<Int> {
+        val cols = listOf(
+            (1..15).shuffled().take(5),
+            (16..30).shuffled().take(5),
+            (31..45).shuffled().take(5),
+            (46..60).shuffled().take(5),
+            (61..75).shuffled().take(5)
+        )
+        val card = MutableList(25) { 0 }
+        for (r in 0..4) {
+            for (c in 0..4) {
+                card[r * 5 + c] = if (r == 2 && c == 2) 0 else cols[c][r]
+            }
+        }
+        return card
+    }
+
+    private fun evaluateCompletedLines(marked: List<Boolean>): Int {
+        var count = 0
+        // Rows
+        for (r in 0..4) {
+            var allMarked = true
+            for (c in 0..4) {
+                if (!marked[r * 5 + c]) { allMarked = false; break }
+            }
+            if (allMarked) count++
+        }
+        // Cols
+        for (c in 0..4) {
+            var allMarked = true
+            for (r in 0..4) {
+                if (!marked[r * 5 + c]) { allMarked = false; break }
+            }
+            if (allMarked) count++
+        }
+        // Diagonals
+        if ((0..4).all { i -> marked[i * 5 + i] }) count++
+        if ((0..4).all { i -> marked[i * 5 + (4 - i)] }) count++
+        return count
+    }
 
     private fun startPingMonitor() {
         pingMonitorJob?.cancel()
@@ -539,38 +635,12 @@ class BingoMultiplayerEngine(private val context: Context) {
         }
     }
 
-    fun simulateReconnection() {
-        val roomId = activeRoomId ?: return
-        engineScope.launch {
-            _matchStatus.value = BingoMatchStatus.RECONNECTING
-            delay(1500)
-            db.getReference("bingo/rooms").child(roomId).get().addOnSuccessListener { snapshot ->
-                val room = snapshot.getValue(BingoOnlineRoom::class.java)
-                if (room != null) {
-                    _currentRoom.value = room
-                    _matchStatus.value = BingoMatchStatus.PLAYING
-                } else {
-                    _matchStatus.value = BingoMatchStatus.DEFEAT
-                }
-            }.addOnFailureListener {
-                _matchStatus.value = BingoMatchStatus.DEFEAT
-            }
-        }
-    }
-
-    private fun columnLetterForNum(num: Int): String {
-        return when (num) {
-            in 1..15 -> "B"
-            in 16..30 -> "I"
-            in 31..45 -> "N"
-            in 46..60 -> "G"
-            else -> "O"
-        }
-    }
-
     fun destroyEngine() {
         cancelMatchmaking()
         pingMonitorJob?.cancel()
+        connectionStateListener?.let {
+            db.getReference(".info/connected").removeEventListener(it)
+        }
         engineScope.cancel()
     }
 }
