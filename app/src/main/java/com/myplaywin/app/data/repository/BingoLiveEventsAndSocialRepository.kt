@@ -74,10 +74,9 @@ class BingoLiveEventsAndSocialRepository(
             var newProgress = mission.currentProgress
             when (mission.id) {
                 "DM_1" -> newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Play 1 match
-                "DM_2" -> if (isWin) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Win 3 matches
-                "DM_3" -> if (isWin && isOnline) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Win online match
-                "DM_4" -> if (isWin && difficulty.uppercase() == "HARD") newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress)
-                "DM_5" -> newProgress = (newProgress + numbersMarked).coerceAtMost(mission.targetProgress) // Mark 50 numbers
+                "DM_2" -> if (isWin) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Win 1 match
+                "DM_3" -> if (isWin) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Complete Bingo
+                "DM_4" -> if (isOnline) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Play Online
             }
             mission.copy(currentProgress = newProgress)
         }
@@ -87,9 +86,8 @@ class BingoLiveEventsAndSocialRepository(
             if (mission.isClaimed) return@map mission
             var newProgress = mission.currentProgress
             when (mission.id) {
-                "WM_1" -> if (isWin) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Win 20 matches
-                "WM_2" -> newProgress = (newProgress + (if (isWin) 250 else 100)).coerceAtMost(mission.targetProgress) // Earn XP
-                "WM_3" -> if (isOnline) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Play 30 online games
+                "WM_1" -> if (isWin) newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Win 10 matches
+                "WM_2" -> newProgress = (newProgress + 1).coerceAtMost(mission.targetProgress) // Play 25 matches
             }
             mission.copy(currentProgress = newProgress)
         }
@@ -311,19 +309,17 @@ class BingoLiveEventsAndSocialRepository(
 
     private fun loadDefaultDailyMissions(): List<DailyMission> {
         return listOf(
-            DailyMission(id = "DM_1", title = "Daily Check-in Match", description = "Play 1 match in any game mode", targetProgress = 1, currentProgress = 0, coinReward = 150, xpReward = 100),
-            DailyMission(id = "DM_2", title = "Bingo Conqueror", description = "Win 3 matches against AI or Online", targetProgress = 3, currentProgress = 1, coinReward = 300, xpReward = 250),
-            DailyMission(id = "DM_3", title = "Online Showdown", description = "Win 1 Multiplayer 1v1 Online match", targetProgress = 1, currentProgress = 0, coinReward = 400, xpReward = 300),
-            DailyMission(id = "DM_4", title = "Master Strategist", description = "Win 1 match on Hard AI difficulty", targetProgress = 1, currentProgress = 0, coinReward = 350, xpReward = 200),
-            DailyMission(id = "DM_5", title = "Number Hunter", description = "Mark 50 Bingo numbers across matches", targetProgress = 50, currentProgress = 18, coinReward = 250, xpReward = 150)
+            DailyMission(id = "DM_1", title = "Play 1 Match", description = "Play 1 match in any game mode", targetProgress = 1, currentProgress = 0, coinReward = 2, xpReward = 100),
+            DailyMission(id = "DM_2", title = "Win 1 Match", description = "Win 1 match against AI or Online", targetProgress = 1, currentProgress = 0, coinReward = 3, xpReward = 150),
+            DailyMission(id = "DM_3", title = "Complete Bingo", description = "Achieve a Bingo victory in a match", targetProgress = 1, currentProgress = 0, coinReward = 4, xpReward = 200),
+            DailyMission(id = "DM_4", title = "Play Online", description = "Play 1 Multiplayer 1v1 Online match", targetProgress = 1, currentProgress = 0, coinReward = 5, xpReward = 250)
         )
     }
 
     private fun loadDefaultWeeklyMissions(): List<DailyMission> {
         return listOf(
-            DailyMission(id = "WM_1", title = "Weekly Grand Champion", description = "Win 20 matches this week", targetProgress = 20, currentProgress = 6, coinReward = 2000, xpReward = 1500, period = MissionPeriod.WEEKLY),
-            DailyMission(id = "WM_2", title = "Experience Collector", description = "Accumulate 5000 XP in total", targetProgress = 5000, currentProgress = 1850, coinReward = 1500, xpReward = 1000, period = MissionPeriod.WEEKLY),
-            DailyMission(id = "WM_3", title = "Multiplayer Warrior", description = "Play 30 Online Multiplayer games", targetProgress = 30, currentProgress = 12, coinReward = 2500, xpReward = 2000, period = MissionPeriod.WEEKLY)
+            DailyMission(id = "WM_1", title = "Win 10 Matches", description = "Win 10 matches this week", targetProgress = 10, currentProgress = 0, coinReward = 15, xpReward = 1000, period = MissionPeriod.WEEKLY),
+            DailyMission(id = "WM_2", title = "Play 25 Matches", description = "Play 25 matches this week", targetProgress = 25, currentProgress = 0, coinReward = 20, xpReward = 1500, period = MissionPeriod.WEEKLY)
         )
     }
 
@@ -403,12 +399,12 @@ class BingoLiveEventsAndSocialRepository(
 
     private fun loadDefaultCosmetics(): List<CosmeticItem> {
         return listOf(
-            CosmeticItem(id = "FRAME_GOLD", name = "Golden Champion Glow", category = CosmeticCategory.AVATAR_FRAME, priceCoins = 500, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#FFD700", "#FFA500")),
-            CosmeticItem(id = "FRAME_NEON", name = "Cyber Neon Pulse", category = CosmeticCategory.AVATAR_FRAME, priceCoins = 1200, isUnlocked = false, isEquipped = false, gradientColorsHex = listOf("#00F2FE", "#4FACFE")),
-            CosmeticItem(id = "SKIN_ROYAL", name = "Royal Velvet Board", category = CosmeticCategory.BOARD_SKIN, priceCoins = 800, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#4C1D95", "#6D28D9")),
-            CosmeticItem(id = "SKIN_DIWALI", name = "Diwali Sparkle Board", category = CosmeticCategory.BOARD_SKIN, priceCoins = 1500, isUnlocked = false, isEquipped = false, gradientColorsHex = listOf("#7C2D12", "#F59E0B")),
-            CosmeticItem(id = "BALL_GOLD", name = "24K Gold Sphere Ball", category = CosmeticCategory.BALL_DESIGN, priceCoins = 600, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#F59E0B", "#D97706")),
-            CosmeticItem(id = "BADGE_VIP", name = "PlayWin VIP Master Badge", category = CosmeticCategory.PROFILE_BADGE, priceCoins = 1000, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#EC4899", "#8B5CF6"))
+            CosmeticItem(id = "FRAME_GOLD", name = "Golden Champion Glow", category = CosmeticCategory.AVATAR_FRAME, priceCoins = 30, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#FFD700", "#FFA500")),
+            CosmeticItem(id = "FRAME_NEON", name = "Cyber Neon Pulse", category = CosmeticCategory.AVATAR_FRAME, priceCoins = 30, isUnlocked = false, isEquipped = false, gradientColorsHex = listOf("#00F2FE", "#4FACFE")),
+            CosmeticItem(id = "SKIN_ROYAL", name = "Royal Velvet Board", category = CosmeticCategory.BOARD_SKIN, priceCoins = 20, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#4C1D95", "#6D28D9")),
+            CosmeticItem(id = "SKIN_DIWALI", name = "Diwali Sparkle Board", category = CosmeticCategory.BOARD_SKIN, priceCoins = 20, isUnlocked = false, isEquipped = false, gradientColorsHex = listOf("#7C2D12", "#F59E0B")),
+            CosmeticItem(id = "BALL_GOLD", name = "24K Gold Sphere Dauber", category = CosmeticCategory.BALL_DESIGN, priceCoins = 15, isUnlocked = false, isEquipped = false, gradientColorsHex = listOf("#F59E0B", "#D97706")),
+            CosmeticItem(id = "BADGE_VIP", name = "PlayWin VIP Master Badge", category = CosmeticCategory.PROFILE_BADGE, priceCoins = 10, isUnlocked = true, isEquipped = true, gradientColorsHex = listOf("#EC4899", "#8B5CF6"))
         )
     }
 

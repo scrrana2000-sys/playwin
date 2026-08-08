@@ -1,5 +1,8 @@
 package com.myplaywin.app.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -70,6 +73,11 @@ fun BingoProgressionScreen(
     }
 
     Scaffold(
+        bottomBar = {
+            com.playwin.ads.BannerManager.BannerAd(
+                modifier = Modifier.fillMaxWidth().background(Color(0xFF0D0B18))
+            )
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -365,6 +373,9 @@ private fun ProfileTabContent(
         // 2. DAILY BONUS CLAIM CARD
         item {
             val isBonusClaimable = progression.lastDailyBonusDate != SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val currentDay = repository.getDailyLoginStreak()
+            val rewardCoins = repository.getDailyLoginCoinsForDay(currentDay)
+
             AaaGlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 borderColor = if (isBonusClaimable) Color(0xFF00E676) else Color(0xFF7C4DFF)
@@ -381,14 +392,14 @@ private fun ProfileTabContent(
                         Text(text = "🎁", fontSize = 32.sp)
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "DAILY LOGIN REWARD",
+                                text = "DAILY LOGIN REWARD (DAY $currentDay)",
                                 color = Color(0xFFFFD700),
                                 fontWeight = FontWeight.Black,
                                 fontSize = 14.sp,
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = if (isBonusClaimable) "+150 Coins & +100 XP available now!" else "Claimed today! Come back tomorrow.",
+                                text = if (isBonusClaimable) "+$rewardCoins Coins available now!" else "Claimed today! Come back tomorrow.",
                                 color = Color.White,
                                 fontSize = 12.sp
                             )
@@ -396,21 +407,73 @@ private fun ProfileTabContent(
                     }
 
                     if (isBonusClaimable) {
-                        AaaGlossyButton(
-                            onClick = {
-                                if (repository.claimDailyBonus()) {
-                                    AaaBingoAudioHaptics.playVictoryFanfare()
-                                    dailyBonusClaimedMsg = "Claimed +150 Coins!"
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp),
-                            containerColor = Color(0xFF00E676),
-                            contentColor = Color(0xFF091E10),
-                            borderColor = Color(0xFFB9F6CA)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("CLAIM REWARD", fontWeight = FontWeight.Black, fontSize = 15.sp, letterSpacing = 1.sp)
+                            AaaGlossyButton(
+                                onClick = {
+                                    if (repository.claimDailyBonus(doubleReward = false)) {
+                                        AaaBingoAudioHaptics.playVictoryFanfare()
+                                        dailyBonusClaimedMsg = "Claimed +$rewardCoins Coins!"
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                containerColor = Color(0xFF334155),
+                                contentColor = Color.White,
+                                borderColor = Color(0xFF64748B)
+                            ) {
+                                Text("CLAIM REWARD (+$rewardCoins COINS)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+
+                            AaaGlossyButton(
+                                onClick = {
+                                    val activity = context as? Activity ?: run {
+                                        var actContext = context
+                                        while (actContext is android.content.ContextWrapper) {
+                                            if (actContext is Activity) break
+                                            actContext = actContext.baseContext
+                                        }
+                                        actContext as? Activity
+                                    }
+                                    if (activity != null && com.playwin.ads.RewardedManager.isAdReady(context)) {
+                                        com.playwin.ads.RewardedManager.showAd(
+                                            activity = activity,
+                                            rewardType = com.playwin.ads.RewardType.BINGO_DAILY_LOGIN_DOUBLE,
+                                            callbacks = object : com.playwin.ads.RewardCallback {
+                                                override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                                    if (repository.claimDailyBonus(doubleReward = true)) {
+                                                        AaaBingoAudioHaptics.playVictoryFanfare()
+                                                        dailyBonusClaimedMsg = "Claimed +${rewardCoins * 2} Coins!"
+                                                    }
+                                                }
+                                                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                                    Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                                }
+                                                override fun onAdFailedToShow(errorMessage: String) {
+                                                    Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                                }
+                                                override fun onAdClosed(userEarnedReward: Boolean) {}
+                                            }
+                                        )
+                                    } else {
+                                        Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                        com.playwin.ads.RewardedManager.preload(context)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                containerColor = Color(0xFF00E676),
+                                contentColor = Color(0xFF091E10),
+                                borderColor = Color(0xFFB9F6CA)
+                            ) {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("DOUBLE REWARD (+$(rewardCoins * 2) COINS)", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                            }
                         }
                     } else {
                         Surface(

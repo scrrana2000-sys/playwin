@@ -267,9 +267,6 @@ fun BingoHomeScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 1. PLAYER PANEL (Glassmorphism Card)
-                BingoPlayerPanel(glowAlpha = glowAlpha)
-
                 // 2. GAME MODES (Offline & Online Cards)
                 Text(
                     text = "SELECT GAME MODE",
@@ -392,6 +389,11 @@ fun BingoHomeScreen(
                     onLeaderboardClick = { isProgressionActive = true },
                     onStatsClick = { isProgressionActive = true },
                     onSettingsClick = { activeDialog = BingoDialogType.Settings }
+                )
+
+                // Centralized Banner Ad
+                com.playwin.ads.BannerManager.BannerAd(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))

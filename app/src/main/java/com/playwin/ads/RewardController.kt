@@ -68,8 +68,11 @@ object RewardController {
             RewardType.BLOCK_MASTER_CONTINUE,
             RewardType.BLOCK_MASTER_DOUBLE_REWARD,
             RewardType.BLOCK_MASTER_EXTRA_COINS,
-            RewardType.BLOCK_MASTER_POWERUP -> {
-                callback.onSuccess("Block Master ad reward granted successfully!")
+            RewardType.BLOCK_MASTER_POWERUP,
+            RewardType.BINGO_DOUBLE_REWARD,
+            RewardType.BINGO_SECOND_CHANCE,
+            RewardType.BINGO_DAILY_LOGIN_DOUBLE -> {
+                callback.onSuccess("Block Master/Bingo ad reward granted successfully!")
             }
         }
     }

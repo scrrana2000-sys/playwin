@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,6 +62,11 @@ fun BingoLiveEventsAndSocialScreen(
     val profile by repository.expandedProfile.collectAsState()
 
     Scaffold(
+        bottomBar = {
+            com.playwin.ads.BannerManager.BannerAd(
+                modifier = Modifier.fillMaxWidth().background(Color(0xFF0D0B18))
+            )
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -303,7 +309,7 @@ private fun SeasonalEventCenterSection(
             )
         }
 
-        items(events) { event ->
+        itemsIndexed(events) { index, event ->
             val gradient = Brush.linearGradient(
                 colors = listOf(
                     Color(android.graphics.Color.parseColor(event.bannerGradientColorsHex.getOrElse(0) { "#4C1D95" })),
@@ -392,6 +398,12 @@ private fun SeasonalEventCenterSection(
                     }
                 }
             }
+
+            if ((index + 1) % 4 == 0) {
+                com.playwin.ads.NativeManager.NativeAd(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                )
+            }
         }
     }
 }
@@ -436,7 +448,7 @@ private fun MissionsHubSection(
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(currentList) { mission ->
+            itemsIndexed(currentList) { index, mission ->
                 val isCompleted = mission.currentProgress >= mission.targetProgress
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -541,6 +553,12 @@ private fun MissionsHubSection(
                         }
                     }
                 }
+
+                if ((index + 1) % 4 == 0) {
+                    com.playwin.ads.NativeManager.NativeAd(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    )
+                }
             }
         }
     }
@@ -560,7 +578,7 @@ private fun TournamentsHubSection(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        items(tournaments) { tourn ->
+        itemsIndexed(tournaments) { index, tourn ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
@@ -690,6 +708,12 @@ private fun TournamentsHubSection(
                         }
                     }
                 }
+            }
+
+            if ((index + 1) % 4 == 0) {
+                com.playwin.ads.NativeManager.NativeAd(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                )
             }
         }
     }

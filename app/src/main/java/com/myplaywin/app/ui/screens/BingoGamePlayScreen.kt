@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.app.Activity
+import android.widget.Toast
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -319,6 +321,9 @@ fun BingoGamePlayScreen(
     var showExitConfirmDialog by remember { mutableStateOf(false) }
     var showHowToPlayModal by remember { mutableStateOf(false) }
     var notificationMessage by remember { mutableStateOf<String?>(null) }
+    var showRewardPopup by remember { mutableStateOf(false) }
+    var hasUsedSecondChance by remember { mutableStateOf(false) }
+    var showSecondChanceDialog by remember { mutableStateOf(false) }
 
     // Match Timer state (seconds)
     var matchTimeSeconds by remember { mutableIntStateOf(0) }
@@ -401,38 +406,8 @@ fun BingoGamePlayScreen(
     LaunchedEffect(matchState) {
         if (!isResultProcessed) {
             when (matchState) {
-                BingoMatchState.VICTORY -> {
-                    isResultProcessed = true
-                    progressionRepo.processMatchResult(
-                        matchType = "OFFLINE",
-                        difficulty = difficulty.uppercase(),
-                        opponentName = aiProfile.name,
-                        result = "VICTORY",
-                        durationSeconds = matchTimeSeconds,
-                        numbersCalledCount = calledNumbersHistory.size
-                    )
-                }
-                BingoMatchState.DEFEAT -> {
-                    isResultProcessed = true
-                    progressionRepo.processMatchResult(
-                        matchType = "OFFLINE",
-                        difficulty = difficulty.uppercase(),
-                        opponentName = aiProfile.name,
-                        result = "DEFEAT",
-                        durationSeconds = matchTimeSeconds,
-                        numbersCalledCount = calledNumbersHistory.size
-                    )
-                }
-                BingoMatchState.DRAW -> {
-                    isResultProcessed = true
-                    progressionRepo.processMatchResult(
-                        matchType = "OFFLINE",
-                        difficulty = difficulty.uppercase(),
-                        opponentName = aiProfile.name,
-                        result = "DRAW",
-                        durationSeconds = matchTimeSeconds,
-                        numbersCalledCount = calledNumbersHistory.size
-                    )
+                BingoMatchState.VICTORY, BingoMatchState.DEFEAT, BingoMatchState.DRAW -> {
+                    showRewardPopup = true
                 }
                 else -> {}
             }
@@ -563,7 +538,11 @@ fun BingoGamePlayScreen(
                         turnStatusMessage = "💔 ${aiProfile.name} completed B-I-N-G-O!"
                         aiStatusText = "BINGO! 🌟"
                         delay(600L)
-                        matchState = BingoMatchState.DEFEAT
+                        if (completedLines.size >= 4 && !hasUsedSecondChance) {
+                            showSecondChanceDialog = true
+                        } else {
+                            matchState = BingoMatchState.DEFEAT
+                        }
                         return@LaunchedEffect
                     }
                     if (newPLines.size >= 5) {
@@ -579,7 +558,11 @@ fun BingoGamePlayScreen(
                     if (completedLines.size > aiCompletedLines.size) {
                         matchState = BingoMatchState.VICTORY
                     } else if (aiCompletedLines.size > completedLines.size) {
-                        matchState = BingoMatchState.DEFEAT
+                        if (completedLines.size >= 4 && !hasUsedSecondChance) {
+                            showSecondChanceDialog = true
+                        } else {
+                            matchState = BingoMatchState.DEFEAT
+                        }
                     } else {
                         matchState = BingoMatchState.DRAW
                     }
@@ -663,7 +646,11 @@ fun BingoGamePlayScreen(
         }
         if (newAiLines.size >= 5) {
             turnStatusMessage = "💔 ${aiProfile.name} earned B-I-N-G-O!"
-            matchState = BingoMatchState.DEFEAT
+            if (completedLines.size >= 4 && !hasUsedSecondChance) {
+                showSecondChanceDialog = true
+            } else {
+                matchState = BingoMatchState.DEFEAT
+            }
             return
         }
 
@@ -806,36 +793,30 @@ fun BingoGamePlayScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // 1. TOP PLAYER HUD PANEL
-                    BingoMatchPlayerHeader(
-                        matchTimeSeconds = matchTimeSeconds,
-                        completedLinesCount = completedLines.size,
-                        difficulty = difficulty
+                    // 1. ADMOB BANNER AD
+                    com.playwin.ads.BannerManager.BannerAd(
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    // 1B. LIVE AI OPPONENT HUD CARD
-                    BingoAiOpponentHeader(
-                        aiProfile = aiProfile,
-                        aiStatusText = aiStatusText,
-                        aiCompletedLinesCount = aiCompletedLines.size,
-                        aiDaubsCount = aiDaubsCount,
-                        onPeekBoard = { showAiBoardPreview = true }
+                    // ACTIVE NUMBER BOARD MATCH HINT DEFINITIONS (Required for BingoBoardGrid)
+                    val matchingTile = remember(activeCalledNumber, boardTiles) {
+                        activeCalledNumber?.let { num ->
+                            boardTiles.flatten().find { it.number == num && !it.isMarked && !it.isFreeTile }
+                        }
+                    }
+                    val matchingTileKey = matchingTile?.let { it.row * 5 + it.col }
+
+                    // 2. 5x5 BINGO BOARD GRID
+                    BingoBoardGrid(
+                        boardTiles = boardTiles,
+                        completedLines = completedLines,
+                        shakingTileKey = shakingTileKey,
+                        matchingTileKey = matchingTileKey,
+                        glowAlpha = glowAlpha,
+                        onTileClick = { handleTileClick(it) }
                     )
 
-                    // 2. RECENTLY CALLED NUMBERS BAR
-                    BingoCalledNumbersBar(
-                        calledNumbersHistory = calledNumbersHistory,
-                        activeCalledNumber = activeCalledNumber,
-                        glowAlpha = glowAlpha
-                    )
-
-                    // 3. ACTIVE CALLED BALL DISPLAY (GLOWING POPUP BALL)
-                    BingoActiveBallAnnouncer(
-                        activeNumber = activeCalledNumber,
-                        glowAlpha = glowAlpha
-                    )
-
-                    // 3A. SHARED TURN SYNCHRONIZATION BAR
+                    // 3. SHARED TURN SYNCHRONIZATION BAR ("YOUR TURN TO CALL")
                     BingoTurnSynchronizationHeader(
                         isPlayerTurn = isPlayerTurn,
                         turnStatusMessage = turnStatusMessage,
@@ -844,19 +825,32 @@ fun BingoGamePlayScreen(
                         aiName = aiProfile.name
                     )
 
-                    // 3B. LIVE GOAL & REAL-TIME PROGRESS INDICATOR
+                    // 4. LIVE GOAL & REAL-TIME PROGRESS INDICATOR ("B-I-N-G-O GOAL")
                     BingoGoalAndProgressHeader(
                         completedLines = completedLines
                     )
 
-                    // 3C. ACTIVE NUMBER BOARD MATCH HINT
-                    val matchingTile = remember(activeCalledNumber, boardTiles) {
-                        activeCalledNumber?.let { num ->
-                            boardTiles.flatten().find { it.number == num && !it.isMarked && !it.isFreeTile }
-                        }
-                    }
-                    val matchingTileKey = matchingTile?.let { it.row * 5 + it.col }
+                    // 5. CLAIM BINGO BUTTON
+                    BingoClaimButton(
+                        hasBingo = completedLines.size >= 5,
+                        glowAlpha = glowAlpha,
+                        onClick = { handleClaimBingo() }
+                    )
 
+                    // 6. RECENTLY CALLED NUMBERS BAR
+                    BingoCalledNumbersBar(
+                        calledNumbersHistory = calledNumbersHistory,
+                        activeCalledNumber = activeCalledNumber,
+                        glowAlpha = glowAlpha
+                    )
+
+                    // 7. ACTIVE CALLED BALL DISPLAY (GLOWING POPUP BALL)
+                    BingoActiveBallAnnouncer(
+                        activeNumber = activeCalledNumber,
+                        glowAlpha = glowAlpha
+                    )
+
+                    // 8. ACTIVE NUMBER BOARD MATCH HINT UI
                     if (activeCalledNumber != null && matchingTile == null) {
                         Surface(
                             color = Color(0xFF281C48),
@@ -873,7 +867,7 @@ fun BingoGamePlayScreen(
                         }
                     }
 
-                    // Floating Toast / Notification Banner
+                    // 9. Floating Toast / Notification Banner
                     AnimatedVisibility(
                         visible = notificationMessage != null,
                         enter = fadeIn() + slideInVertically(),
@@ -896,21 +890,21 @@ fun BingoGamePlayScreen(
                         }
                     }
 
-                    // 4. 5x5 BINGO BOARD GRID
-                    BingoBoardGrid(
-                        boardTiles = boardTiles,
-                        completedLines = completedLines,
-                        shakingTileKey = shakingTileKey,
-                        matchingTileKey = matchingTileKey,
-                        glowAlpha = glowAlpha,
-                        onTileClick = { handleTileClick(it) }
+                    // 10. PLAYER STATUS SECTION (At the very bottom)
+                    // 10A. TOP PLAYER HUD PANEL
+                    BingoMatchPlayerHeader(
+                        matchTimeSeconds = matchTimeSeconds,
+                        completedLinesCount = completedLines.size,
+                        difficulty = difficulty
                     )
 
-                    // 5. CLAIM BINGO BUTTON
-                    BingoClaimButton(
-                        hasBingo = completedLines.size >= 5,
-                        glowAlpha = glowAlpha,
-                        onClick = { handleClaimBingo() }
+                    // 10B. LIVE AI OPPONENT HUD CARD
+                    BingoAiOpponentHeader(
+                        aiProfile = aiProfile,
+                        aiStatusText = aiStatusText,
+                        aiCompletedLinesCount = aiCompletedLines.size,
+                        aiDaubsCount = aiDaubsCount,
+                        onPeekBoard = { showAiBoardPreview = true }
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -958,21 +952,118 @@ fun BingoGamePlayScreen(
                 AaaVictoryVfxCanvas()
             }
 
-            if (matchState == BingoMatchState.VICTORY || matchState == BingoMatchState.DEFEAT || matchState == BingoMatchState.DRAW) {
-                BingoPostMatchDialog(
-                    matchState = matchState,
-                    aiProfile = aiProfile,
-                    matchTimeSeconds = matchTimeSeconds,
-                    boardTiles = boardTiles,
-                    aiBoardTiles = aiBoardTiles,
-                    completedLines = completedLines,
-                    aiCompletedLines = aiCompletedLines,
-                    calledNumbersHistory = calledNumbersHistory,
-                    difficulty = difficulty,
-                    onPlayAgain = { startNewMatch() },
-                    onReturnHome = onExitGame,
-                    onWatchReplay = { isReplayModeActive = true }
+            if (showSecondChanceDialog) {
+                BingoSecondChanceDialog(
+                    onWatchAd = {
+                        val activity = context as? Activity ?: run {
+                            var actContext = context
+                            while (actContext is android.content.ContextWrapper) {
+                                if (actContext is Activity) break
+                                actContext = actContext.baseContext
+                            }
+                            actContext as? Activity
+                        }
+                        if (activity != null && com.playwin.ads.RewardedManager.isAdReady(context)) {
+                            com.playwin.ads.RewardedManager.showAd(
+                                activity = activity,
+                                rewardType = com.playwin.ads.RewardType.BINGO_SECOND_CHANCE,
+                                callbacks = object : com.playwin.ads.RewardCallback {
+                                    override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                        hasUsedSecondChance = true
+                                        showSecondChanceDialog = false
+                                        // Unmark 2 of AI's tiles to revert their victory lines
+                                        val aiMarkedTiles = aiBoardTiles.flatten().filter { it.isMarked && !it.isFreeTile }
+                                        if (aiMarkedTiles.isNotEmpty()) {
+                                            aiMarkedTiles.shuffled().take(2).forEach { tile ->
+                                                tile.isMarked = false
+                                            }
+                                        }
+                                        aiCompletedLines = evaluateCompletedLines(aiBoardTiles)
+                                        turnStatusMessage = "⚡ SECOND CHANCE ACTIVATED! AI's win was reverted! Keep playing!"
+                                        isPlayerTurn = true
+                                    }
+                                    override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                        Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                    }
+                                    override fun onAdFailedToShow(errorMessage: String) {
+                                        Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                    }
+                                    override fun onAdClosed(userEarnedReward: Boolean) {}
+                                }
+                            )
+                        } else {
+                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                            com.playwin.ads.RewardedManager.preload(context)
+                        }
+                    },
+                    onClose = {
+                        showSecondChanceDialog = false
+                        matchState = BingoMatchState.DEFEAT
+                    }
                 )
+            }
+
+            if (matchState == BingoMatchState.VICTORY || matchState == BingoMatchState.DEFEAT || matchState == BingoMatchState.DRAW) {
+                if (showRewardPopup) {
+                    BingoRewardPopup(
+                        matchState = matchState,
+                        difficulty = difficulty,
+                        onClaimed = { coinsDelta, wasAdClaimed ->
+                            showRewardPopup = false
+                            isResultProcessed = true
+                            progressionRepo.processMatchResult(
+                                matchType = "OFFLINE",
+                                difficulty = difficulty.uppercase(),
+                                opponentName = aiProfile.name,
+                                result = matchState.name,
+                                durationSeconds = matchTimeSeconds,
+                                numbersCalledCount = calledNumbersHistory.size,
+                                coinRewardOverride = coinsDelta
+                            )
+                            // Call onMatchCompleted on the live events repo
+                            com.myplaywin.app.data.repository.BingoLiveEventsAndSocialRepository(context, progressionRepo).onMatchCompleted(
+                                isWin = (matchState == BingoMatchState.VICTORY),
+                                isOnline = false,
+                                difficulty = difficulty.uppercase(),
+                                numbersMarked = boardTiles.flatten().count { it.isMarked },
+                                durationSeconds = matchTimeSeconds
+                            )
+                        }
+                    )
+                } else {
+                    BingoPostMatchDialog(
+                        matchState = matchState,
+                        aiProfile = aiProfile,
+                        matchTimeSeconds = matchTimeSeconds,
+                        boardTiles = boardTiles,
+                        aiBoardTiles = aiBoardTiles,
+                        completedLines = completedLines,
+                        aiCompletedLines = aiCompletedLines,
+                        calledNumbersHistory = calledNumbersHistory,
+                        difficulty = difficulty,
+                        onPlayAgain = { startNewMatch() },
+                        onReturnHome = {
+                            val completedCount = prefs.getInt("completed_matches_count_v2", 0) + 1
+                            prefs.edit().putInt("completed_matches_count_v2", completedCount).apply()
+                            val activity = context as? Activity ?: run {
+                                var actContext = context
+                                while (actContext is android.content.ContextWrapper) {
+                                    if (actContext is Activity) break
+                                    actContext = actContext.baseContext
+                                }
+                                actContext as? Activity
+                            }
+                            if (completedCount % 4 == 0 && activity != null && com.playwin.ads.InterstitialManager.isAdReady(context)) {
+                                com.playwin.ads.InterstitialManager.showAd(activity) {
+                                    onExitGame()
+                                }
+                            } else {
+                                onExitGame()
+                            }
+                        },
+                        onWatchReplay = { isReplayModeActive = true }
+                    )
+                }
             }
 
             // 3. Match Replay Dialog
@@ -3364,6 +3455,246 @@ private fun BingoDrawDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9100))
                     ) {
                         Text("PLAY AGAIN", color = Color.White, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BingoRewardPopup(
+    matchState: BingoMatchState,
+    difficulty: String,
+    onClaimed: (coinsDelta: Int, wasAdClaimed: Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val isWin = matchState == BingoMatchState.VICTORY
+    val baseCoins = when {
+        isWin && difficulty.uppercase() == "EASY" -> 5
+        isWin && difficulty.uppercase() == "MEDIUM" -> 7
+        isWin && difficulty.uppercase() == "HARD" -> 10
+        else -> 1
+    }
+
+    Dialog(
+        onDismissRequest = {}, // Force user to choose
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.9f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(2.dp, Color(0xFFFFD700)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF13092D))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "🎁 MATCH COMPLETED REWARD 🎁",
+                        color = Color(0xFFFFD700),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = when {
+                            isWin -> "🎉 VICTORY! Difficulty: $difficulty"
+                            else -> "💔 Match Finished!"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Coins Earned",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+
+                    Text(
+                        text = "$baseCoins COINS",
+                        color = Color(0xFFFFD700),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        style = LocalTextStyle.current.copy(
+                            shadow = Shadow(color = Color(0xFFFFD700).copy(alpha = 0.6f), blurRadius = 8f)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Button 1: Claim
+                    AaaGlossyButton(
+                        onClick = {
+                            AaaBingoAudioHaptics.playClickSound()
+                            onClaimed(baseCoins, false)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        containerColor = Color(0xFF334155),
+                        contentColor = Color.White,
+                        borderColor = Color(0xFF64748B)
+                    ) {
+                        Text("CLAIM REWARD ($baseCoins COINS)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+
+                    // Button 2: Watch Ad x2 Reward
+                    AaaGlossyButton(
+                        onClick = {
+                            val activity = context as? Activity ?: run {
+                                var actContext = context
+                                while (actContext is android.content.ContextWrapper) {
+                                    if (actContext is Activity) break
+                                    actContext = actContext.baseContext
+                                }
+                                actContext as? Activity
+                            }
+                            if (activity != null && com.playwin.ads.RewardedManager.isAdReady(context)) {
+                                com.playwin.ads.RewardedManager.showAd(
+                                    activity = activity,
+                                    rewardType = com.playwin.ads.RewardType.BINGO_DOUBLE_REWARD,
+                                    callbacks = object : com.playwin.ads.RewardCallback {
+                                        override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                            onClaimed(baseCoins * 2, true)
+                                        }
+                                        override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        override fun onAdFailedToShow(errorMessage: String) {
+                                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        override fun onAdClosed(userEarnedReward: Boolean) {}
+                                    }
+                                )
+                            } else {
+                                Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                com.playwin.ads.RewardedManager.preload(context)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        containerColor = Color(0xFF00E676),
+                        contentColor = Color(0xFF091E10),
+                        borderColor = Color(0xFFB9F6CA)
+                    ) {
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("WATCH AD (×2 REWARD - +${baseCoins * 2} COINS)", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BingoSecondChanceDialog(
+    onWatchAd: () -> Unit,
+    onClose: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.9f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(2.dp, Color(0xFFFF9100)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2C0A12))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "⚡ SECOND CHANCE OPPORTUNITY ⚡",
+                        color = Color(0xFFFF9100),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "You are only 1 line away from BINGO!",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "Watch a video to revert AI's win, unmark some of their numbers, and get extra turns to win the match!",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Watch Ad to Continue
+                    AaaGlossyButton(
+                        onClick = onWatchAd,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        containerColor = Color(0xFF00E676),
+                        contentColor = Color(0xFF091E10),
+                        borderColor = Color(0xFFB9F6CA)
+                    ) {
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("WATCH AD TO CONTINUE", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    }
+
+                    // Close (Decline and accept defeat)
+                    AaaGlossyButton(
+                        onClick = onClose,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        containerColor = Color(0xFF334155),
+                        contentColor = Color.White,
+                        borderColor = Color(0xFF64748B)
+                    ) {
+                        Text("CLOSE & ACCEPT DEFEAT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }

@@ -24,6 +24,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.graphics.Shadow
+import android.app.Activity
+import android.widget.Toast
 import com.myplaywin.app.data.model.BingoMatchStatus
 import com.myplaywin.app.data.model.BingoMovePayload
 import com.myplaywin.app.data.repository.BingoMultiplayerEngine
@@ -62,31 +67,13 @@ fun BingoOnlineGameplayScreen(
 
     val progressionRepo = remember { com.myplaywin.app.data.repository.BingoProgressionRepository(context) }
     var isResultProcessed by remember { mutableStateOf(false) }
+    var showRewardPopup by remember { mutableStateOf(false) }
 
     LaunchedEffect(matchStatus) {
         if (!isResultProcessed) {
             when (matchStatus) {
-                BingoMatchStatus.VICTORY -> {
-                    isResultProcessed = true
-                    progressionRepo.processMatchResult(
-                        matchType = "ONLINE_1V1",
-                        difficulty = "RANKED",
-                        opponentName = opponent?.displayName ?: "Online Opponent",
-                        result = "VICTORY",
-                        durationSeconds = 45,
-                        numbersCalledCount = currentRoom?.calledNumbersHistory?.size ?: 12
-                    )
-                }
-                BingoMatchStatus.DEFEAT -> {
-                    isResultProcessed = true
-                    progressionRepo.processMatchResult(
-                        matchType = "ONLINE_1V1",
-                        difficulty = "RANKED",
-                        opponentName = opponent?.displayName ?: "Online Opponent",
-                        result = "DEFEAT",
-                        durationSeconds = 45,
-                        numbersCalledCount = currentRoom?.calledNumbersHistory?.size ?: 12
-                    )
+                BingoMatchStatus.VICTORY, BingoMatchStatus.DEFEAT -> {
+                    showRewardPopup = true
                 }
                 else -> {}
             }
@@ -458,50 +445,27 @@ fun BingoOnlineGameplayScreen(
                 }
             }
 
-            // 6. VICTORY / DEFEAT OVERLAY
-            if (matchStatus == BingoMatchStatus.VICTORY) {
-                AaaVictoryVfxCanvas()
-                AlertDialog(
-                    onDismissRequest = {},
-                    containerColor = Color(0xFF1B0C33),
-                    title = {
-                        Text(text = "🎉 VICTORY!", color = Color(0xFFFFD700), fontWeight = FontWeight.Black, fontSize = 24.sp)
-                    },
-                    text = {
-                        Text(text = "Server verified your Bingo lines! Match completed successfully.", color = Color.White)
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                engine.cancelMatchmaking()
-                                onBackToLobby()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700))
-                        ) {
-                            Text("BACK TO LOBBY", color = Color.Black, fontWeight = FontWeight.Black)
-                        }
-                    }
-                )
-            } else if (matchStatus == BingoMatchStatus.DEFEAT) {
-                AlertDialog(
-                    onDismissRequest = {},
-                    containerColor = Color(0xFF1B0C33),
-                    title = {
-                        Text(text = "DEFEAT", color = Color(0xFFFF1744), fontWeight = FontWeight.Black, fontSize = 24.sp)
-                    },
-                    text = {
-                        Text(text = "Opponent completed Bingo first. Better luck next match!", color = Color.White)
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                engine.cancelMatchmaking()
-                                onBackToLobby()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F2B75))
-                        ) {
-                            Text("BACK TO LOBBY", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
+            // 6. VICTORY / DEFEAT REWARD OVERLAY
+            if (matchStatus == BingoMatchStatus.VICTORY || matchStatus == BingoMatchStatus.DEFEAT) {
+                if (matchStatus == BingoMatchStatus.VICTORY) {
+                    AaaVictoryVfxCanvas()
+                }
+                BingoOnlineRewardPopup(
+                    matchStatus = matchStatus,
+                    onClaimed = { coinsDelta, wasAdClaimed ->
+                        showRewardPopup = false
+                        isResultProcessed = true
+                        progressionRepo.processMatchResult(
+                            matchType = "ONLINE_1V1",
+                            difficulty = "RANKED",
+                            opponentName = opponent?.displayName ?: "Online Opponent",
+                            result = if (matchStatus == BingoMatchStatus.VICTORY) "VICTORY" else "DEFEAT",
+                            durationSeconds = 45,
+                            numbersCalledCount = currentRoom?.calledNumbersHistory?.size ?: 12,
+                            coinRewardOverride = coinsDelta
+                        )
+                        engine.cancelMatchmaking()
+                        onBackToLobby()
                     }
                 )
             }
@@ -563,4 +527,142 @@ private fun isTileInWinningLine(r: Int, c: Int, lines: Set<BingoLineType>): Bool
     if (lines.contains(BingoLineType.DIAG_ANTI) && r + c == 4) return true
 
     return false
+}
+
+@Composable
+private fun BingoOnlineRewardPopup(
+    matchStatus: BingoMatchStatus,
+    onClaimed: (coinsDelta: Int, wasAdClaimed: Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val isWin = matchStatus == BingoMatchStatus.VICTORY
+    val baseCoins = if (isWin) 12 else 3
+
+    Dialog(
+        onDismissRequest = {}, // Force user to choose
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.9f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(2.dp, Color(0xFFFFD700)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF13092D))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "🎁 MATCH COMPLETED REWARD 🎁",
+                        color = Color(0xFFFFD700),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = if (isWin) "🎉 ONLINE VICTORY!" else "💔 Match Finished!",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Coins Earned",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+
+                    Text(
+                        text = "$baseCoins COINS",
+                        color = Color(0xFFFFD700),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 32.sp,
+                        style = LocalTextStyle.current.copy(
+                            shadow = Shadow(color = Color(0xFFFFD700).copy(alpha = 0.6f), blurRadius = 8f)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Button 1: Claim
+                    AaaGlossyButton(
+                        onClick = {
+                            onClaimed(baseCoins, false)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        containerColor = Color(0xFF334155),
+                        contentColor = Color.White,
+                        borderColor = Color(0xFF64748B)
+                    ) {
+                        Text("CLAIM REWARD ($baseCoins COINS)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+
+                    // Button 2: Watch Ad x2 Reward
+                    AaaGlossyButton(
+                        onClick = {
+                            val activity = context as? Activity ?: run {
+                                var actContext = context
+                                while (actContext is android.content.ContextWrapper) {
+                                    if (actContext is Activity) break
+                                    actContext = actContext.baseContext
+                                }
+                                actContext as? Activity
+                            }
+                            if (activity != null && com.playwin.ads.RewardedManager.isAdReady(context)) {
+                                com.playwin.ads.RewardedManager.showAd(
+                                    activity = activity,
+                                    rewardType = com.playwin.ads.RewardType.BINGO_DOUBLE_REWARD,
+                                    callbacks = object : com.playwin.ads.RewardCallback {
+                                        override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                            onClaimed(baseCoins * 2, true)
+                                        }
+                                        override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        override fun onAdFailedToShow(errorMessage: String) {
+                                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                        }
+                                        override fun onAdClosed(userEarnedReward: Boolean) {}
+                                    }
+                                )
+                            } else {
+                                Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
+                                com.playwin.ads.RewardedManager.preload(context)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        containerColor = Color(0xFF00E676),
+                        contentColor = Color(0xFF091E10),
+                        borderColor = Color(0xFFB9F6CA)
+                    ) {
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("WATCH AD (×2 REWARD - +${baseCoins * 2} COINS)", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+    }
 }

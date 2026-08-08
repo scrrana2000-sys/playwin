@@ -176,21 +176,21 @@ class BingoProgressionRepository(private val context: Context) {
         opponentName: String,
         result: String, // "VICTORY", "DEFEAT", "DRAW"
         durationSeconds: Int,
-        numbersCalledCount: Int
+        numbersCalledCount: Int,
+        coinRewardOverride: Int? = null
     ) {
         val isWin = result == "VICTORY"
         val isLoss = result == "DEFEAT"
         val isDraw = result == "DRAW"
 
         // 1. Calculate Base Coin & XP Rewards
-        var coinReward = when {
-            matchType == "ONLINE_1V1" && isWin -> 120
-            matchType == "ONLINE_1V1" && isLoss -> 20
-            matchType == "ONLINE_1V1" && isDraw -> 10
-            difficulty == "HARD" && isWin -> 75
-            difficulty == "MEDIUM" && isWin -> 35
-            difficulty == "EASY" && isWin -> 15
-            else -> 10 // Participation
+        var coinReward = coinRewardOverride ?: when {
+            matchType == "ONLINE_1V1" && isWin -> 12
+            matchType == "ONLINE_1V1" && (isLoss || isDraw) -> 3
+            difficulty == "HARD" && isWin -> 10
+            difficulty == "MEDIUM" && isWin -> 7
+            difficulty == "EASY" && isWin -> 5
+            else -> 1 // Offline lose / draw
         }
 
         var xpReward = when {
@@ -209,10 +209,9 @@ class BingoProgressionRepository(private val context: Context) {
             xpReward += (xpReward * (bonusPercent / 100f)).toInt()
         }
 
-        // Speed Bonus
+        // Speed Bonus (Keep XP bonus only, no extra coins to respect new economy)
         if (isWin && durationSeconds < 40) {
             xpReward += 50
-            coinReward += 20
         }
 
         // 2. Perform Atomic Wallet Transaction using existing WalletService
@@ -420,26 +419,88 @@ class BingoProgressionRepository(private val context: Context) {
         _badges.value = list
     }
 
-    fun claimDailyBonus(): Boolean {
+    fun getDailyLoginStreak(): Int {
+        val lastDate = prefs.getString("lastDailyBonusDate", "") ?: ""
         val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-        if (_progression.value.lastDailyBonusDate == todayStr) {
+        if (lastDate.isEmpty()) return 1
+        
+        val streak = prefs.getInt("bingoDailyLoginStreak", 1)
+        try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val last = sdf.parse(lastDate)
+            val today = sdf.parse(todayStr)
+            val diff = today.time - last.time
+            val diffDays = diff / (24 * 60 * 60 * 1000)
+            if (diffDays > 1) {
+                return 1
+            } else if (diffDays == 1L) {
+                return streak
+            } else {
+                return streak
+            }
+        } catch (e: Exception) {
+            return 1
+        }
+    }
+
+    fun getDailyLoginCoinsForDay(day: Int): Int {
+        return when (day) {
+            1 -> 2
+            2 -> 3
+            3 -> 4
+            4 -> 5
+            5 -> 6
+            6 -> 8
+            7 -> 10
+            else -> 2
+        }
+    }
+
+    fun claimDailyBonus(doubleReward: Boolean = false): Boolean {
+        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val lastDate = prefs.getString("lastDailyBonusDate", "") ?: ""
+        if (lastDate == todayStr) {
             return false // Already claimed
         }
 
-        val bonusCoins = 150
+        var streak = prefs.getInt("bingoDailyLoginStreak", 1)
+        if (lastDate.isNotEmpty()) {
+            try {
+                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                val last = sdf.parse(lastDate)
+                val today = sdf.parse(todayStr)
+                val diffDays = (today.time - last.time) / (24 * 60 * 60 * 1000)
+                if (diffDays > 1) {
+                    streak = 1
+                } else if (diffDays == 1L) {
+                    streak = if (streak >= 7) 1 else streak + 1
+                }
+            } catch (e: Exception) {
+                streak = 1
+            }
+        } else {
+            streak = 1
+        }
+
+        val baseCoins = getDailyLoginCoinsForDay(streak)
+        val finalCoins = if (doubleReward) baseCoins * 2 else baseCoins
         val bonusXp = 100
 
-        val newCoins = _progression.value.currentCoins + bonusCoins
+        val newCoins = _progression.value.currentCoins + finalCoins
         _progression.value = _progression.value.copy(
             currentCoins = newCoins,
             lastDailyBonusDate = todayStr
         )
-        prefs.edit().putString("lastDailyBonusDate", todayStr).putInt("currentCoins", newCoins).apply()
+        prefs.edit()
+            .putString("lastDailyBonusDate", todayStr)
+            .putInt("bingoDailyLoginStreak", streak)
+            .putInt("currentCoins", newCoins)
+            .apply()
 
         // Also issue atomic wallet update if authenticated
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         if (uid.isNotEmpty()) {
-            WalletService.updateWallet(uid, bonusCoins, "Daily Login Bonus", "BONUS") { _, _, _, _ -> }
+            WalletService.updateWallet(uid, finalCoins, "Bingo Daily Login Day $streak", "BONUS") { _, _, _, _ -> }
         }
         return true
     }
