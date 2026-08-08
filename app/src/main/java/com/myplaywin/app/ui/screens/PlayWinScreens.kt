@@ -69,6 +69,7 @@ sealed interface AppScreen {
     object SnakeGame : AppScreen
     object BounceGame : AppScreen
     object BlockMaster : AppScreen
+    object BingoGame : AppScreen
 }
 
 enum class AppTab {
@@ -130,6 +131,7 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
                 is AppScreen.SnakeGame -> putString("type", "SnakeGame")
                 is AppScreen.BounceGame -> putString("type", "BounceGame")
                 is AppScreen.BlockMaster -> putString("type", "BlockMaster")
+                is AppScreen.BingoGame -> putString("type", "BingoGame")
             }
         }
     },
@@ -150,6 +152,7 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
             "SnakeGame" -> AppScreen.SnakeGame
             "BounceGame" -> AppScreen.BounceGame
             "BlockMaster" -> AppScreen.BlockMaster
+            "BingoGame" -> AppScreen.BingoGame
             else -> AppScreen.MainTabs
         }
         NavEntry(screen, tab)
@@ -177,6 +180,7 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                     is AppScreen.SnakeGame -> putString("type", "SnakeGame")
                     is AppScreen.BounceGame -> putString("type", "BounceGame")
                     is AppScreen.BlockMaster -> putString("type", "BlockMaster")
+                    is AppScreen.BingoGame -> putString("type", "BingoGame")
                 }
             }
         }
@@ -200,6 +204,7 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                 "SnakeGame" -> AppScreen.SnakeGame
                 "BounceGame" -> AppScreen.BounceGame
                 "BlockMaster" -> AppScreen.BlockMaster
+                "BingoGame" -> AppScreen.BingoGame
                 else -> AppScreen.MainTabs
             }
             list.add(NavEntry(screen, tab))
@@ -338,6 +343,9 @@ fun PlayWinMainFlow(viewModel: PlayWinViewModel) {
                     onBack = navigateBack
                 )
                 is AppScreen.BlockMaster -> com.myplaywin.app.blockmaster.ui.BlockMasterScreen(
+                    onBack = navigateBack
+                )
+                is AppScreen.BingoGame -> BingoHomeScreen(
                     onBack = navigateBack
                 )
             }
@@ -3749,6 +3757,13 @@ fun HomeScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Premium Bingo Mini Game Card
+        BingoMiniGameCard(
+            onCardClick = { onNavigateToGame(AppScreen.BingoGame) }
+        )
 
         /*
         Spacer(modifier = Modifier.height(12.dp))
