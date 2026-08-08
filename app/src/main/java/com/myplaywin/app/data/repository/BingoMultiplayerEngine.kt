@@ -1,6 +1,11 @@
 package com.myplaywin.app.data.repository
 
 import android.content.Context
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import com.myplaywin.app.data.model.*
 import com.myplaywin.app.ui.screens.BingoLineType
 import com.myplaywin.app.ui.screens.BingoTile
@@ -12,7 +17,7 @@ import java.util.UUID
 import kotlin.random.Random
 
 /**
- * Phase 7: Real-Time Online Multiplayer Engine & Server-Authoritative Logic
+ * Real-Time Firebase Realtime Database Multiplayer Engine
  */
 class BingoMultiplayerEngine(private val context: Context) {
 
@@ -37,19 +42,45 @@ class BingoMultiplayerEngine(private val context: Context) {
     private var numberCallerJob: Job? = null
     private var matchmakingJob: Job? = null
     private var pingMonitorJob: Job? = null
+    private var searchCountdownJob: Job? = null
+
+    private val auth = FirebaseAuth.getInstance()
+    private val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+    private val db = FirebaseDatabase.getInstance(dbUrl)
 
     // Local Player Data
-    val localPlayerUid: String = UUID.randomUUID().toString().take(8)
-    var localPlayerName: String = "Player_${Random.nextInt(100, 999)}"
-    var localPlayerLevel: Int = 12
-    var localPlayerWinRate: Float = 0.68f
+    private val prefs = context.getSharedPreferences("bingo_progression_prefs", Context.MODE_PRIVATE)
+
+    val localPlayerUid: String
+        get() = auth.currentUser?.uid ?: "local_player_${prefs.getString("fallback_uid", "") ?: run {
+            val id = UUID.randomUUID().toString().take(8)
+            prefs.edit().putString("fallback_uid", id).apply()
+            id
+        }}"
+
+    val localPlayerName: String
+        get() = auth.currentUser?.displayName ?: "Player_${localPlayerUid.take(4)}"
+
+    val localPlayerLevel: Int
+        get() = prefs.getInt("level", 12)
+
+    val localPlayerWinRate: Float
+        get() {
+            val total = prefs.getInt("stat_totalMatches", 0)
+            val wins = prefs.getInt("stat_onlineWins", 0) + prefs.getInt("stat_offlineWins", 0)
+            return if (total > 0) wins.toFloat() / total else 0.68f
+        }
+
+    private var queueListener: ValueEventListener? = null
+    private var roomListener: ValueEventListener? = null
+    private var activeRoomId: String? = null
 
     init {
         startPingMonitor()
     }
 
     // ==========================================
-    // 1. MATCHMAKING ENGINE
+    // 1. MATCHMAKING ENGINE WITH FIREBASE
     // ==========================================
 
     fun startMatchmaking(
@@ -61,11 +92,88 @@ class BingoMultiplayerEngine(private val context: Context) {
         _matchStatus.value = BingoMatchStatus.SEARCHING
         _searchTimeRemaining.value = 20
 
+        // Search countdown job
+        searchCountdownJob = engineScope.launch {
+            for (secondsLeft in 20 downTo 1) {
+                _searchTimeRemaining.value = secondsLeft
+                delay(1000)
+            }
+            // Timeout reached
+            cancelMatchmaking()
+            onSearchTimeout()
+        }
+
         matchmakingJob = engineScope.launch {
-            val localPlayer = BingoOnlinePlayer(
+            if (auth.currentUser == null) {
+                auth.signInAnonymously().addOnCompleteListener { task ->
+                    joinQueue(onMatchFound)
+                }
+            } else {
+                joinQueue(onMatchFound)
+            }
+        }
+    }
+
+    private fun joinQueue(onMatchFound: () -> Unit) {
+        val myEntry = MatchmakingQueueEntry(
+            uid = localPlayerUid,
+            displayName = localPlayerName,
+            level = localPlayerLevel,
+            winRate = localPlayerWinRate,
+            pingMs = _networkLatencyMs.value,
+            timestamp = System.currentTimeMillis()
+        )
+
+        val queueRef = db.getReference("bingo/matchmaking_queue").child(localPlayerUid)
+        queueRef.setValue(myEntry)
+
+        queueListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val entries = mutableListOf<MatchmakingQueueEntry>()
+                for (child in snapshot.children) {
+                    val entry = child.getValue(MatchmakingQueueEntry::class.java)
+                    if (entry != null && entry.uid != localPlayerUid) {
+                        if (System.currentTimeMillis() - entry.timestamp < 30000) {
+                            entries.add(entry)
+                        }
+                    }
+                }
+
+                if (entries.isNotEmpty()) {
+                    val opponent = entries.first()
+                    val myUid = localPlayerUid
+                    val opUid = opponent.uid
+                    val isHost = myUid < opUid
+                    val roomId = "room_" + if (isHost) "${myUid}_$opUid" else "${opUid}_$myUid"
+
+                    cancelQueueListenersAndEntries()
+                    searchCountdownJob?.cancel()
+
+                    observeRoom(roomId, isHost, opponent, onMatchFound)
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+
+        db.getReference("bingo/matchmaking_queue").addValueEventListener(queueListener!!)
+    }
+
+    private fun cancelQueueListenersAndEntries() {
+        queueListener?.let {
+            db.getReference("bingo/matchmaking_queue").removeEventListener(it)
+            queueListener = null
+        }
+        db.getReference("bingo/matchmaking_queue").child(localPlayerUid).removeValue()
+    }
+
+    private fun observeRoom(roomId: String, isHost: Boolean, opponent: MatchmakingQueueEntry, onMatchFound: () -> Unit) {
+        activeRoomId = roomId
+
+        if (isHost) {
+            val hostPlayer = BingoOnlinePlayer(
                 uid = localPlayerUid,
                 displayName = localPlayerName,
-                avatarUrl = "",
                 level = localPlayerLevel,
                 winRate = localPlayerWinRate,
                 pingMs = _networkLatencyMs.value,
@@ -74,58 +182,83 @@ class BingoMultiplayerEngine(private val context: Context) {
                 isHost = true
             )
 
-            // Simulate searching matching queue with priority parameters (Level, Win Rate, Latency, App Version, Region)
-            for (secondsLeft in 20 downTo 1) {
-                _searchTimeRemaining.value = secondsLeft
-                delay(1000)
+            val guestPlayer = BingoOnlinePlayer(
+                uid = opponent.uid,
+                displayName = opponent.displayName,
+                level = opponent.level,
+                winRate = opponent.winRate,
+                pingMs = opponent.pingMs,
+                isOnline = true,
+                isReady = true,
+                isHost = false
+            )
 
-                // Match found condition (simulate matching an online opponent around 3-6 seconds)
-                if (secondsLeft == 15) {
-                    val opponentNames = listOf("VortexMaster", "BingoQueen99", "LuckyStreak", "CasinoRoyal", "NovaPlayer")
-                    val opponentPlayer = BingoOnlinePlayer(
-                        uid = "OPP_" + UUID.randomUUID().toString().take(6),
-                        displayName = opponentNames.random(),
-                        avatarUrl = "",
-                        level = localPlayerLevel + Random.nextInt(-2, 3).coerceAtLeast(1),
-                        winRate = (localPlayerWinRate + Random.nextFloat() * 0.1f - 0.05f).coerceIn(0.2f, 0.9f),
-                        pingMs = Random.nextInt(28, 75),
-                        isOnline = true,
-                        isReady = true,
-                        isHost = false
-                    )
+            val room = BingoOnlineRoom(
+                roomId = roomId,
+                matchType = "ONE_VS_ONE",
+                matchStatus = BingoMatchStatus.MATCHED.name,
+                player1 = hostPlayer,
+                player2 = guestPlayer,
+                boardSeedP1 = System.currentTimeMillis(),
+                boardSeedP2 = System.currentTimeMillis() + 999L,
+                serverTimestamp = System.currentTimeMillis()
+            )
 
-                    // Create Synchronized Game Room
-                    val newRoom = BingoOnlineRoom(
-                        roomId = "ROOM_" + UUID.randomUUID().toString().take(8),
-                        matchType = matchType.name,
-                        matchStatus = BingoMatchStatus.MATCHED.name,
-                        player1 = localPlayer,
-                        player2 = opponentPlayer,
-                        boardSeedP1 = System.currentTimeMillis(),
-                        boardSeedP2 = System.currentTimeMillis() + 999L,
-                        serverTimestamp = System.currentTimeMillis(),
-                        region = "US-EAST-SERVER"
-                    )
+            db.getReference("bingo/rooms").child(roomId).setValue(room)
+        }
 
-                    _currentRoom.value = newRoom
-                    _matchStatus.value = BingoMatchStatus.MATCHED
+        val myPlayerNode = if (isHost) "player1" else "player2"
+        db.getReference("bingo/rooms").child(roomId).child(myPlayerNode).child("isOnline").onDisconnect().setValue(false)
 
-                    // Brief Countdown before starting
-                    delay(1200)
-                    _matchStatus.value = BingoMatchStatus.COUNTDOWN
-                    delay(1500)
-                    _matchStatus.value = BingoMatchStatus.PLAYING
+        roomListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val room = snapshot.getValue(BingoOnlineRoom::class.java) ?: return
+                _currentRoom.value = room
 
-                    // Start Server Number Calling Engine
-                    startServerNumberCaller()
-                    onMatchFound()
-                    return@launch
+                val oppPlayerNode = if (isHost) room.player2 else room.player1
+                if (oppPlayerNode != null && !oppPlayerNode.isOnline && room.winnerUid == null && room.matchStatus == "PLAYING") {
+                    db.getReference("bingo/rooms").child(roomId).child("winnerUid").setValue(localPlayerUid)
+                }
+
+                when (room.matchStatus) {
+                    "MATCHED" -> {
+                        _matchStatus.value = BingoMatchStatus.MATCHED
+                        if (isHost) {
+                            engineScope.launch {
+                                delay(1200)
+                                db.getReference("bingo/rooms").child(roomId).child("matchStatus").setValue("COUNTDOWN")
+                            }
+                        }
+                    }
+                    "COUNTDOWN" -> {
+                        _matchStatus.value = BingoMatchStatus.COUNTDOWN
+                        if (isHost) {
+                            engineScope.launch {
+                                delay(1500)
+                                db.getReference("bingo/rooms").child(roomId).child("matchStatus").setValue("PLAYING")
+                                startServerNumberCaller(roomId)
+                            }
+                        }
+                    }
+                    "PLAYING" -> {
+                        _matchStatus.value = BingoMatchStatus.PLAYING
+                        onMatchFound()
+                    }
+                    "COMPLETED", "VICTORY", "DEFEAT" -> {
+                        val winner = room.winnerUid
+                        if (winner != null) {
+                            val isLocalWin = (winner == localPlayerUid)
+                            _matchStatus.value = if (isLocalWin) BingoMatchStatus.VICTORY else BingoMatchStatus.DEFEAT
+                            numberCallerJob?.cancel()
+                        }
+                    }
                 }
             }
 
-            // 20 Seconds Timeout Reached
-            onSearchTimeout()
+            override fun onCancelled(error: DatabaseError) {}
         }
+
+        db.getReference("bingo/rooms").child(roomId).addValueEventListener(roomListener!!)
     }
 
     fun startAiFallbackMatch(onMatchStart: () -> Unit) {
@@ -163,30 +296,68 @@ class BingoMultiplayerEngine(private val context: Context) {
 
         _currentRoom.value = room
         _matchStatus.value = BingoMatchStatus.PLAYING
-        startServerNumberCaller()
+        startLocalNumberCaller()
         onMatchStart()
     }
 
     fun cancelMatchmaking() {
+        searchCountdownJob?.cancel()
         matchmakingJob?.cancel()
         numberCallerJob?.cancel()
+
+        searchCountdownJob = null
         matchmakingJob = null
         numberCallerJob = null
+
+        cancelQueueListenersAndEntries()
+
+        roomListener?.let {
+            activeRoomId?.let { rId ->
+                db.getReference("bingo/rooms").child(rId).removeEventListener(it)
+            }
+            roomListener = null
+        }
+
+        activeRoomId = null
         _matchStatus.value = BingoMatchStatus.SEARCHING
         _currentRoom.value = null
     }
 
     // ==========================================
-    // 2. SERVER-AUTHORITATIVE NUMBER CALLER
+    // 2. SYNCHRONIZED NUMBER CALLER
     // ==========================================
 
-    private fun startServerNumberCaller() {
+    private fun startServerNumberCaller(roomId: String) {
         numberCallerJob?.cancel()
         numberCallerJob = engineScope.launch {
             val availableNumbers = (1..75).shuffled().toMutableList()
 
             while (isActive && availableNumbers.isNotEmpty() && _matchStatus.value == BingoMatchStatus.PLAYING) {
-                delay(3200) // Emit a new called number every 3.2 seconds synchronously
+                delay(3200)
+
+                val room = _currentRoom.value ?: break
+                val nextNumber = availableNumbers.removeAt(0)
+                val letter = columnLetterForNum(nextNumber)
+
+                val updatedCalledList = room.calledNumbersHistory + nextNumber
+
+                db.getReference("bingo/rooms").child(roomId).updateChildren(mapOf(
+                    "calledNumbersHistory" to updatedCalledList,
+                    "activeCalledNumber" to nextNumber,
+                    "activeLetter" to letter,
+                    "serverTimestamp" to System.currentTimeMillis()
+                ))
+            }
+        }
+    }
+
+    private fun startLocalNumberCaller() {
+        numberCallerJob?.cancel()
+        numberCallerJob = engineScope.launch {
+            val availableNumbers = (1..75).shuffled().toMutableList()
+
+            while (isActive && availableNumbers.isNotEmpty() && _matchStatus.value == BingoMatchStatus.PLAYING) {
+                delay(3200)
 
                 val room = _currentRoom.value ?: break
                 val nextNumber = availableNumbers.removeAt(0)
@@ -201,7 +372,6 @@ class BingoMultiplayerEngine(private val context: Context) {
                     serverTimestamp = System.currentTimeMillis()
                 )
 
-                // Simulate Opponent Auto Daub & Line Logic
                 simulateOpponentTurn(nextNumber)
             }
         }
@@ -211,7 +381,6 @@ class BingoMultiplayerEngine(private val context: Context) {
         val room = _currentRoom.value ?: return
         val opponent = room.player2 ?: return
 
-        // 60% chance opponent daubs called number after brief delay
         if (Random.nextFloat() < 0.65f) {
             engineScope.launch {
                 delay(Random.nextLong(600, 1800))
@@ -227,9 +396,8 @@ class BingoMultiplayerEngine(private val context: Context) {
 
                 _currentRoom.value = _currentRoom.value?.copy(player2 = updatedOpponent)
 
-                // Check Opponent Win Condition
-                if (newLines >= 1 && _currentRoom.value?.winnerUid == null && Random.nextFloat() < 0.4f) {
-                    triggerMatchCompletion(winnerUid = opponent.uid)
+                if (newLines >= 5 && _currentRoom.value?.winnerUid == null && Random.nextFloat() < 0.4f) {
+                    triggerLocalMatchCompletion(winnerUid = opponent.uid)
                 }
             }
         }
@@ -242,39 +410,62 @@ class BingoMultiplayerEngine(private val context: Context) {
     fun submitMove(move: BingoMovePayload, currentBoard: List<List<BingoTile>>): BingoAntiCheatResult {
         val room = _currentRoom.value ?: return BingoAntiCheatResult(false, "Room Not Active", AntiCheatSanction.REJECT_MOVE)
 
-        // Rule 1: Anti-Cheat Check - Tile Number must exist in server calledNumbersHistory!
         if (move.moveType == "DAUB") {
             if (!room.calledNumbersHistory.contains(move.tileNumber)) {
-                _antiCheatAlert.value = "❌ Anti-Cheat Violation: Number ${move.tileNumber} has NOT been called by server!"
+                _antiCheatAlert.value = "❌ Anti-Cheat Violation: Number ${move.tileNumber} has NOT been called!"
                 return BingoAntiCheatResult(false, "Uncalled Number", AntiCheatSanction.REJECT_MOVE)
             }
         }
 
-        // Rule 2: Anti-Cheat Check - Validate Bingo Claim server-side
         if (move.moveType == "CLAIM_BINGO") {
             val serverVerifiedLines = evaluateLinesServerSide(currentBoard, room.calledNumbersHistory)
-            if (serverVerifiedLines.isEmpty()) {
+            if (serverVerifiedLines.size < 5) {
                 _antiCheatAlert.value = "❌ Anti-Cheat Rejection: Invalid Bingo claim. No completed lines found!"
                 return BingoAntiCheatResult(false, "Invalid Line Verification", AntiCheatSanction.REJECT_MOVE)
             }
 
-            // Server Verified Victory!
-            triggerMatchCompletion(winnerUid = localPlayerUid)
+            if (activeRoomId != null) {
+                db.getReference("bingo/rooms").child(activeRoomId!!).updateChildren(mapOf(
+                    "winnerUid" to localPlayerUid,
+                    "matchStatus" to "COMPLETED"
+                ))
+            } else {
+                triggerLocalMatchCompletion(winnerUid = localPlayerUid)
+            }
             return BingoAntiCheatResult(true, "Server Verified Victory", AntiCheatSanction.ACCEPT)
         }
 
-        // Update Local Player Progress in Room State
         val p1 = room.player1
-        val updatedP1 = p1.copy(
-            markedCount = p1.markedCount + 1,
-            completedLinesCount = evaluateLinesServerSide(currentBoard, room.calledNumbersHistory).size,
-            lastMoveTimestamp = System.currentTimeMillis()
-        )
+        val p2 = room.player2
+        val isP1 = (localPlayerUid == p1.uid)
 
-        _currentRoom.value = room.copy(
-            player1 = updatedP1,
-            serverTimestamp = System.currentTimeMillis()
-        )
+        val completedLines = evaluateLinesServerSide(currentBoard, room.calledNumbersHistory).size
+        val markedCount = currentBoard.flatten().count { it.isMarked }
+
+        if (activeRoomId != null) {
+            val myPlayerNode = if (isP1) "player1" else "player2"
+            db.getReference("bingo/rooms").child(activeRoomId!!).child(myPlayerNode).updateChildren(mapOf(
+                "markedCount" to markedCount,
+                "completedLinesCount" to completedLines,
+                "lastMoveTimestamp" to System.currentTimeMillis()
+            ))
+        } else {
+            if (isP1) {
+                val updatedP1 = p1.copy(
+                    markedCount = markedCount,
+                    completedLinesCount = completedLines,
+                    lastMoveTimestamp = System.currentTimeMillis()
+                )
+                _currentRoom.value = room.copy(player1 = updatedP1)
+            } else if (p2 != null) {
+                val updatedP2 = p2.copy(
+                    markedCount = markedCount,
+                    completedLinesCount = completedLines,
+                    lastMoveTimestamp = System.currentTimeMillis()
+                )
+                _currentRoom.value = room.copy(player2 = updatedP2)
+            }
+        }
 
         return BingoAntiCheatResult(true, "Valid Move Accepted", AntiCheatSanction.ACCEPT)
     }
@@ -282,12 +473,10 @@ class BingoMultiplayerEngine(private val context: Context) {
     private fun evaluateLinesServerSide(currentBoard: List<List<BingoTile>>, calledHistory: List<Int>): Set<BingoLineType> {
         val lines = mutableSetOf<BingoLineType>()
 
-        // Helper check: tile marked AND called by server (or FREE)
         fun isTileValid(tile: BingoTile): Boolean {
             return tile.isMarked && (tile.isFreeTile || calledHistory.contains(tile.number))
         }
 
-        // Check 5 Rows
         for (r in 0..4) {
             if (currentBoard[r].all { isTileValid(it) }) {
                 lines.add(when (r) {
@@ -300,7 +489,6 @@ class BingoMultiplayerEngine(private val context: Context) {
             }
         }
 
-        // Check 5 Columns
         for (c in 0..4) {
             if ((0..4).all { r -> isTileValid(currentBoard[r][c]) }) {
                 lines.add(when (c) {
@@ -313,14 +501,13 @@ class BingoMultiplayerEngine(private val context: Context) {
             }
         }
 
-        // Main & Anti Diagonals
         if ((0..4).all { i -> isTileValid(currentBoard[i][i]) }) lines.add(BingoLineType.DIAG_MAIN)
         if ((0..4).all { i -> isTileValid(currentBoard[i][4 - i]) }) lines.add(BingoLineType.DIAG_ANTI)
 
         return lines
     }
 
-    private fun triggerMatchCompletion(winnerUid: String) {
+    private fun triggerLocalMatchCompletion(winnerUid: String) {
         numberCallerJob?.cancel()
         val room = _currentRoom.value ?: return
 
@@ -347,18 +534,26 @@ class BingoMultiplayerEngine(private val context: Context) {
         pingMonitorJob = engineScope.launch {
             while (isActive) {
                 delay(3000)
-                // Ping fluctuation simulation (25ms - 65ms)
                 _networkLatencyMs.value = Random.nextInt(25, 65)
             }
         }
     }
 
     fun simulateReconnection() {
+        val roomId = activeRoomId ?: return
         engineScope.launch {
             _matchStatus.value = BingoMatchStatus.RECONNECTING
-            delay(2000)
-            if (_currentRoom.value != null) {
-                _matchStatus.value = BingoMatchStatus.PLAYING
+            delay(1500)
+            db.getReference("bingo/rooms").child(roomId).get().addOnSuccessListener { snapshot ->
+                val room = snapshot.getValue(BingoOnlineRoom::class.java)
+                if (room != null) {
+                    _currentRoom.value = room
+                    _matchStatus.value = BingoMatchStatus.PLAYING
+                } else {
+                    _matchStatus.value = BingoMatchStatus.DEFEAT
+                }
+            }.addOnFailureListener {
+                _matchStatus.value = BingoMatchStatus.DEFEAT
             }
         }
     }
