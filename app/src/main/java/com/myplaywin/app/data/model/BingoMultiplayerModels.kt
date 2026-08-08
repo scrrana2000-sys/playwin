@@ -22,6 +22,7 @@ data class BingoOnlinePlayer(
     val lastMoveTimestamp: Long = System.currentTimeMillis(),
     val card: List<Int> = emptyList(),
     val marked: List<Boolean> = emptyList(),
+    val playAgainRequested: Boolean = false,
     
     // Compatibility fields
     val connected: Boolean = true
@@ -65,7 +66,14 @@ data class BingoOnlineRoom(
     val maxPlayers: Int = 2,
     val createdAt: Long = System.currentTimeMillis(),
     val players: Map<String, BingoOnlinePlayer> = emptyMap(),
-    val game: BingoGame = BingoGame()
+    val game: BingoGame = BingoGame(),
+    val host: String = "",
+    val guest: String = "",
+    val currentTurn: String = "",
+    val calledNumbers: List<Int> = emptyList(),
+    val winner: String = "",
+    val gameState: String = "",
+    val playerBoards: Map<String, List<Int>> = emptyMap()
 ) {
     // Custom getters for complete backwards compatibility with the UI screen
     val matchType: String
@@ -80,22 +88,22 @@ data class BingoOnlineRoom(
         }
 
     val player1: BingoOnlinePlayer
-        get() = players.values.firstOrNull { it.isHost } ?: players.values.firstOrNull() ?: BingoOnlinePlayer()
+        get() = players[host] ?: players.values.firstOrNull { it.isHost } ?: players.values.firstOrNull() ?: BingoOnlinePlayer()
 
     val player2: BingoOnlinePlayer?
-        get() = players.values.firstOrNull { !it.isHost && it.uid != player1.uid }
+        get() = players[guest] ?: players.values.firstOrNull { !it.isHost && it.uid != player1.uid }
 
     val calledNumbersHistory: List<Int>
-        get() = game.calledNumbers
+        get() = calledNumbers
 
     val activeCalledNumber: Int?
-        get() = game.lastCalledNumber
+        get() = calledNumbers.lastOrNull()
 
     val activeLetter: String
         get() = activeCalledNumber?.let { columnLetterForNum(it) } ?: ""
 
     val winnerUid: String?
-        get() = game.winnerId
+        get() = if (winner.isNotEmpty()) winner else game.winnerId
 
     private fun columnLetterForNum(num: Int): String {
         return when (num) {
@@ -136,8 +144,12 @@ enum class AntiCheatSanction {
 
 @IgnoreExtraProperties
 data class MatchmakingQueueEntry(
-    val playerId: String = "",
-    val status: String = "searching", // "searching", "matched"
-    val timestamp: Long = System.currentTimeMillis(),
+    val uid: String = "",
+    val displayName: String = "",
+    val joinedAt: Long = System.currentTimeMillis(),
+    val status: String = "waiting", // "waiting", "matched"
+    val online: Boolean = true,
+    val skill: Double = 1.0,
+    val version: String = "1.0",
     val roomId: String = ""
 )

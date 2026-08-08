@@ -275,6 +275,139 @@ fun BingoOnlineLobbyScreen(
                     }
                 }
 
+                // PLAY WITH FRIENDS (PRIVATE ROOMS)
+                var showRoomNotFoundDialog by remember { mutableStateOf(false) }
+                var privateRoomCodeInput by remember { mutableStateOf("") }
+
+                Text(
+                    text = "PLAY WITH FRIENDS",
+                    color = Color(0xFFFFD700),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    letterSpacing = 1.2.sp
+                )
+
+                AaaGlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    borderColor = Color(0xFFE040FB)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "PRIVATE GAME ROOM",
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "Create a custom room code or join an existing one directly",
+                            color = Color.LightGray,
+                            fontSize = 11.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedTextField(
+                            value = privateRoomCodeInput,
+                            onValueChange = { if (it.length <= 6) privateRoomCodeInput = it.uppercase() },
+                            label = { Text("Enter 6-Digit Room Code", color = Color.Gray) },
+                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontWeight = FontWeight.Bold),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color(0xFFE040FB),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                                focusedLabelColor = Color(0xFFE040FB),
+                                unfocusedLabelColor = Color.Gray
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    if (privateRoomCodeInput.length == 6) {
+                                        AaaBingoAudioHaptics.playClickSound()
+                                        engine.joinPrivateRoom(
+                                            code = privateRoomCodeInput,
+                                            onMatchFound = { onStartOnlineGameplay() },
+                                            onRoomNotFound = { showRoomNotFoundDialog = true }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                                enabled = privateRoomCodeInput.length == 6,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("JOIN ROOM", color = Color(0xFF100326), fontWeight = FontWeight.Black)
+                            }
+
+                            Button(
+                                onClick = {
+                                    AaaBingoAudioHaptics.playClickSound()
+                                    engine.createPrivateRoom { onStartOnlineGameplay() }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("CREATE ROOM", color = Color.White, fontWeight = FontWeight.Black)
+                            }
+                        }
+                    }
+                }
+
+                if (showRoomNotFoundDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showRoomNotFoundDialog = false },
+                        containerColor = Color(0xFF1B0C33),
+                        title = {
+                            Text(
+                                text = "Room Not Found",
+                                color = Color.Red,
+                                fontWeight = FontWeight.Black
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = "The room code you entered is invalid, expired, or the room is already full.",
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showRoomNotFoundDialog = false
+                                    if (privateRoomCodeInput.length == 6) {
+                                        engine.joinPrivateRoom(
+                                            code = privateRoomCodeInput,
+                                            onMatchFound = { onStartOnlineGameplay() },
+                                            onRoomNotFound = { showRoomNotFoundDialog = true }
+                                        )
+                                    }
+                                }
+                            ) {
+                                Text("Retry", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showRoomNotFoundDialog = false
+                                }
+                            ) {
+                                Text("Back", color = Color.Gray)
+                            }
+                        }
+                    )
+                }
+
                 // 2 VS 2 & TOURNAMENT PLACEHOLDERS (Architecture Ready)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -400,24 +533,13 @@ fun BingoOnlineLobbyScreen(
                         }
                     },
                     dismissButton = {
-                        Row {
-                            TextButton(
-                                onClick = {
-                                    showTimeoutDialog = false
-                                    engine.startAiFallbackMatch { onStartOnlineGameplay() }
-                                }
-                            ) {
-                                Text("PLAY VS AI", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                        TextButton(
+                            onClick = {
+                                showTimeoutDialog = false
+                                engine.cancelMatchmaking()
                             }
-
-                            TextButton(
-                                onClick = {
-                                    showTimeoutDialog = false
-                                    engine.cancelMatchmaking()
-                                }
-                            ) {
-                                Text("CANCEL", color = Color.Gray)
-                            }
+                        ) {
+                            Text("CANCEL", color = Color.Gray)
                         }
                     }
                 )

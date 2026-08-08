@@ -45,21 +45,57 @@ import kotlinx.coroutines.delay
 fun BingoLiveEventsAndSocialScreen(
     repository: BingoLiveEventsAndSocialRepository,
     onStartPrivateMatch: (PrivateRoomDetails) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    initialTabIndex: Int = 0
 ) {
     val context = LocalContext.current
-    var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("Event Center", "Daily Missions", "Tournaments", "Private Rooms", "Friends", "Cosmetics")
+    var selectedTabIndex by remember { mutableStateOf(initialTabIndex) }
+    val tabs = listOf("Daily Missions", "Private Rooms", "Cosmetics")
 
-    val seasonalEvents by repository.activeSeasonalEvents.collectAsState()
     val dailyMissions by repository.dailyMissions.collectAsState()
     val weeklyMissions by repository.weeklyMissions.collectAsState()
-    val tournaments by repository.tournaments.collectAsState()
     val privateRoom by repository.currentPrivateRoom.collectAsState()
-    val friendsList by repository.friendsList.collectAsState()
-    val friendRequests by repository.pendingFriendRequests.collectAsState()
     val cosmetics by repository.cosmetics.collectAsState()
     val profile by repository.expandedProfile.collectAsState()
+
+    val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+    LaunchedEffect(privateRoom) {
+        val room = privateRoom
+        if (room != null && room.status == "playing" && room.gameSession != null) {
+            android.util.Log.d("BINGO_ONLINE", "GAME_SESSION_RECEIVED")
+            android.util.Log.d("BINGO_ONLINE", "OPENING_MULTIPLAYER_SCREEN")
+            onStartPrivateMatch(room)
+        }
+    }
+
+    LaunchedEffect(privateRoom?.status) {
+        val room = privateRoom ?: return@LaunchedEffect
+        if (room.status == "starting") {
+            val isHost = room.hostUid == currentUserId
+            if (isHost) {
+                // Host handles the countdown delay of 3 seconds
+                kotlinx.coroutines.delay(3000)
+                val latestRoom = repository.currentPrivateRoom.value
+                if (latestRoom != null && latestRoom.status == "starting" && latestRoom.players.size >= 2) {
+                    android.util.Log.d("BINGO_ONLINE", "COUNTDOWN_COMPLETE")
+                    repository.completePrivateStart()
+                } else {
+                    repository.cancelPrivateCountdown()
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(privateRoom?.players?.size, privateRoom?.status) {
+        val room = privateRoom ?: return@LaunchedEffect
+        if (room.status == "starting" && room.players.size < 2) {
+            val isHost = room.hostUid == currentUserId
+            if (isHost) {
+                repository.cancelPrivateCountdown()
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -78,7 +114,7 @@ fun BingoLiveEventsAndSocialScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "Phase 10 Retention, Tournaments & Community",
+                            text = "Missions, Private Rooms & Customizations",
                             fontSize = 11.sp,
                             color = Color(0xFFFFD700)
                         )
@@ -159,12 +195,7 @@ fun BingoLiveEventsAndSocialScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             when (selectedTabIndex) {
-                0 -> SeasonalEventCenterSection(
-                    events = seasonalEvents,
-                    profile = profile
-                )
-
-                1 -> MissionsHubSection(
+                0 -> MissionsHubSection(
                     dailyMissions = dailyMissions,
                     weeklyMissions = weeklyMissions,
                     onClaimMission = { id, isWeekly ->
@@ -176,52 +207,26 @@ fun BingoLiveEventsAndSocialScreen(
                     }
                 )
 
-                2 -> TournamentsHubSection(
-                    tournaments = tournaments,
-                    onRegister = { id ->
-                        val success = repository.registerForTournament(id)
-                        if (success) {
-                            AaaBingoAudioHaptics.playVictoryFanfare()
-                            Toast.makeText(context, "Successfully Registered for Tournament!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Insufficient Coins for Entry Fee!", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                )
-
-                3 -> PrivateRoomsSection(
+                1 -> PrivateRoomsSection(
                     currentRoom = privateRoom,
                     onCreateRoom = { repository.createPrivateRoom(4) },
                     onJoinRoom = { code ->
-                        val success = repository.joinPrivateRoomByCode(code)
-                        if (success) {
-                            Toast.makeText(context, "Joined Private Room $code!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Invalid Room Code or Room Full!", Toast.LENGTH_SHORT).show()
+                        repository.joinPrivateRoomByCode(code) { success ->
+                            if (success) {
+                                Toast.makeText(context, "Joined Private Room $code!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Invalid Room Code or Room Full!", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
                     onLeaveRoom = { repository.leavePrivateRoom() },
                     onStartMatch = { room ->
-                        onStartPrivateMatch(room)
+                        repository.startPrivateCountdown()
                     },
                     onKickPlayer = { uid -> repository.kickPlayerFromRoom(uid) }
                 )
 
-                4 -> SocialFriendsSection(
-                    friendsList = friendsList,
-                    pendingRequests = friendRequests,
-                    onSendRequest = { name ->
-                        val success = repository.sendFriendRequest(name)
-                        if (success) Toast.makeText(context, "Friend Request Sent to $name!", Toast.LENGTH_SHORT).show()
-                    },
-                    onAcceptRequest = { uid ->
-                        repository.acceptFriendRequest(uid)
-                        Toast.makeText(context, "Friend Request Accepted!", Toast.LENGTH_SHORT).show()
-                    },
-                    onRemoveFriend = { uid -> repository.removeFriend(uid) }
-                )
-
-                5 -> CosmeticsAndProfileSection(
+                2 -> CosmeticsAndProfileSection(
                     cosmetics = cosmetics,
                     profile = profile,
                     onEquipItem = { id ->
@@ -239,174 +244,6 @@ fun BingoLiveEventsAndSocialScreen(
     }
 }
 
-// ==========================================
-// 1. SEASONAL EVENT CENTER
-// ==========================================
-@Composable
-private fun SeasonalEventCenterSection(
-    events: List<SeasonalEvent>,
-    profile: PlayerProfileExpanded
-) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = profile.countryFlagEmoji, fontSize = 28.sp)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = profile.displayName,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "${profile.seasonRankName} • ${profile.tournamentRankName}",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFFFFD700)
-                                )
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF10B981), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "WIN RATE: ${profile.winRatePercent}%",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Text(
-                text = "ACTIVE SEASONAL LIVE EVENTS",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.LightGray
-            )
-        }
-
-        itemsIndexed(events) { index, event ->
-            val gradient = Brush.linearGradient(
-                colors = listOf(
-                    Color(android.graphics.Color.parseColor(event.bannerGradientColorsHex.getOrElse(0) { "#4C1D95" })),
-                    Color(android.graphics.Color.parseColor(event.bannerGradientColorsHex.getOrElse(1) { "#831843" })),
-                    Color(android.graphics.Color.parseColor(event.bannerGradientColorsHex.getOrElse(2) { "#F59E0B" }))
-                )
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(gradient)
-                        .padding(20.dp)
-                ) {
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = "LIVE EVENT • 6 DAYS LEFT",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFD700)
-                                )
-                            }
-
-                            Icon(
-                                imageVector = Icons.Default.Stars,
-                                contentDescription = null,
-                                tint = Color(0xFFFFD700),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = event.title,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-
-                        Text(
-                            text = event.subtitle,
-                            fontSize = 13.sp,
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(imageVector = Icons.Default.MonetizationOn, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "+${event.specialBonusCoins} Event Bonus",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-
-                            Text(
-                                text = "Exclusive: ${event.exclusiveRewardTitle}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFD700)
-                            )
-                        }
-                    }
-                }
-            }
-
-            if ((index + 1) % 4 == 0) {
-                com.playwin.ads.NativeManager.NativeAd(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                )
-            }
-        }
-    }
-}
 
 // ==========================================
 // 2. DAILY & WEEKLY MISSIONS HUB
@@ -564,160 +401,6 @@ private fun MissionsHubSection(
     }
 }
 
-// ==========================================
-// 3. TOURNAMENTS HUB
-// ==========================================
-@Composable
-private fun TournamentsHubSection(
-    tournaments: List<TournamentInfo>,
-    onRegister: (String) -> Unit
-) {
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        itemsIndexed(tournaments) { index, tourn ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Header Row: Title & Banner
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Surface(
-                                color = Color(0xFFFFD700).copy(alpha = 0.2f),
-                                shape = CircleShape,
-                                border = BorderStroke(1.dp, Color(0xFFFFD700))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.EmojiEvents,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFD700),
-                                    modifier = Modifier
-                                        .padding(8.dp)
-                                        .size(24.dp)
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = tourn.title,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = tourn.type.displayName,
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF38BDF8),
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Horizontal Details Bar: Prize Pool, Entry Cost & Time Remaining
-                    Surface(
-                        color = Color(0xFF1E293B),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(text = "PRIZE POOL", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                                Text(text = "🪙 ${tourn.prizePoolCoins}", fontSize = 13.sp, color = Color(0xFFFFD700), fontWeight = FontWeight.Black)
-                            }
-                            Column {
-                                Text(text = "ENTRY COST", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                                Text(text = "🪙 ${tourn.entryFeeCoins}", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Black)
-                            }
-                            Column {
-                                Text(text = "TIME REMAINING", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                                Text(text = "⏱️ Live Now", fontSize = 13.sp, color = Color(0xFF00E676), fontWeight = FontWeight.Black)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Horizontal Premium ENTER Button
-                    AaaGlossyButton(
-                        onClick = { onRegister(tourn.id) },
-                        enabled = !tourn.isRegistered,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        containerColor = if (tourn.isRegistered) Color(0xFF334155) else Color(0xFF0284C7),
-                        contentColor = Color.White,
-                        borderColor = Color(0xFF38BDF8)
-                    ) {
-                        Text(
-                            text = if (tourn.isRegistered) "REGISTERED" else "ENTER TOURNAMENT (${tourn.entryFeeCoins} COINS)",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "LEADERBOARD RANKINGS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Gray
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    tourn.leaderboard.take(4).forEach { p ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "#${p.rank}  ${p.displayName}",
-                                fontSize = 12.sp,
-                                color = if (p.displayName.contains("You")) Color(0xFFFFD700) else Color.White,
-                                fontWeight = if (p.displayName.contains("You")) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Text(
-                                text = "${p.score} pts",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF38BDF8)
-                            )
-                        }
-                    }
-                }
-            }
-
-            if ((index + 1) % 4 == 0) {
-                com.playwin.ads.NativeManager.NativeAd(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                )
-            }
-        }
-    }
-}
 
 // ==========================================
 // 4. PRIVATE ROOMS
@@ -870,60 +553,121 @@ private fun PrivateRoomsSection(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = "ROOM LOBBY PLAYERS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                        Spacer(modifier = Modifier.height(8.dp))
+                        if (currentRoom.status == "starting") {
+                            var secsLeft by remember { mutableStateOf(3) }
+                            LaunchedEffect(currentRoom.gameStartedAt) {
+                                while (true) {
+                                    val elapsed = System.currentTimeMillis() - currentRoom.gameStartedAt
+                                    val rem = 3 - (elapsed / 1000).toInt()
+                                    secsLeft = rem.coerceIn(0, 3)
+                                    if (rem <= 0) {
+                                        break
+                                    }
+                                    kotlinx.coroutines.delay(100)
+                                }
+                            }
 
-                        currentRoom.players.forEach { p ->
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 30.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
                             ) {
                                 Text(
-                                    text = "${p.displayName} ${if (p.isHost) "(HOST)" else ""}",
+                                    text = "GAME STARTING IN",
                                     fontSize = 14.sp,
-                                    color = if (p.isHost) Color(0xFFFFD700) else Color.White,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.LightGray
                                 )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = if (secsLeft > 0) secsLeft.toString() else "GO!",
+                                    fontSize = 64.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFFFFD700)
+                                )
+                            }
 
-                                if (!p.isHost) {
-                                    IconButton(onClick = { onKickPlayer(p.uid) }) {
-                                        Icon(imageVector = Icons.Default.Close, contentDescription = "Kick", tint = Color.Red, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                AaaGlossyButton(
+                                    onClick = onLeaveRoom,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp),
+                                    containerColor = Color(0xFFDC2626),
+                                    contentColor = Color.White,
+                                    borderColor = Color(0xFFEF4444)
+                                ) {
+                                    Text("Leave Room", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(text = "ROOM LOBBY PLAYERS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            currentRoom.players.forEach { p ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${p.displayName} ${if (p.isHost) "(HOST)" else ""}",
+                                        fontSize = 14.sp,
+                                        color = if (p.isHost) Color(0xFFFFD700) else Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+
+                                    if (!p.isHost) {
+                                        IconButton(onClick = { onKickPlayer(p.uid) }) {
+                                            Icon(imageVector = Icons.Default.Close, contentDescription = "Kick", tint = Color.Red, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+
+                            val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                            val isUserHost = currentRoom.hostUid == currentUserId || currentRoom.players.firstOrNull { it.uid == currentUserId }?.isHost == true
+                            val canStart = currentRoom.players.size >= 2
+
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                AaaGlossyButton(
+                                    onClick = onLeaveRoom,
+                                    modifier = Modifier
+                                        .weight(if (isUserHost) 1f else 2f)
+                                        .height(44.dp),
+                                    containerColor = Color(0xFFDC2626),
+                                    contentColor = Color.White,
+                                    borderColor = Color(0xFFEF4444)
+                                ) {
+                                    Text("Leave Room", fontWeight = FontWeight.Bold)
+                                }
+
+                                if (isUserHost) {
+                                    val isStarting = currentRoom.status == "starting" || currentRoom.isMatchStarted
+                                    AaaGlossyButton(
+                                        onClick = { onStartMatch(currentRoom) },
+                                        enabled = canStart && !isStarting,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp),
+                                        containerColor = Color(0xFF10B981),
+                                        contentColor = Color.White,
+                                        borderColor = Color(0xFF34D399)
+                                    ) {
+                                        Text(if (isStarting) "Starting..." else "Start Private Match", fontWeight = FontWeight.Black)
                                     }
                                 }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            AaaGlossyButton(
-                                onClick = onLeaveRoom,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp),
-                                containerColor = Color(0xFFDC2626),
-                                contentColor = Color.White,
-                                borderColor = Color(0xFFEF4444)
-                            ) {
-                                Text("Leave Room", fontWeight = FontWeight.Bold)
-                            }
-
-                            AaaGlossyButton(
-                                onClick = { onStartMatch(currentRoom) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp),
-                                containerColor = Color(0xFF10B981),
-                                contentColor = Color.White,
-                                borderColor = Color(0xFF34D399)
-                            ) {
-                                Text("Start Private Match", fontWeight = FontWeight.Black)
-                            }
-                        }
                     }
                 }
             }
@@ -931,132 +675,6 @@ private fun PrivateRoomsSection(
     }
 }
 
-// ==========================================
-// 5. SOCIAL FRIENDS
-// ==========================================
-@Composable
-private fun SocialFriendsSection(
-    friendsList: List<FriendProfile>,
-    pendingRequests: List<FriendProfile>,
-    onSendRequest: (String) -> Unit,
-    onAcceptRequest: (String) -> Unit,
-    onRemoveFriend: (String) -> Unit
-) {
-    var searchInput by remember { mutableStateOf("") }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = searchInput,
-                        onValueChange = { searchInput = it },
-                        placeholder = { Text("Search player name...") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    AaaGlossyButton(
-                        onClick = {
-                            onSendRequest(searchInput)
-                            searchInput = ""
-                        },
-                        modifier = Modifier.height(44.dp),
-                        containerColor = Color(0xFF0284C7),
-                        contentColor = Color.White
-                    ) {
-                        Text("Add", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        if (pendingRequests.isNotEmpty()) {
-            item {
-                Text(text = "PENDING FRIEND REQUESTS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD700))
-            }
-            items(pendingRequests) { req ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF312E81)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = req.displayName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Button(
-                            onClick = { onAcceptRequest(req.uid) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
-                        ) {
-                            Text("Accept")
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
-            Text(text = "FRIENDS LIST (${friendsList.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.LightGray)
-        }
-
-        items(friendsList) { friend ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(if (friend.isOnline) Color.Green else Color.Gray)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(text = friend.displayName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text(text = friend.statusText, fontSize = 11.sp, color = Color.Gray)
-                        }
-                    }
-
-                    IconButton(onClick = { onRemoveFriend(friend.uid) }) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Remove", tint = Color.Gray)
-                    }
-                }
-            }
-        }
-    }
-}
 
 // ==========================================
 // 6. COSMETICS & PROFILE

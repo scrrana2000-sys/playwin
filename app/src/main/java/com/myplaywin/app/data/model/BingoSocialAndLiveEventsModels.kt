@@ -10,13 +10,6 @@ enum class MissionPeriod {
     DAILY, WEEKLY
 }
 
-enum class TournamentType(val displayName: String, val badgeColorHex: String) {
-    HOURLY("Hourly Blitz", "#0284C7"),
-    DAILY("Daily Cup", "#16A34A"),
-    WEEKEND("Weekend Clash", "#9333EA"),
-    GLOBAL("Global Championship", "#D97706")
-}
-
 enum class CosmeticCategory(val title: String) {
     AVATAR_FRAME("Avatar Frames"),
     BOARD_SKIN("Bingo Board Skins"),
@@ -40,53 +33,24 @@ data class DailyMission(
 )
 
 @IgnoreExtraProperties
-data class SeasonalEvent(
-    val id: String = "",
-    val title: String = "",
-    val subtitle: String = "",
-    val themeKey: String = "DIWALI_FESTIVAL", // "DIWALI", "SUMMER", "WINTER", "HALLOWEEN"
-    val bannerGradientColorsHex: List<String> = listOf("#4C1D95", "#831843", "#F59E0B"),
-    val startTime: Long = System.currentTimeMillis(),
-    val endTime: Long = System.currentTimeMillis() + (7 * 24 * 3600 * 1000L),
-    val isLive: Boolean = true,
-    val specialBonusCoins: Int = 500,
-    val exclusiveRewardTitle: String = "Golden Diwali Avatar Frame"
-)
-
-@IgnoreExtraProperties
-data class TournamentParticipant(
-    val rank: Int = 1,
-    val playerUid: String = "",
-    val displayName: String = "Player",
-    val avatarUrl: String = "",
-    val score: Int = 0,
-    val matchesWon: Int = 0
-)
-
-@IgnoreExtraProperties
-data class TournamentInfo(
-    val id: String = "",
-    val title: String = "",
-    val type: TournamentType = TournamentType.DAILY,
-    val entryFeeCoins: Int = 100,
-    val prizePoolCoins: Int = 5000,
-    val startTime: Long = System.currentTimeMillis(),
-    val endTime: Long = System.currentTimeMillis() + (24 * 3600 * 1000L),
-    val maxParticipants: Int = 100,
-    val registeredCount: Int = 42,
-    val isRegistered: Boolean = false,
-    val userRank: Int = 5,
-    val userScore: Int = 1250,
-    val leaderboard: List<TournamentParticipant> = emptyList()
-)
-
-@IgnoreExtraProperties
 data class PrivateRoomPlayer(
     val uid: String = "",
     val displayName: String = "Player",
     val avatarUrl: String = "",
     val isHost: Boolean = false,
     val isReady: Boolean = true
+)
+
+@IgnoreExtraProperties
+data class GameSession(
+    val gameId: String = "",
+    val roomId: String = "",
+    val players: List<String> = emptyList(),
+    val bingoBoards: Map<String, List<Int>> = emptyMap(),
+    val calledNumbers: List<Int> = emptyList(),
+    val seed: Long = 0L,
+    val currentTurn: String = "",
+    val gameState: String = "playing"
 )
 
 @IgnoreExtraProperties
@@ -97,20 +61,11 @@ data class PrivateRoomDetails(
     val maxPlayers: Int = 4,
     val currentPlayersCount: Int = 1,
     val isMatchStarted: Boolean = false,
-    val players: List<PrivateRoomPlayer> = emptyList()
-)
-
-@IgnoreExtraProperties
-data class FriendProfile(
-    val uid: String = "",
-    val displayName: String = "PlayWin Gamer",
-    val avatarUrl: String = "",
-    val avatarFrame: String = "DEFAULT_GOLD",
-    val level: Int = 5,
-    val isOnline: Boolean = true,
-    val statusText: String = "Ready for Bingo!",
-    val totalWins: Int = 24,
-    val isFavorite: Boolean = false
+    val players: List<PrivateRoomPlayer> = emptyList(),
+    val status: String = "waiting",
+    val seed: Long = 0L,
+    val gameStartedAt: Long = 0L,
+    val gameSession: GameSession? = null
 )
 
 @IgnoreExtraProperties

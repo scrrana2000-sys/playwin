@@ -35,24 +35,9 @@ class BingoLiveEventsAndSocialRepository(
     private val _weeklyMissions = MutableStateFlow<List<DailyMission>>(loadDefaultWeeklyMissions())
     val weeklyMissions: StateFlow<List<DailyMission>> = _weeklyMissions.asStateFlow()
 
-    // 2. Seasonal Events State
-    private val _activeSeasonalEvents = MutableStateFlow<List<SeasonalEvent>>(loadDefaultSeasonalEvents())
-    val activeSeasonalEvents: StateFlow<List<SeasonalEvent>> = _activeSeasonalEvents.asStateFlow()
-
-    // 3. Tournaments State
-    private val _tournaments = MutableStateFlow<List<TournamentInfo>>(loadDefaultTournaments())
-    val tournaments: StateFlow<List<TournamentInfo>> = _tournaments.asStateFlow()
-
     // 4. Private Room State
     private val _currentPrivateRoom = MutableStateFlow<PrivateRoomDetails?>(null)
     val currentPrivateRoom: StateFlow<PrivateRoomDetails?> = _currentPrivateRoom.asStateFlow()
-
-    // 5. Friends State
-    private val _friendsList = MutableStateFlow<List<FriendProfile>>(loadDefaultFriendsList())
-    val friendsList: StateFlow<List<FriendProfile>> = _friendsList.asStateFlow()
-
-    private val _pendingFriendRequests = MutableStateFlow<List<FriendProfile>>(loadDefaultFriendRequests())
-    val pendingFriendRequests: StateFlow<List<FriendProfile>> = _pendingFriendRequests.asStateFlow()
 
     // 6. Cosmetics & Expanded Profile
     private val _cosmetics = MutableStateFlow<List<CosmeticItem>>(loadDefaultCosmetics())
@@ -62,7 +47,7 @@ class BingoLiveEventsAndSocialRepository(
     val expandedProfile: StateFlow<PlayerProfileExpanded> = _expandedProfile.asStateFlow()
 
     init {
-        listenToRemoteMissionsAndEvents()
+        // Essential initialization
     }
 
     // ==========================================
@@ -112,35 +97,29 @@ class BingoLiveEventsAndSocialRepository(
     }
 
     // ==========================================
-    // 2. TOURNAMENTS ENGINE
-    // ==========================================
-    fun registerForTournament(tournamentId: String): Boolean {
-        val tournament = _tournaments.value.find { it.id == tournamentId } ?: return false
-        if (tournament.isRegistered) return true
-
-        val currentCoins = progressionRepository.progression.value.currentCoins
-        if (currentCoins < tournament.entryFeeCoins) return false
-
-        // Deduct entry fee and register
-        progressionRepository.addRewardCoinsAndXp(-tournament.entryFeeCoins, 50)
-
-        val updated = _tournaments.value.map {
-            if (it.id == tournamentId) {
-                it.copy(
-                    isRegistered = true,
-                    registeredCount = it.registeredCount + 1,
-                    userRank = (1..10).random(),
-                    userScore = 500
-                )
-            } else it
-        }
-        _tournaments.value = updated
-        return true
-    }
-
-    // ==========================================
     // 3. PRIVATE ROOM ENGINE
     // ==========================================
+    private var privateRoomListener: ValueEventListener? = null
+
+    fun listenToPrivateRoom(code: String) {
+        privateRoomListener?.let {
+            database.child("private_rooms").child(code).removeEventListener(it)
+        }
+        privateRoomListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val room = snapshot.getValue(PrivateRoomDetails::class.java)
+                if (room == null) {
+                    _currentPrivateRoom.value = null
+                    return
+                }
+                _currentPrivateRoom.value = room
+            }
+
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        database.child("private_rooms").child(code).addValueEventListener(privateRoomListener!!)
+    }
+
     fun createPrivateRoom(maxPlayers: Int = 4): PrivateRoomDetails {
         val currentUser = auth.currentUser
         val hostName = currentUser?.displayName ?: "PlayWin Host"
@@ -168,88 +147,181 @@ class BingoLiveEventsAndSocialRepository(
 
         try {
             database.child("private_rooms").child(code).setValue(room)
+            database.child("private_rooms").child(code).onDisconnect().removeValue()
         } catch (e: Exception) {
             Log.e("LiveEventsRepo", "Firebase private room sync failed: ${e.message}")
         }
 
+        listenToPrivateRoom(code)
         return room
     }
 
-    fun joinPrivateRoomByCode(code: String): Boolean {
+    fun joinPrivateRoomByCode(code: String, onComplete: (Boolean) -> Unit) {
         val cleanCode = code.uppercase().trim()
-        if (cleanCode.length != 6) return false
+        if (cleanCode.length != 6) {
+            onComplete(false)
+            return
+        }
 
         val currentUser = auth.currentUser
         val userUid = currentUser?.uid ?: "USER_${System.currentTimeMillis()}"
         val userName = currentUser?.displayName ?: "Guest Player"
 
-        val current = _currentPrivateRoom.value
-        val existingPlayers = current?.players ?: listOf(
-            PrivateRoomPlayer(uid = "HOST_101", displayName = "Room Host", isHost = true)
-        )
+        database.child("private_rooms").child(cleanCode).get().addOnSuccessListener { snapshot ->
+            val room = snapshot.getValue(PrivateRoomDetails::class.java)
+            if (room != null && !room.isMatchStarted && room.players.size < room.maxPlayers) {
+                if (room.players.any { it.uid == userUid }) {
+                    listenToPrivateRoom(cleanCode)
+                    onComplete(true)
+                    return@addOnSuccessListener
+                }
 
-        if (existingPlayers.any { it.uid == userUid }) return true
-        if (existingPlayers.size >= 4) return false
+                val newPlayer = PrivateRoomPlayer(
+                    uid = userUid,
+                    displayName = userName,
+                    avatarUrl = "",
+                    isHost = false,
+                    isReady = true
+                )
+                val updatedPlayers = room.players + newPlayer
+                val updatedRoom = room.copy(
+                    players = updatedPlayers,
+                    currentPlayersCount = updatedPlayers.size
+                )
 
-        val newPlayer = PrivateRoomPlayer(uid = userUid, displayName = userName, isHost = false, isReady = true)
-        val updatedPlayers = existingPlayers + newPlayer
-
-        val updatedRoom = PrivateRoomDetails(
-            roomCode = cleanCode,
-            hostUid = current?.hostUid ?: "HOST_101",
-            hostName = current?.hostName ?: "Room Host",
-            maxPlayers = 4,
-            currentPlayersCount = updatedPlayers.size,
-            isMatchStarted = false,
-            players = updatedPlayers
-        )
-        _currentPrivateRoom.value = updatedRoom
-        return true
+                database.child("private_rooms").child(cleanCode).setValue(updatedRoom).addOnSuccessListener {
+                    listenToPrivateRoom(cleanCode)
+                    onComplete(true)
+                }.addOnFailureListener {
+                    onComplete(false)
+                }
+            } else {
+                onComplete(false)
+            }
+        }.addOnFailureListener {
+            onComplete(false)
+        }
     }
 
     fun leavePrivateRoom() {
+        val current = _currentPrivateRoom.value ?: return
+        val code = current.roomCode
+        val userUid = auth.currentUser?.uid ?: ""
+
+        privateRoomListener?.let {
+            database.child("private_rooms").child(code).removeEventListener(it)
+            privateRoomListener = null
+        }
         _currentPrivateRoom.value = null
+
+        val updatedPlayers = current.players.filter { it.uid != userUid }
+        if (updatedPlayers.isEmpty() || current.hostUid == userUid) {
+            database.child("private_rooms").child(code).removeValue()
+        } else {
+            database.child("private_rooms").child(code).child("players").setValue(updatedPlayers)
+            database.child("private_rooms").child(code).child("currentPlayersCount").setValue(updatedPlayers.size)
+        }
     }
 
     fun kickPlayerFromRoom(playerUid: String) {
         val current = _currentPrivateRoom.value ?: return
+        val code = current.roomCode
         val updatedPlayers = current.players.filter { it.uid != playerUid }
-        _currentPrivateRoom.value = current.copy(
-            players = updatedPlayers,
-            currentPlayersCount = updatedPlayers.size
+        database.child("private_rooms").child(code).child("players").setValue(updatedPlayers)
+        database.child("private_rooms").child(code).child("currentPlayersCount").setValue(updatedPlayers.size)
+    }
+
+    fun startPrivateCountdown() {
+        val current = _currentPrivateRoom.value ?: return
+        if (current.players.size < 2) return
+        val code = current.roomCode
+        val seed = kotlin.random.Random.nextLong()
+        val startTime = System.currentTimeMillis()
+        Log.d("BINGO_ONLINE", "START_PRIVATE_CLICKED")
+        val updates = mapOf(
+            "status" to "starting",
+            "seed" to seed,
+            "gameStartedAt" to startTime
         )
+        database.child("private_rooms").child(code).updateChildren(updates).addOnSuccessListener {
+            Log.d("BINGO_ONLINE", "ROOM_STATUS_UPDATED: status = starting")
+            Log.d("BINGO_ONLINE", "COUNTDOWN_STARTED")
+        }
+    }
+
+    private fun generateCardForSession(seed: Long): List<Int> {
+        val random = kotlin.random.Random(seed)
+        val cols = listOf(
+            (1..15).shuffled(random).take(5),
+            (16..30).shuffled(random).take(5),
+            (31..45).shuffled(random).take(5),
+            (46..60).shuffled(random).take(5),
+            (61..75).shuffled(random).take(5)
+        )
+        val card = MutableList(25) { 0 }
+        for (r in 0..4) {
+            for (c in 0..4) {
+                card[r * 5 + c] = if (r == 2 && c == 2) 0 else cols[c][r]
+            }
+        }
+        return card
+    }
+
+    fun completePrivateStart() {
+        val current = _currentPrivateRoom.value ?: return
+        val code = current.roomCode
+        android.util.Log.d("BINGO_ONLINE", "CREATING_GAME_SESSION")
+        
+        val gameId = "game_${code}_${System.currentTimeMillis()}"
+        val playersList = current.players.map { it.uid }
+        val seed = current.seed
+        
+        val boards = current.players.associate { player ->
+            player.uid to generateCardForSession(seed + player.uid.hashCode())
+        }
+        
+        val session = GameSession(
+            gameId = gameId,
+            roomId = code,
+            players = playersList,
+            bingoBoards = boards,
+            calledNumbers = emptyList(),
+            seed = seed,
+            currentTurn = current.hostUid,
+            gameState = "playing"
+        )
+        
+        android.util.Log.d("BINGO_ONLINE", "GAME_SESSION_CREATED")
+        
+        val updates = mapOf(
+            "status" to "playing",
+            "isMatchStarted" to true,
+            "gameSession" to session
+        )
+        
+        database.child("private_rooms").child(code).updateChildren(updates).addOnSuccessListener {
+            android.util.Log.d("BINGO_ONLINE", "GAME_SESSION_SAVED")
+            android.util.Log.d("BINGO_ONLINE", "GAME_CREATED")
+        }.addOnFailureListener { e ->
+            android.util.Log.e("BINGO_ONLINE", "ERROR: Game Session Creation Failed: ${e.message}")
+        }
+    }
+
+    fun cancelPrivateCountdown() {
+        val current = _currentPrivateRoom.value ?: return
+        val code = current.roomCode
+        val updates = mapOf(
+            "status" to "waiting",
+            "isMatchStarted" to false,
+            "seed" to 0L,
+            "gameStartedAt" to 0L
+        )
+        database.child("private_rooms").child(code).updateChildren(updates)
     }
 
     private fun generateRoomCode(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         return (1..6).map { chars.random() }.joinToString("")
-    }
-
-    // ==========================================
-    // 4. FRIEND SYSTEM ENGINE
-    // ==========================================
-    fun sendFriendRequest(displayName: String): Boolean {
-        if (displayName.isBlank()) return false
-        val newFriend = FriendProfile(
-            uid = "FRIEND_${System.currentTimeMillis()}",
-            displayName = displayName,
-            isOnline = true,
-            statusText = "Playing Bingo",
-            totalWins = (10..50).random(),
-            level = (3..15).random()
-        )
-        _friendsList.value = listOf(newFriend) + _friendsList.value
-        return true
-    }
-
-    fun acceptFriendRequest(uid: String) {
-        val request = _pendingFriendRequests.value.find { it.uid == uid } ?: return
-        _pendingFriendRequests.value = _pendingFriendRequests.value.filter { it.uid != uid }
-        _friendsList.value = listOf(request.copy(isOnline = true)) + _friendsList.value
-    }
-
-    fun removeFriend(uid: String) {
-        _friendsList.value = _friendsList.value.filter { it.uid != uid }
     }
 
     // ==========================================
@@ -286,27 +358,6 @@ class BingoLiveEventsAndSocialRepository(
     // ==========================================
     // REMOTE SYNC & DEFAULTS
     // ==========================================
-    private fun listenToRemoteMissionsAndEvents() {
-        database.child("seasonal_events").addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                if (snapshot.exists()) {
-                    val eventsList = mutableListOf<SeasonalEvent>()
-                    for (child in snapshot.children) {
-                        val event = child.getValue(SeasonalEvent::class.java)
-                        if (event != null) eventsList.add(event)
-                    }
-                    if (eventsList.isNotEmpty()) {
-                        _activeSeasonalEvents.value = eventsList
-                    }
-                }
-            }
-
-            override fun onCancelled(error: DatabaseError) {
-                // Keep default seasonal events
-            }
-        })
-    }
-
     private fun loadDefaultDailyMissions(): List<DailyMission> {
         return listOf(
             DailyMission(id = "DM_1", title = "Play 1 Match", description = "Play 1 match in any game mode", targetProgress = 1, currentProgress = 0, coinReward = 2, xpReward = 100),
@@ -320,80 +371,6 @@ class BingoLiveEventsAndSocialRepository(
         return listOf(
             DailyMission(id = "WM_1", title = "Win 10 Matches", description = "Win 10 matches this week", targetProgress = 10, currentProgress = 0, coinReward = 15, xpReward = 1000, period = MissionPeriod.WEEKLY),
             DailyMission(id = "WM_2", title = "Play 25 Matches", description = "Play 25 matches this week", targetProgress = 25, currentProgress = 0, coinReward = 20, xpReward = 1500, period = MissionPeriod.WEEKLY)
-        )
-    }
-
-    private fun loadDefaultSeasonalEvents(): List<SeasonalEvent> {
-        return listOf(
-            SeasonalEvent(
-                id = "EVT_DIWALI_2026",
-                title = "Festival of Lights Special",
-                subtitle = "Collect Golden Lamp Badges & 2x XP Multiplier!",
-                themeKey = "DIWALI",
-                bannerGradientColorsHex = listOf("#7C2D12", "#C2410C", "#F59E0B"),
-                specialBonusCoins = 1000,
-                exclusiveRewardTitle = "Golden Sparkle Avatar Frame"
-            ),
-            SeasonalEvent(
-                id = "EVT_GLOBAL_CHAMP_2026",
-                title = "Global PlayWin Championship",
-                subtitle = "Compete for 50,000 Coin Prize Pool & Diamond Trophy",
-                themeKey = "GLOBAL",
-                bannerGradientColorsHex = listOf("#1E1B4B", "#312E81", "#6366F1"),
-                specialBonusCoins = 2500,
-                exclusiveRewardTitle = "Global Champion Crest"
-            )
-        )
-    }
-
-    private fun loadDefaultTournaments(): List<TournamentInfo> {
-        return listOf(
-            TournamentInfo(
-                id = "TOURN_HOURLY_1",
-                title = "Hourly Blitz Cup",
-                type = TournamentType.HOURLY,
-                entryFeeCoins = 100,
-                prizePoolCoins = 2500,
-                registeredCount = 68,
-                userRank = 4,
-                userScore = 890,
-                leaderboard = listOf(
-                    TournamentParticipant(rank = 1, displayName = "Aarav_Pro", score = 1420, matchesWon = 5),
-                    TournamentParticipant(rank = 2, displayName = "Priya_Bingo", score = 1280, matchesWon = 4),
-                    TournamentParticipant(rank = 3, displayName = "Rahul_King", score = 1050, matchesWon = 4),
-                    TournamentParticipant(rank = 4, displayName = "You (PlayWin)", score = 890, matchesWon = 3),
-                    TournamentParticipant(rank = 5, displayName = "Vikram_Win", score = 760, matchesWon = 2)
-                )
-            ),
-            TournamentInfo(
-                id = "TOURN_DAILY_MASTER",
-                title = "Daily Master League",
-                type = TournamentType.DAILY,
-                entryFeeCoins = 500,
-                prizePoolCoins = 15000,
-                registeredCount = 184,
-                userRank = 12,
-                userScore = 2150,
-                leaderboard = listOf(
-                    TournamentParticipant(rank = 1, displayName = "Shadow_Legend", score = 4800, matchesWon = 16),
-                    TournamentParticipant(rank = 2, displayName = "Queen_Of_Bingo", score = 4250, matchesWon = 14),
-                    TournamentParticipant(rank = 3, displayName = "Dev_Star", score = 3900, matchesWon = 12)
-                )
-            )
-        )
-    }
-
-    private fun loadDefaultFriendsList(): List<FriendProfile> {
-        return listOf(
-            FriendProfile(uid = "FR_1", displayName = "Rohan Sharma", isOnline = true, statusText = "In Online Lobby", totalWins = 38, level = 8, isFavorite = true),
-            FriendProfile(uid = "FR_2", displayName = "Ananya Roy", isOnline = true, statusText = "Playing Hard AI", totalWins = 52, level = 12, isFavorite = true),
-            FriendProfile(uid = "FR_3", displayName = "Kabir Singh", isOnline = false, statusText = "Offline 2h ago", totalWins = 19, level = 4)
-        )
-    }
-
-    private fun loadDefaultFriendRequests(): List<FriendProfile> {
-        return listOf(
-            FriendProfile(uid = "REQ_1", displayName = "Siddharth V.", isOnline = true, statusText = "Wants to add you", totalWins = 29, level = 6)
         )
     }
 

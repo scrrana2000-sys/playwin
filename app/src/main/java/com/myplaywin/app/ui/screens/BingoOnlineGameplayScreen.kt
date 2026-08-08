@@ -36,9 +36,12 @@ import com.myplaywin.app.ui.components.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 
 /**
- * Phase 7: Real-Time Online Synchronized Gameplay Screen
+ * Phase 7: Real-Time Online Synchronized Gameplay Screen - 100% Visual Parity with AI Mode
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,78 +57,171 @@ fun BingoOnlineGameplayScreen(
     val pingMs by engine.networkLatencyMs.collectAsState()
     val antiCheatAlert by engine.antiCheatAlert.collectAsState()
 
-    // Generate local player board generated deterministically or initialized
-    val localBoard = remember(currentRoom?.roomId) {
-        generateBingoBoardForSeed(System.currentTimeMillis())
-    }
-
-    var boardState by remember { mutableStateOf(localBoard) }
-    var completedLines by remember { mutableStateOf<Set<BingoLineType>>(emptySet()) }
-    var notificationMsg by remember { mutableStateOf<String?>(null) }
-
-    val opponent = currentRoom?.player2
-
-    val progressionRepo = remember { com.myplaywin.app.data.repository.BingoProgressionRepository(context) }
-    var isResultProcessed by remember { mutableStateOf(false) }
-    var showRewardPopup by remember { mutableStateOf(false) }
-
-    LaunchedEffect(currentRoom) {
-        val room = currentRoom ?: return@LaunchedEffect
-        val localPlayerObj = room.players[engine.localPlayerUid]
-        if (localPlayerObj != null && localPlayerObj.card.isNotEmpty() && localPlayerObj.marked.isNotEmpty()) {
-            val reconstructedBoard = listsToBoard(localPlayerObj.card, localPlayerObj.marked)
-            boardState = reconstructedBoard
-            completedLines = evaluateLinesLocal(reconstructedBoard)
-        }
-    }
-
-    LaunchedEffect(matchStatus) {
-        if (!isResultProcessed) {
-            when (matchStatus) {
-                BingoMatchStatus.VICTORY, BingoMatchStatus.DEFEAT -> {
-                    showRewardPopup = true
-                }
-                else -> {}
+    // Default fallback board
+    val defaultBoard = remember {
+        List(5) { r ->
+            List(5) { c ->
+                val isFree = (r == 2 && c == 2)
+                val letters = listOf("B", "I", "N", "G", "O")
+                BingoTile(
+                    row = r,
+                    col = c,
+                    number = 0,
+                    columnLetter = letters[c],
+                    isFreeTile = isFree,
+                    isMarked = isFree
+                )
             }
         }
     }
 
+    var boardState by remember { mutableStateOf(defaultBoard) }
+    var completedLines by remember { mutableStateOf<Set<BingoLineType>>(emptySet()) }
+    var notificationMsg by remember { mutableStateOf<String?>(null) }
+    var matchTimeSeconds by remember { mutableStateOf(0) }
+
+    val opponent = currentRoom?.players?.values?.firstOrNull { it.uid != engine.localPlayerUid }
+
+    var disconnectTimer by remember { mutableStateOf(30) }
+    val isOpponentDisconnected = opponent != null && !opponent.connected && currentRoom?.status == "playing"
+
+    LaunchedEffect(isOpponentDisconnected) {
+        if (isOpponentDisconnected) {
+            disconnectTimer = 30
+            while (disconnectTimer > 0) {
+                kotlinx.coroutines.delay(1000)
+                disconnectTimer--
+            }
+            engine.endMatchDueToOpponentDisconnect()
+        }
+    }
+
+    val progressionRepo = remember { com.myplaywin.app.data.repository.BingoProgressionRepository(context) }
+    var isResultProcessed by remember { mutableStateOf(false) }
+
+    // Reconstruct board when room updates
+    LaunchedEffect(currentRoom) {
+        val room = currentRoom ?: return@LaunchedEffect
+        val localPlayerObj = room.players[engine.localPlayerUid]
+        if (localPlayerObj != null && localPlayerObj.card.isNotEmpty()) {
+            val reconstructedBoard = listsToBoard(localPlayerObj.card, room.calledNumbers)
+            boardState = reconstructedBoard
+            val localLines = evaluateLinesLocal(reconstructedBoard)
+            completedLines = localLines
+
+            // Sync progress back to Firebase
+            val localMarkedCount = reconstructedBoard.flatten().count { it.isMarked }
+            if (localPlayerObj.completedLinesCount != localLines.size || localPlayerObj.markedCount != localMarkedCount) {
+                engine.syncPlayerProgress(localLines.size, localMarkedCount)
+            }
+        }
+    }
+
+    // Process victory / defeat automatically
+    LaunchedEffect(matchStatus) {
+        if (matchStatus == BingoMatchStatus.PLAYING) {
+            isResultProcessed = false
+        } else if (!isResultProcessed && (matchStatus == BingoMatchStatus.VICTORY || matchStatus == BingoMatchStatus.DEFEAT)) {
+            isResultProcessed = true
+            val baseCoins = if (matchStatus == BingoMatchStatus.VICTORY) 12 else 3
+            progressionRepo.processMatchResult(
+                matchType = "ONLINE_1V1",
+                difficulty = "RANKED",
+                opponentName = opponent?.displayName ?: "Online Opponent",
+                result = if (matchStatus == BingoMatchStatus.VICTORY) "VICTORY" else "DEFEAT",
+                durationSeconds = matchTimeSeconds.coerceAtLeast(10),
+                numbersCalledCount = currentRoom?.calledNumbersHistory?.size ?: 12,
+                coinRewardOverride = baseCoins
+            )
+            if (matchStatus == BingoMatchStatus.VICTORY) {
+                AaaBingoAudioHaptics.playVictoryFanfare()
+            } else {
+                AaaBingoAudioHaptics.playDefeatSound()
+            }
+        }
+    }
+
+    // Increment Match Timer
+    LaunchedEffect(matchStatus) {
+        if (matchStatus == BingoMatchStatus.PLAYING) {
+            matchTimeSeconds = 0
+            while (true) {
+                delay(1000)
+                matchTimeSeconds++
+            }
+        }
+    }
+
+    val activeCalledNumber = currentRoom?.activeCalledNumber
+
+    // Real-Time Board Sound Cue
+    val markedCount = remember { derivedStateOf { boardState.flatten().count { it.isMarked } } }
+    var lastMarkedCount by remember { mutableStateOf(1) }
+    LaunchedEffect(markedCount.value) {
+        if (markedCount.value > lastMarkedCount) {
+            AaaBingoAudioHaptics.playTileDaubSound()
+            lastMarkedCount = markedCount.value
+        }
+    }
+
+    // Glow Animation
+    val infiniteTransition = rememberInfiniteTransition(label = "OnlineGlow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "GlowAlpha"
+    )
+
+    var showExitConfirmDialog by remember { mutableStateOf(false) }
+    var showOpponentBoardPreview by remember { mutableStateOf(false) }
+
     Scaffold(
+        containerColor = Color(0xFF090616),
         topBar = {
             TopAppBar(
                 title = {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "ONLINE MATCH",
-                            color = Color(0xFFFFD700),
+                            text = "BINGO ONLINE",
+                            color = Color.White,
                             fontWeight = FontWeight.Black,
-                            fontSize = 16.sp
+                            fontSize = 22.sp,
+                            letterSpacing = 2.sp,
+                            style = LocalTextStyle.current.copy(
+                                shadow = Shadow(
+                                    color = Color(0xFFFFD700).copy(alpha = glowAlpha),
+                                    blurRadius = 16f
+                                )
+                            )
                         )
-                        // Live Signal Dot
+                        Spacer(modifier = Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
                                 .background(Color(0xFF00E676), CircleShape)
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "${pingMs}ms",
                             color = Color(0xFF80D8FF),
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        AaaBingoAudioHaptics.playClickSound()
-                        engine.cancelMatchmaking()
-                        onBackToLobby()
-                    }) {
+                    IconButton(onClick = { showExitConfirmDialog = true }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Leave",
+                            contentDescription = "Exit Match",
                             tint = Color.White
                         )
                     }
@@ -135,11 +231,13 @@ fun BingoOnlineGameplayScreen(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Simulate Reconnect",
-                            tint = Color(0xFF00E5FF)
+                            tint = Color(0xFFFFD700)
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0D031B))
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF130D2B)
+                )
             )
         }
     ) { innerPadding ->
@@ -148,238 +246,74 @@ fun BingoOnlineGameplayScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // 1. REAL-TIME OPPONENT CARD
-                AaaGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    borderColor = Color(0xFFE040FB),
-                    glowColor = Color(0xFF7C4DFF)
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF3F2B75))
-                                    .border(1.5.dp, Color(0xFFE040FB), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(text = "🤖", fontSize = 20.sp)
-                            }
+                    // 1. ADMOB BANNER AD
+                    com.playwin.ads.BannerManager.BannerAd(
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                            Column {
-                                Text(
-                                    text = opponent?.displayName ?: "Matching...",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Level ${opponent?.level ?: 1} • Ping: ${opponent?.pingMs ?: 35}ms",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-
-                        // Opponent Live Game Progress Badges
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Surface(
-                                color = Color(0xFF7C4DFF).copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFF7C4DFF))
-                            ) {
-                                Text(
-                                    text = "Daubs: ${opponent?.markedCount ?: 0}",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                )
-                            }
-
-                            Surface(
-                                color = Color(0xFFFFD700).copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0xFFFFD700))
-                            ) {
-                                Text(
-                                    text = "Lines: ${opponent?.completedLinesCount ?: 0}",
-                                    color = Color(0xFFFFD700),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                )
-                            }
+                    // Find matching tile definition for board matching hint
+                    val matchingTile = remember(activeCalledNumber, boardState) {
+                        activeCalledNumber?.let { num ->
+                            boardState.flatten().find { it.number == num && !it.isMarked && !it.isFreeTile }
                         }
                     }
-                }
+                    val matchingTileKey = matchingTile?.let { it.row * 5 + it.col }
+                    val shakingTileKey = null // Online tiles don't shake on opponent calls
 
-                // 2. SERVER CALLED NUMBER BALL DISPLAY & TURN STATUS
-                val isMyTurn = currentRoom?.game?.currentTurn == engine.localPlayerUid
-                val activeNum = currentRoom?.activeCalledNumber
-                val activeLet = currentRoom?.activeLetter ?: ""
-
-                AaaGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    borderColor = if (isMyTurn) Color(0xFFFFD700) else Color(0xFF00E5FF),
-                    glowColor = if (isMyTurn) Color(0xFFFFA000) else Color(0xFF0288D1)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            if (activeNum != null) {
-                                Aaa3dBingoBall(
-                                    letter = activeLet,
-                                    number = activeNum,
-                                    modifier = Modifier.size(68.dp)
-                                )
+                    // 2. 5x5 BINGO BOARD GRID (100% Reuse of Visual Components)
+                    BingoBoardGrid(
+                        boardTiles = boardState,
+                        completedLines = completedLines,
+                        shakingTileKey = shakingTileKey,
+                        matchingTileKey = matchingTileKey,
+                        glowAlpha = glowAlpha,
+                        onTileClick = { tile ->
+                            val movePayload = BingoMovePayload(
+                                roomId = currentRoom?.roomId ?: "",
+                                playerUid = engine.localPlayerUid,
+                                tileRow = tile.row,
+                                tileCol = tile.col,
+                                tileNumber = tile.number,
+                                moveType = "DAUB"
+                            )
+                            val result = engine.submitMove(movePayload, boardState)
+                            if (result.isValid) {
+                                AaaBingoAudioHaptics.playTileDaubSound()
                             } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(68.dp)
-                                        .background(Color(0xFF2C1548), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(text = "⏳", fontSize = 28.sp)
-                                }
-                            }
-
-                            Column {
-                                Text(
-                                    text = if (isMyTurn) "👉 YOUR TURN TO CALL" else "⏳ OPPONENT'S TURN",
-                                    color = if (isMyTurn) Color(0xFFFFD700) else Color(0xFF80D8FF),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 12.sp,
-                                    letterSpacing = 1.sp
-                                )
-                                Text(
-                                    text = if (isMyTurn) "Tap an unmarked tile to CALL!" else "Waiting for ${opponent?.displayName ?: "opponent"}...",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
+                                AaaBingoAudioHaptics.playWrongTileSound()
                             }
                         }
+                    )
 
-                        // Recent Called Numbers History
-                        val calledHistory = currentRoom?.calledNumbersHistory ?: emptyList()
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            calledHistory.takeLast(3).reversed().forEach { num ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .background(Color(0xFF3F2B75), CircleShape)
-                                        .border(1.dp, Color(0xFF7C4DFF), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(text = "$num", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
+                    // 3. SHARED TURN SYNCHRONIZATION BAR
+                    val isMyTurn = currentRoom?.game?.currentTurn == engine.localPlayerUid
+                    val turnStatusMessage = if (isMyTurn) "👉 YOUR TURN! Tap any uncalled number" else "⏳ OPPONENT'S TURN. Wait for call..."
+                    BingoTurnSynchronizationHeader(
+                        isPlayerTurn = isMyTurn,
+                        turnStatusMessage = turnStatusMessage,
+                        playerCompletedLinesCount = completedLines.size,
+                        aiCompletedLinesCount = opponent?.completedLinesCount ?: 0,
+                        aiName = opponent?.displayName ?: "Opponent"
+                    )
 
-                // 3. SYNCHRONIZED BINGO BOARD (5x5 GRID)
-                AaaGlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    borderColor = Color(0xFF7C4DFF)
-                ) {
-                    // Header B-I-N-G-O Letters
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        listOf("B", "I", "N", "G", "O").forEach { letter ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(2.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = letter,
-                                    color = Color(0xFFFFD700),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 18.sp
-                                )
-                            }
-                        }
-                    }
+                    // 4. LIVE GOAL & REAL-TIME PROGRESS INDICATOR
+                    BingoGoalAndProgressHeader(
+                        completedLines = completedLines
+                    )
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // 5x5 Grid
-                    for (r in 0..4) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            for (c in 0..4) {
-                                val tile = boardState[r][c]
-                                val isWinning = isTileInWinningLine(tile.row, tile.col, completedLines)
-                                val isMatching = !tile.isMarked && currentRoom?.calledNumbersHistory?.contains(tile.number) == true
-
-                                AaaBingoTile(
-                                    number = tile.number,
-                                    isFreeTile = tile.isFreeTile,
-                                    isMarked = tile.isMarked,
-                                    isWinningTile = isWinning,
-                                    isMatchingCalledTile = isMatching,
-                                    onClick = {
-                                        // Submit Daub Move to Engine for Anti-Cheat Validation
-                                        val movePayload = BingoMovePayload(
-                                            roomId = currentRoom?.roomId ?: "",
-                                            playerUid = engine.localPlayerUid,
-                                            tileRow = tile.row,
-                                            tileCol = tile.col,
-                                            tileNumber = tile.number,
-                                            moveType = "DAUB"
-                                        )
-
-                                        val result = engine.submitMove(movePayload, boardState)
-                                        if (result.isValid) {
-                                            AaaBingoAudioHaptics.playTileDaubSound()
-                                        } else {
-                                            AaaBingoAudioHaptics.playWrongTileSound()
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 4. CLAIM BINGO BUTTON
-                AnimatedVisibility(
-                    visible = completedLines.size >= 5,
-                    enter = fadeIn(tween(400)) + scaleIn(initialScale = 0.8f) + slideInVertically(initialOffsetY = { it / 2 }),
-                    exit = fadeOut(tween(300)) + slideOutVertically() + shrinkVertically()
-                ) {
-                    AaaGlossyButton(
+                    // 5. CLAIM BINGO BUTTON
+                    BingoClaimButton(
+                        hasBingo = completedLines.size >= 5,
+                        glowAlpha = glowAlpha,
                         onClick = {
                             val claimPayload = BingoMovePayload(
                                 roomId = currentRoom?.roomId ?: "",
@@ -390,90 +324,281 @@ fun BingoOnlineGameplayScreen(
                             if (!result.isValid) {
                                 AaaBingoAudioHaptics.playWrongTileSound()
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(58.dp),
-                        containerColor = Color(0xFFFFD700),
-                        contentColor = Color(0xFF100326),
-                        borderColor = Color(0xFFFFF59D)
-                    ) {
-                        Text(
-                            text = "🎉 CLAIM BINGO NOW!",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
-                            letterSpacing = 1.sp
+                        }
+                    )
+
+                    // 6. RECENTLY CALLED NUMBERS BAR
+                    BingoCalledNumbersBar(
+                        calledNumbersHistory = currentRoom?.calledNumbersHistory ?: emptyList(),
+                        activeCalledNumber = activeCalledNumber,
+                        glowAlpha = glowAlpha
+                    )
+
+                    // 7. ACTIVE CALLED BALL DISPLAY
+                    BingoActiveBallAnnouncer(
+                        activeNumber = activeCalledNumber,
+                        glowAlpha = glowAlpha
+                    )
+
+                    // 8. ACTIVE NUMBER BOARD MATCH HINT UI
+                    if (activeCalledNumber != null && matchingTile == null) {
+                        Surface(
+                            color = Color(0xFF281C48),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "ℹ️ Number ${columnLetterForNum(activeCalledNumber)}-$activeCalledNumber is not on your board",
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    // Anti-Cheat Notification / Info Banner
+                    if (antiCheatAlert != null) {
+                        Surface(
+                            color = Color(0xFFFF1744).copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(20.dp),
+                            shadowElevation = 6.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = antiCheatAlert ?: "",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 12.sp
+                                )
+                                IconButton(onClick = { engine.clearAntiCheatAlert() }, modifier = Modifier.size(16.dp)) {
+                                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    // 10. LIVE ONLINE OPPONENT HUD CARD (Visual parity with AI Opponent)
+                    val aiProfileOfOpponent = remember(opponent) {
+                        AiPlayerProfile(
+                            name = opponent?.displayName ?: "Matching...",
+                            avatarEmoji = opponent?.avatarUrl?.ifEmpty { "🤖" } ?: "🤖",
+                            countryFlag = "🌐",
+                            level = opponent?.level ?: 12,
+                            winRate = ((opponent?.winRate ?: 0.68f) * 100).toInt(),
+                            badge = "LIVE COMPETITOR",
+                            personality = "Balanced"
                         )
+                    }
+                    val oppStatusText = if (opponent?.connected == true) "🟢 Online" else "🔴 Disconnected"
+                    BingoAiOpponentHeader(
+                        aiProfile = aiProfileOfOpponent,
+                        aiStatusText = oppStatusText,
+                        aiCompletedLinesCount = opponent?.completedLinesCount ?: 0,
+                        aiDaubsCount = opponent?.markedCount ?: 0,
+                        onPeekBoard = { showOpponentBoardPreview = true }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                // RECONNECTING OVERLAY
+                if (matchStatus == BingoMatchStatus.RECONNECTING) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.85f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            CircularProgressIndicator(color = Color(0xFFFFD700), modifier = Modifier.size(52.dp))
+                            Text(
+                                text = "NETWORK DISCONNECTED\nRestoring room state...",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
 
-                // Anti-Cheat Alert Snackbar / Banner
-                if (antiCheatAlert != null) {
-                    Surface(
-                        color = Color(0xFFFF1744).copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                // OPPONENT DISCONNECTED OVERLAY
+                if (isOpponentDisconnected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.88f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        AaaGlassCard(
+                            modifier = Modifier.fillMaxWidth(0.85f).padding(16.dp),
+                            borderColor = Color.Red
                         ) {
-                            Text(text = antiCheatAlert ?: "", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            IconButton(onClick = { engine.clearAntiCheatAlert() }) {
-                                Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = "Opponent Disconnected",
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black,
+                                    textAlign = TextAlign.Center
+                                )
+                                CircularProgressIndicator(
+                                    color = Color.Red,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = "Waiting for opponent to reconnect: ${disconnectTimer}s\nMatch resumes automatically upon return.",
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
                             }
                         }
                     }
                 }
-            }
 
-            // 5. RECONNECTING OVERLAY
-            if (matchStatus == BingoMatchStatus.RECONNECTING) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.85f)),
-                    contentAlignment = Alignment.Center
+                // VICTORY / DEFEAT POST-MATCH DIALOG WITH PLAY AGAIN & EXIT ROOM SYSTEM
+                if (matchStatus == BingoMatchStatus.VICTORY || matchStatus == BingoMatchStatus.DEFEAT) {
+                    if (matchStatus == BingoMatchStatus.VICTORY) {
+                        AaaVictoryVfxCanvas()
+                    }
+                    BingoOnlinePostMatchDialog(
+                        isVictory = matchStatus == BingoMatchStatus.VICTORY,
+                        isDefeat = matchStatus == BingoMatchStatus.DEFEAT,
+                        opponent = opponent,
+                        currentRoom = currentRoom,
+                        boardTiles = boardState,
+                        completedLines = completedLines,
+                        onPlayAgain = {
+                            engine.requestPlayAgain()
+                        },
+                        onExitRoom = {
+                            engine.cancelMatchmaking()
+                            onBackToLobby()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // Exit Confirmation Dialog
+    if (showExitConfirmDialog) {
+        Dialog(onDismissRequest = { showExitConfirmDialog = false }) {
+            Card(
+                modifier = Modifier.fillMaxWidth(0.85f),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.5.dp, Color(0xFFFF1744)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1F0C11))
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    Text(
+                        text = "🚨 QUIT CURRENT MATCH?",
+                        color = Color(0xFFFF1744),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = "Leaving the match early will forfeit your entry and record a defeat. Are you sure you want to quit?",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        CircularProgressIndicator(color = Color(0xFFFFD700), modifier = Modifier.size(52.dp))
-                        Text(
-                            text = "NETWORK DISCONNECTED\nRestoring room state...",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
+                        OutlinedButton(
+                            onClick = { showExitConfirmDialog = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, Color.Gray)
+                        ) {
+                            Text("CANCEL", color = Color.Gray)
+                        }
+                        Button(
+                            onClick = {
+                                showExitConfirmDialog = false
+                                engine.cancelMatchmaking()
+                                onBackToLobby()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text("QUIT MATCH", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
+        }
+    }
 
-            // 6. VICTORY / DEFEAT REWARD OVERLAY
-            if (matchStatus == BingoMatchStatus.VICTORY || matchStatus == BingoMatchStatus.DEFEAT) {
-                if (matchStatus == BingoMatchStatus.VICTORY) {
-                    AaaVictoryVfxCanvas()
-                }
-                BingoOnlineRewardPopup(
-                    matchStatus = matchStatus,
-                    onClaimed = { coinsDelta, wasAdClaimed ->
-                        showRewardPopup = false
-                        isResultProcessed = true
-                        progressionRepo.processMatchResult(
-                            matchType = "ONLINE_1V1",
-                            difficulty = "RANKED",
-                            opponentName = opponent?.displayName ?: "Online Opponent",
-                            result = if (matchStatus == BingoMatchStatus.VICTORY) "VICTORY" else "DEFEAT",
-                            durationSeconds = 45,
-                            numbersCalledCount = currentRoom?.calledNumbersHistory?.size ?: 12,
-                            coinRewardOverride = coinsDelta
-                        )
-                        engine.cancelMatchmaking()
-                        onBackToLobby()
+    // Opponent Board Peek Preview Dialog
+    if (showOpponentBoardPreview && opponent != null) {
+        val oppBoard = remember(opponent.card, currentRoom?.calledNumbers) {
+            listsToBoard(opponent.card, currentRoom?.calledNumbers ?: emptyList())
+        }
+        val oppLines = remember(oppBoard) {
+            evaluateLinesLocal(oppBoard)
+        }
+        Dialog(onDismissRequest = { showOpponentBoardPreview = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .padding(12.dp),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.5.dp, Color(0xFFE040FB)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF130D2B))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "PEEKING OPPONENT'S BOARD",
+                        color = Color(0xFFE040FB),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.sp,
+                        letterSpacing = 1.sp
+                    )
+                    BingoMiniBoardGrid(
+                        title = opponent.displayName,
+                        subtitle = "Online Opponent",
+                        badgeText = "${oppLines.size} Lines",
+                        badgeColor = Color(0xFFE040FB),
+                        boardTiles = oppBoard,
+                        completedLines = oppLines,
+                        primaryAccentColor = Color(0xFFE040FB),
+                        markedColor = Color(0xFFAB47BC)
+                    )
+                    AaaGlossyButton(
+                        onClick = { showOpponentBoardPreview = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        containerColor = Color(0xFF334155),
+                        borderColor = Color(0xFF64748B)
+                    ) {
+                        Text("CLOSE PEEK", fontWeight = FontWeight.Bold)
                     }
-                )
+                }
             }
         }
     }
@@ -516,170 +641,13 @@ private fun evaluateLinesLocal(board: List<List<BingoTile>>): Set<BingoLineType>
     return lines
 }
 
-private fun isTileInWinningLine(r: Int, c: Int, lines: Set<BingoLineType>): Boolean {
-    if (lines.contains(BingoLineType.ROW_0) && r == 0) return true
-    if (lines.contains(BingoLineType.ROW_1) && r == 1) return true
-    if (lines.contains(BingoLineType.ROW_2) && r == 2) return true
-    if (lines.contains(BingoLineType.ROW_3) && r == 3) return true
-    if (lines.contains(BingoLineType.ROW_4) && r == 4) return true
-
-    if (lines.contains(BingoLineType.COL_0) && c == 0) return true
-    if (lines.contains(BingoLineType.COL_1) && c == 1) return true
-    if (lines.contains(BingoLineType.COL_2) && c == 2) return true
-    if (lines.contains(BingoLineType.COL_3) && c == 3) return true
-    if (lines.contains(BingoLineType.COL_4) && c == 4) return true
-
-    if (lines.contains(BingoLineType.DIAG_MAIN) && r == c) return true
-    if (lines.contains(BingoLineType.DIAG_ANTI) && r + c == 4) return true
-
-    return false
-}
-
-@Composable
-private fun BingoOnlineRewardPopup(
-    matchStatus: BingoMatchStatus,
-    onClaimed: (coinsDelta: Int, wasAdClaimed: Boolean) -> Unit
-) {
-    val context = LocalContext.current
-    val isWin = matchStatus == BingoMatchStatus.VICTORY
-    val baseCoins = if (isWin) 12 else 3
-
-    Dialog(
-        onDismissRequest = {}, // Force user to choose
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.9f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .padding(16.dp),
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(2.dp, Color(0xFFFFD700)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF13092D))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "🎁 MATCH COMPLETED REWARD 🎁",
-                        color = Color(0xFFFFD700),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 18.sp,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Text(
-                        text = if (isWin) "🎉 ONLINE VICTORY!" else "💔 Match Finished!",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Coins Earned",
-                        color = Color.LightGray,
-                        fontSize = 13.sp
-                    )
-
-                    Text(
-                        text = "$baseCoins COINS",
-                        color = Color(0xFFFFD700),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 32.sp,
-                        style = LocalTextStyle.current.copy(
-                            shadow = Shadow(color = Color(0xFFFFD700).copy(alpha = 0.6f), blurRadius = 8f)
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Button 1: Claim
-                    AaaGlossyButton(
-                        onClick = {
-                            onClaimed(baseCoins, false)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        containerColor = Color(0xFF334155),
-                        contentColor = Color.White,
-                        borderColor = Color(0xFF64748B)
-                    ) {
-                        Text("CLAIM REWARD ($baseCoins COINS)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    // Button 2: Watch Ad x2 Reward
-                    AaaGlossyButton(
-                        onClick = {
-                            val activity = context as? Activity ?: run {
-                                var actContext = context
-                                while (actContext is android.content.ContextWrapper) {
-                                    if (actContext is Activity) break
-                                    actContext = actContext.baseContext
-                                }
-                                actContext as? Activity
-                            }
-                            if (activity != null && com.playwin.ads.RewardedManager.isAdReady(context)) {
-                                com.playwin.ads.RewardedManager.showAd(
-                                    activity = activity,
-                                    rewardType = com.playwin.ads.RewardType.BINGO_DOUBLE_REWARD,
-                                    callbacks = object : com.playwin.ads.RewardCallback {
-                                        override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
-                                            onClaimed(baseCoins * 2, true)
-                                        }
-                                        override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
-                                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
-                                        }
-                                        override fun onAdFailedToShow(errorMessage: String) {
-                                            Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
-                                        }
-                                        override fun onAdClosed(userEarnedReward: Boolean) {}
-                                    }
-                                )
-                            } else {
-                                Toast.makeText(context, "Ad is currently unavailable. Please try again in a moment.", Toast.LENGTH_SHORT).show()
-                                com.playwin.ads.RewardedManager.preload(context)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        containerColor = Color(0xFF00E676),
-                        contentColor = Color(0xFF091E10),
-                        borderColor = Color(0xFFB9F6CA)
-                    ) {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("WATCH AD (×2 REWARD - +${baseCoins * 2} COINS)", fontWeight = FontWeight.Black, fontSize = 13.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun listsToBoard(card: List<Int>, marked: List<Boolean>): List<List<BingoTile>> {
+private fun listsToBoard(card: List<Int>, calledNumbers: List<Int>): List<List<BingoTile>> {
     val grid = MutableList(5) { r ->
         MutableList(5) { c ->
             val idx = r * 5 + c
             val num = if (idx < card.size) card[idx] else 0
-            val isMarked = if (idx < marked.size) marked[idx] else (r == 2 && c == 2)
             val isFree = (r == 2 && c == 2)
+            val isMarked = isFree || calledNumbers.contains(num)
             val letters = listOf("B", "I", "N", "G", "O")
             BingoTile(
                 row = r,
@@ -687,10 +655,297 @@ private fun listsToBoard(card: List<Int>, marked: List<Boolean>): List<List<Bing
                 number = num,
                 columnLetter = letters[c],
                 isFreeTile = isFree,
-                isMarked = isMarked || isFree
+                isMarked = isMarked
             )
         }
     }
     return grid
 }
 
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, color = Color.LightGray, fontSize = 12.sp)
+        Text(text = value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+    }
+}
+
+@Composable
+fun BingoOnlinePostMatchDialog(
+    isVictory: Boolean,
+    isDefeat: Boolean,
+    opponent: com.myplaywin.app.data.model.BingoOnlinePlayer?,
+    currentRoom: com.myplaywin.app.data.model.BingoOnlineRoom?,
+    boardTiles: List<List<BingoTile>>,
+    completedLines: Set<BingoLineType>,
+    onPlayAgain: () -> Unit,
+    onExitRoom: () -> Unit
+) {
+    val containerBg = when {
+        isVictory -> Color(0xFF13092D)
+        isDefeat -> Color(0xFF2C0A12)
+        else -> Color(0xFF22130C)
+    }
+    val borderCol = when {
+        isVictory -> Color(0xFFFFD700)
+        isDefeat -> Color(0xFFFF1744)
+        else -> Color(0xFFFF9100)
+    }
+    val titleText = when {
+        isVictory -> "BINGO ONLINE VICTORY!"
+        isDefeat -> "ONLINE MATCH DEFEAT"
+        else -> "MATCH DRAW!"
+    }
+    val titleEmoji = when {
+        isVictory -> "👑🏆🎉"
+        isDefeat -> "💔"
+        else -> "🤝🎲"
+    }
+
+    val opponentBoardTiles = remember(opponent?.card, currentRoom?.calledNumbers) {
+        listsToBoard(opponent?.card ?: emptyList(), currentRoom?.calledNumbers ?: emptyList())
+    }
+    val opponentCompletedLines = remember(opponentBoardTiles) {
+        evaluateLinesLocal(opponentBoardTiles)
+    }
+    val calledNumbersHistory = currentRoom?.calledNumbersHistory ?: emptyList()
+
+    val localPlayer = currentRoom?.players?.get(currentRoom.players.keys.firstOrNull { it != opponent?.uid })
+    val isLocalReadyToPlayAgain = localPlayer?.playAgainRequested == true
+    val isOpponentReadyToPlayAgain = opponent?.playAgainRequested == true
+
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.85f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.92f)
+                    .padding(4.dp),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(2.dp, borderCol),
+                colors = CardDefaults.cardColors(containerColor = containerBg)
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Header Banner
+                    item {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(text = titleEmoji, fontSize = 36.sp)
+                            Text(
+                                text = titleText,
+                                color = borderCol,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 24.sp,
+                                letterSpacing = 1.5.sp,
+                                style = LocalTextStyle.current.copy(
+                                    shadow = Shadow(color = borderCol.copy(alpha = 0.8f), blurRadius = 12f)
+                                )
+                            )
+                            Text(
+                                text = if (isVictory) "Congratulations! You claimed BINGO first!"
+                                else if (isDefeat) "${opponent?.displayName ?: "Opponent"} completed BINGO first."
+                                else "All 75 numbers called without achieving BINGO.",
+                                color = Color.LightGray,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Summary Stats Table
+                    item {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, borderCol.copy(alpha = 0.5f))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "MATCH SUMMARY STATS",
+                                    color = borderCol,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    letterSpacing = 1.sp
+                                )
+                                HorizontalDivider(color = borderCol.copy(alpha = 0.3f))
+
+                                StatRow("Match Duration", "01:15")
+                                StatRow("Winner", if (isVictory) "You (Player)" else if (isDefeat) "${opponent?.displayName ?: "Opponent"}" else "Draw")
+                                StatRow("Your Lines vs Opponent Lines", "${completedLines.size} Lines  vs  ${opponentCompletedLines.size} Lines")
+                                StatRow("Total Numbers Called", "${calledNumbersHistory.size} / 75")
+                                StatRow("Room ID", currentRoom?.roomId ?: "")
+                            }
+                        }
+                    }
+
+                    // Final Boards Title
+                    item {
+                        Text(
+                            text = "FINAL BOARDS VISUALIZATION",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFFFFD700),
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    // 5x5 Mini Grids Side-By-Side
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                BingoMiniBoardGrid(
+                                    title = "YOUR BOARD",
+                                    subtitle = "Player",
+                                    badgeText = "${completedLines.size} Lines",
+                                    badgeColor = Color(0xFF00E676),
+                                    boardTiles = boardTiles,
+                                    completedLines = completedLines,
+                                    primaryAccentColor = Color(0xFF00E676),
+                                    markedColor = Color(0xFF00E5FF)
+                                )
+                            }
+
+                            Box(modifier = Modifier.weight(1f)) {
+                                BingoMiniBoardGrid(
+                                    title = opponent?.displayName ?: "Opponent",
+                                    subtitle = "Online Opponent",
+                                    badgeText = "${opponentCompletedLines.size} Lines",
+                                    badgeColor = Color(0xFFE040FB),
+                                    boardTiles = opponentBoardTiles,
+                                    completedLines = opponentCompletedLines,
+                                    primaryAccentColor = Color(0xFFE040FB),
+                                    markedColor = Color(0xFFAB47BC)
+                                )
+                            }
+                        }
+                    }
+
+                    // Called Numbers Log Section
+                    item {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38235C))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "CALLED NUMBERS CHRONOLOGY (${calledNumbersHistory.size})",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Gray
+                                )
+
+                                if (calledNumbersHistory.isEmpty()) {
+                                    Text(text = "No numbers called", fontSize = 11.sp, color = Color.Gray)
+                                } else {
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(calledNumbersHistory) { num ->
+                                            val letter = columnLetterForNum(num)
+                                            val ballColor = colorForColumnLetter(letter)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .background(ballColor, CircleShape)
+                                                    .border(1.dp, Color.White.copy(alpha = 0.6f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "$num",
+                                                    color = Color.White,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Action Buttons Row
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AaaGlossyButton(
+                                    onClick = onExitRoom,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    containerColor = Color(0xFF334155),
+                                    contentColor = Color.White,
+                                    borderColor = Color(0xFF64748B)
+                                ) {
+                                    Text("EXIT ROOM", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+
+                                val btnText = when {
+                                    isLocalReadyToPlayAgain -> "WAITING... ⏳"
+                                    isOpponentReadyToPlayAgain -> "PLAY AGAIN! (Ready! ⚡)"
+                                    else -> "PLAY AGAIN"
+                                }
+                                val btnColor = if (isVictory) Color(0xFFFFD700) else Color(0xFFFF1744)
+                                val btnTextCol = if (isVictory) Color.Black else Color.White
+                                val btnBorderCol = if (isVictory) Color(0xFFFFF59D) else Color(0xFFFF80AB)
+
+                                AaaGlossyButton(
+                                    onClick = { if (!isLocalReadyToPlayAgain) onPlayAgain() },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    containerColor = if (isLocalReadyToPlayAgain) Color.DarkGray else btnColor,
+                                    contentColor = if (isLocalReadyToPlayAgain) Color.LightGray else btnTextCol,
+                                    borderColor = if (isLocalReadyToPlayAgain) Color.Gray else btnBorderCol
+                                ) {
+                                    Text(btnText, fontWeight = FontWeight.Black, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

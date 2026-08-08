@@ -1160,7 +1160,7 @@ fun BingoGamePlayScreen(
 // COMPONENT: SHARED TURN SYNCHRONIZATION HEADER
 // ==========================================
 @Composable
-private fun BingoTurnSynchronizationHeader(
+fun BingoTurnSynchronizationHeader(
     isPlayerTurn: Boolean,
     turnStatusMessage: String,
     playerCompletedLinesCount: Int,
@@ -1402,7 +1402,7 @@ private fun BingoMatchPlayerHeader(
 // COMPONENT 2: RECENTLY CALLED NUMBERS BAR
 // ==========================================
 @Composable
-private fun BingoCalledNumbersBar(
+fun BingoCalledNumbersBar(
     calledNumbersHistory: List<Int>,
     activeCalledNumber: Int?,
     glowAlpha: Float
@@ -1504,7 +1504,7 @@ private fun BingoCalledNumbersBar(
 // COMPONENT 3: ACTIVE CALLED BALL ANNOUNCER
 // ==========================================
 @Composable
-private fun BingoActiveBallAnnouncer(
+fun BingoActiveBallAnnouncer(
     activeNumber: Int?,
     glowAlpha: Float
 ) {
@@ -1575,7 +1575,7 @@ private fun BingoActiveBallAnnouncer(
 // COMPONENT 3B: GOAL & PROGRESS HEADER
 // ==========================================
 @Composable
-private fun BingoGoalAndProgressHeader(
+fun BingoGoalAndProgressHeader(
     completedLines: Set<BingoLineType>
 ) {
     val letters = listOf("B", "I", "N", "G", "O")
@@ -1643,12 +1643,13 @@ private fun BingoGoalAndProgressHeader(
 // COMPONENT 4: 5x5 BINGO BOARD GRID
 // ==========================================
 @Composable
-private fun BingoBoardGrid(
+fun BingoBoardGrid(
     boardTiles: List<List<BingoTile>>,
     completedLines: Set<BingoLineType>,
     shakingTileKey: Int?,
     matchingTileKey: Int?,
     glowAlpha: Float,
+    showTutorialHand: Boolean = false,
     onTileClick: (BingoTile) -> Unit
 ) {
     Card(
@@ -1704,41 +1705,56 @@ private fun BingoBoardGrid(
             }
 
             // 5x5 Tiles Grid
-            boardTiles.forEachIndexed { rowIndex, rowList ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    rowList.forEachIndexed { colIndex, tile ->
-                        val tileKey = rowIndex * 5 + colIndex
-                        val isShaking = shakingTileKey == tileKey
-                        val isMatchingCalledTile = matchingTileKey == tileKey && !tile.isMarked
-                        val isWinningTile = isTileInWinningLine(rowIndex, colIndex, completedLines)
+                    boardTiles.forEachIndexed { rowIndex, rowList ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            rowList.forEachIndexed { colIndex, tile ->
+                                val tileKey = rowIndex * 5 + colIndex
+                                val isShaking = shakingTileKey == tileKey
+                                val isMatchingCalledTile = matchingTileKey == tileKey && !tile.isMarked
+                                val isWinningTile = isTileInWinningLine(rowIndex, colIndex, completedLines)
 
-                        BingoTileView(
-                            modifier = Modifier.weight(1f),
-                            tile = tile,
-                            isWinningTile = isWinningTile,
-                            isMatchingCalledTile = isMatchingCalledTile,
-                            isShaking = isShaking,
-                            glowAlpha = glowAlpha,
-                            onClick = { onTileClick(tile) }
-                        )
+                                BingoTileView(
+                                    modifier = Modifier.weight(1f),
+                                    tile = tile,
+                                    isWinningTile = isWinningTile,
+                                    isMatchingCalledTile = isMatchingCalledTile,
+                                    isShaking = isShaking,
+                                    glowAlpha = glowAlpha,
+                                    showTutorialHand = showTutorialHand && isMatchingCalledTile,
+                                    onClick = { onTileClick(tile) }
+                                )
+                            }
+                        }
                     }
                 }
+
+                BingoLinesOverlay(
+                    completedLines = completedLines,
+                    gapHorizontal = 6.dp,
+                    gapVertical = 6.dp,
+                    modifier = Modifier.matchParentSize()
+                )
             }
         }
     }
 }
 
 @Composable
-private fun BingoTileView(
+fun BingoTileView(
     modifier: Modifier = Modifier,
     tile: BingoTile,
     isWinningTile: Boolean,
     isMatchingCalledTile: Boolean,
     isShaking: Boolean,
     glowAlpha: Float,
+    showTutorialHand: Boolean = false,
     onClick: () -> Unit
 ) {
     // Shake Animatable Offset X
@@ -1760,6 +1776,7 @@ private fun BingoTileView(
         isWinningTile = isWinningTile,
         isMatchingCalledTile = isMatchingCalledTile,
         isWrongTapped = isShaking,
+        showTutorialHand = showTutorialHand,
         onClick = onClick,
         modifier = modifier
             .aspectRatio(1f)
@@ -1771,7 +1788,7 @@ private fun BingoTileView(
 // COMPONENT 5: CLAIM BINGO BUTTON
 // ==========================================
 @Composable
-private fun BingoClaimButton(
+fun BingoClaimButton(
     hasBingo: Boolean,
     glowAlpha: Float,
     onClick: () -> Unit
@@ -2076,7 +2093,7 @@ private fun BingoPauseMenuDialog(
 }
 
 @Composable
-private fun BingoAiOpponentHeader(
+fun BingoAiOpponentHeader(
     aiProfile: AiPlayerProfile,
     aiStatusText: String,
     aiCompletedLinesCount: Int,
@@ -2307,7 +2324,7 @@ private fun BingoAiBoardPreviewDialog(
 }
 
 @Composable
-private fun BingoMiniBoardGrid(
+fun BingoMiniBoardGrid(
     title: String,
     subtitle: String,
     badgeText: String,
@@ -2383,37 +2400,51 @@ private fun BingoMiniBoardGrid(
             }
 
             // 5x5 Tiles
-            boardTiles.forEachIndexed { r, row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    row.forEachIndexed { c, tile ->
-                        val isWinning = isTileInWinningLine(r, c, completedLines)
-                        val tileBg = when {
-                            isWinning -> Color(0xFFFFD700)
-                            tile.isMarked -> markedColor
-                            else -> Color(0xFF201238)
-                        }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    boardTiles.forEachIndexed { r, row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            row.forEachIndexed { c, tile ->
+                                val isWinning = isTileInWinningLine(r, c, completedLines)
+                                val tileBg = when {
+                                    isWinning -> Color(0xFFFFD700)
+                                    tile.isMarked -> markedColor
+                                    else -> Color(0xFF201238)
+                                }
 
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .background(tileBg, RoundedCornerShape(5.dp))
-                                .border(
-                                    1.dp,
-                                    if (isWinning) Color(0xFFFFF59D) else if (tile.isMarked) primaryAccentColor else Color(0xFF381F5E),
-                                    RoundedCornerShape(5.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (tile.isFreeTile) "★" else "${tile.number}",
-                                color = if (isWinning) Color.Black else if (tile.isMarked) Color.White else Color.LightGray,
-                                fontSize = 9.sp,
-                                fontWeight = if (tile.isMarked || isWinning) FontWeight.Black else FontWeight.Normal
-                            )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .aspectRatio(1f)
+                                        .background(tileBg, RoundedCornerShape(5.dp))
+                                        .border(
+                                            1.dp,
+                                            if (isWinning) Color(0xFFFFF59D) else if (tile.isMarked) primaryAccentColor else Color(0xFF381F5E),
+                                            RoundedCornerShape(5.dp)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (tile.isFreeTile) "★" else "${tile.number}",
+                                        color = if (isWinning) Color.Black else if (tile.isMarked) Color.White else Color.LightGray,
+                                        fontSize = 9.sp,
+                                        fontWeight = if (tile.isMarked || isWinning) FontWeight.Black else FontWeight.Normal
+                                    )
+                                }
+                            }
                         }
                     }
                 }
+
+                BingoLinesOverlay(
+                    completedLines = completedLines,
+                    gapHorizontal = 3.dp,
+                    gapVertical = 6.dp,
+                    strokeWidthMultiplier = 0.5f,
+                    modifier = Modifier.matchParentSize()
+                )
             }
         }
     }
@@ -3059,7 +3090,7 @@ private fun generateFreshBingoBoard(): List<List<BingoTile>> {
 
 private fun generateShuffledCalledPool(): List<Int> = (1..75).shuffled()
 
-private fun columnLetterForNum(num: Int): String = when (num) {
+fun columnLetterForNum(num: Int): String = when (num) {
     in 1..15 -> "B"
     in 16..30 -> "I"
     in 31..45 -> "N"
@@ -3067,7 +3098,7 @@ private fun columnLetterForNum(num: Int): String = when (num) {
     else -> "O"
 }
 
-private fun colorForColumnLetter(letter: String): Color = when (letter) {
+fun colorForColumnLetter(letter: String): Color = when (letter) {
     "B" -> Color(0xFF00E676)
     "I" -> Color(0xFF2979FF)
     "N" -> Color(0xFFFFD700)
@@ -3123,7 +3154,7 @@ private fun formatTime(seconds: Int): String {
     return "%02d:%02d".format(mins, secs)
 }
 
-private fun isTileInWinningLine(r: Int, c: Int, lines: Set<BingoLineType>): Boolean {
+fun isTileInWinningLine(r: Int, c: Int, lines: Set<BingoLineType>): Boolean {
     if (lines.isEmpty()) return false
     return lines.any { line ->
         when (line) {
@@ -3690,6 +3721,86 @@ private fun BingoSecondChanceDialog(
                         Text("CLOSE & ACCEPT DEFEAT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun BingoLinesOverlay(
+    completedLines: Set<BingoLineType>,
+    gapHorizontal: androidx.compose.ui.unit.Dp,
+    gapVertical: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    strokeWidthMultiplier: Float = 1.0f
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val gapHorizontalPx = with(density) { gapHorizontal.toPx() }
+    val gapVerticalPx = with(density) { gapVertical.toPx() }
+
+    val progressMap = BingoLineType.values().associateWith { line ->
+        animateFloatAsState(
+            targetValue = if (completedLines.contains(line)) 1f else 0f,
+            animationSpec = tween(durationMillis = 400, easing = LinearOutSlowInEasing),
+            label = "Line_${line.name}"
+        )
+    }
+
+    Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+
+        fun getCellCenter(r: Int, c: Int): Offset {
+            val cellW = (width - 4 * gapHorizontalPx) / 5f
+            val cellH = (height - 4 * gapVerticalPx) / 5f
+            val x = cellW / 2f + c * (cellW + gapHorizontalPx)
+            val y = cellH / 2f + r * (cellH + gapVerticalPx)
+            return Offset(x, y)
+        }
+
+        BingoLineType.values().forEach { line ->
+            val progress = progressMap[line]?.value ?: 0f
+            if (progress > 0f) {
+                val endpoints = when (line) {
+                    BingoLineType.ROW_0 -> Pair(Pair(0, 0), Pair(0, 4))
+                    BingoLineType.ROW_1 -> Pair(Pair(1, 0), Pair(1, 4))
+                    BingoLineType.ROW_2 -> Pair(Pair(2, 0), Pair(2, 4))
+                    BingoLineType.ROW_3 -> Pair(Pair(3, 0), Pair(3, 4))
+                    BingoLineType.ROW_4 -> Pair(Pair(4, 0), Pair(4, 4))
+                    BingoLineType.COL_0 -> Pair(Pair(0, 0), Pair(4, 0))
+                    BingoLineType.COL_1 -> Pair(Pair(0, 1), Pair(4, 1))
+                    BingoLineType.COL_2 -> Pair(Pair(0, 2), Pair(4, 2))
+                    BingoLineType.COL_3 -> Pair(Pair(0, 3), Pair(4, 3))
+                    BingoLineType.COL_4 -> Pair(Pair(0, 4), Pair(4, 4))
+                    BingoLineType.DIAG_MAIN -> Pair(Pair(0, 0), Pair(4, 4))
+                    BingoLineType.DIAG_ANTI -> Pair(Pair(0, 4), Pair(4, 0))
+                }
+
+                val startOffset = getCellCenter(endpoints.first.first, endpoints.first.second)
+                val endOffset = getCellCenter(endpoints.second.first, endpoints.second.second)
+
+                val currentEndOffset = Offset(
+                    x = startOffset.x + (endOffset.x - startOffset.x) * progress,
+                    y = startOffset.y + (endOffset.y - startOffset.y) * progress
+                )
+
+                val glowStroke = 14f * strokeWidthMultiplier
+                val coreStroke = 6f * strokeWidthMultiplier
+
+                drawLine(
+                    color = Color(0xFFFFD700).copy(alpha = 0.35f * progress),
+                    start = startOffset,
+                    end = currentEndOffset,
+                    strokeWidth = glowStroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+                drawLine(
+                    color = Color(0xFFFFF59D).copy(alpha = 0.9f * progress),
+                    start = startOffset,
+                    end = currentEndOffset,
+                    strokeWidth = coreStroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
             }
         }
     }

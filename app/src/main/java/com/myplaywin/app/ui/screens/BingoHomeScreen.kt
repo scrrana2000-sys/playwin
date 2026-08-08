@@ -79,6 +79,7 @@ fun BingoHomeScreen(
     var isProgressionActive by remember { mutableStateOf(false) }
     var isLiveOpsActive by remember { mutableStateOf(false) }
     var isSocialEventsActive by remember { mutableStateOf(false) }
+    var initialSocialTabIndex by remember { mutableStateOf(0) }
 
     val scrollState = rememberScrollState()
     val multiplayerEngine = remember { com.myplaywin.app.data.repository.BingoMultiplayerEngine(context) }
@@ -100,9 +101,13 @@ fun BingoHomeScreen(
             repository = liveEventsRepository,
             onStartPrivateMatch = { room ->
                 isSocialEventsActive = false
-                activeDifficultyForMatch = "MEDIUM"
+                val myPredefinedCard = room.gameSession?.bingoBoards?.get(multiplayerEngine.localPlayerUid)
+                multiplayerEngine.joinPrivateRoomFromSocial(room.roomCode, room.seed, room.hostUid == multiplayerEngine.localPlayerUid, myPredefinedCard) {
+                    isOnlineGameplayActive = true
+                }
             },
-            onBack = { isSocialEventsActive = false }
+            onBack = { isSocialEventsActive = false },
+            initialTabIndex = initialSocialTabIndex
         )
         return
     }
@@ -226,7 +231,10 @@ fun BingoHomeScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isSocialEventsActive = true }) {
+                    IconButton(onClick = {
+                        initialSocialTabIndex = 0
+                        isSocialEventsActive = true
+                    }) {
                         Icon(
                             imageVector = Icons.Default.CardGiftcard,
                             contentDescription = "Live Events & Social",
@@ -284,10 +292,20 @@ fun BingoHomeScreen(
                     onPlayClick = { activeDialog = BingoDialogType.OfflineDifficulty }
                 )
 
+                // CARD 1.5: PRIVATE ROOM CARD
+                BingoPrivateCard(
+                    glowAlpha = glowAlpha,
+                    floatOffset = -floatOffset,
+                    onPlayClick = {
+                        initialSocialTabIndex = 1
+                        isSocialEventsActive = true
+                    }
+                )
+
                 // CARD 2: ONLINE MULTIPLAYER
                 BingoOnlineCard(
                     glowAlpha = glowAlpha,
-                    floatOffset = -floatOffset,
+                    floatOffset = floatOffset,
                     onPlayClick = {
                         if (liveOpsConfig.isMaintenanceMode) {
                             android.widget.Toast.makeText(
@@ -301,12 +319,15 @@ fun BingoHomeScreen(
                     }
                 )
 
-                // CARD 3: LIVE EVENTS, TOURNAMENTS & SOCIAL HUB (PHASE 10)
+                // CARD 3: MISSIONS, PRIVATE ROOMS & COSMETICS HUB (PHASE 10)
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .shadow(12.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFFFFD700))
-                        .clickable { isSocialEventsActive = true },
+                        .clickable {
+                            initialSocialTabIndex = 0
+                            isSocialEventsActive = true
+                        },
                     shape = RoundedCornerShape(22.dp),
                     border = BorderStroke(
                         1.5.dp,
@@ -336,19 +357,19 @@ fun BingoHomeScreen(
                                     .border(1.5.dp, Color(0xFFFFD700), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(text = "🏆", fontSize = 26.sp)
+                                Text(text = "🎯", fontSize = 26.sp)
                             }
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "LIVE EVENTS & TOURNAMENTS",
+                                    text = "MISSIONS & CUSTOMIZATIONS",
                                     color = Color.White,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 16.sp,
                                     letterSpacing = 1.sp
                                 )
                                 Text(
-                                    text = "Daily Missions • Private Rooms • Friends",
+                                    text = "Daily Missions • Private Rooms • Cosmetics",
                                     color = Color(0xFFFFD700),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -361,7 +382,7 @@ fun BingoHomeScreen(
                                 border = BorderStroke(1.dp, Color(0xFFEC4899))
                             ) {
                                 Text(
-                                    text = "HOT LIVE",
+                                    text = "ACTIVE",
                                     color = Color(0xFFF472B6),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 9.sp,
@@ -371,8 +392,11 @@ fun BingoHomeScreen(
                         }
 
                         AaaBingoButton(
-                            text = "OPEN EVENT CENTER & MISSIONS",
-                            onClick = { isSocialEventsActive = true },
+                            text = "OPEN MISSIONS & COSMETICS",
+                            onClick = {
+                                initialSocialTabIndex = 0
+                                isSocialEventsActive = true
+                            },
                             variant = BingoButtonVariant.PURPLE,
                             modifier = Modifier.fillMaxWidth(),
                             height = 48.dp
@@ -664,6 +688,112 @@ private fun BingoOfflineCard(
                 onClick = onPlayClick,
                 variant = BingoButtonVariant.SUCCESS,
                 icon = Icons.Default.PlayArrow,
+                modifier = Modifier.fillMaxWidth(),
+                height = 52.dp
+            )
+        }
+    }
+}
+
+// ==========================================
+// COMPONENT 2.5: PRIVATE GAME MODE CARD
+// ==========================================
+@Composable
+private fun BingoPrivateCard(
+    glowAlpha: Float,
+    floatOffset: Float,
+    onPlayClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(y = floatOffset.dp)
+            .shadow(12.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFF8B5CF6)),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(
+            1.5.dp,
+            Brush.horizontalGradient(
+                colors = listOf(
+                    Color(0xFF8B5CF6).copy(alpha = glowAlpha),
+                    Color(0xFFD946EF).copy(alpha = 0.8f),
+                    Color(0xFF8B5CF6).copy(alpha = 0.4f)
+                )
+            )
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF151230).copy(alpha = 0.92f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header Row (Icon + Titles + Badge)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .background(
+                            Brush.radialGradient(listOf(Color(0xFF8B5CF6), Color(0xFF4C1D95))),
+                            CircleShape
+                        )
+                        .border(1.5.dp, Color.White, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "👥", fontSize = 26.sp)
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "PRIVATE ROOM",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 18.sp,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Play With Friends Using Room Code",
+                        color = Color(0xFFE9D5FF),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Surface(
+                    color = Color(0xFFD946EF).copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFFD946EF))
+                ) {
+                    Text(
+                        text = "PRIVATE",
+                        color = Color(0xFFD946EF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+            // Feature Checklist Grid
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                BingoCheckItem(text = "Create a Private Room")
+                BingoCheckItem(text = "Join Using 6-Digit Room Code")
+                BingoCheckItem(text = "Play with Friends in Real-Time")
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Glossy Purple CREATE / JOIN Button
+            AaaBingoButton(
+                text = "CREATE / JOIN ROOM",
+                onClick = onPlayClick,
+                variant = BingoButtonVariant.PURPLE,
+                iconEmoji = "🎮",
                 modifier = Modifier.fillMaxWidth(),
                 height = 52.dp
             )

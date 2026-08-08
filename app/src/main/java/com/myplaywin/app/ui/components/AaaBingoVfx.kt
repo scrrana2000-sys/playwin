@@ -753,7 +753,8 @@ fun AaaBingoTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isMatchingCalledTile: Boolean = false,
-    isWrongTapped: Boolean = false
+    isWrongTapped: Boolean = false,
+    showTutorialHand: Boolean = false
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -898,7 +899,7 @@ fun AaaBingoTile(
             }
         } else {
             Box(contentAlignment = Alignment.Center) {
-                if (isMatchingCalledTile && !isMarked) {
+                if (showTutorialHand && isMatchingCalledTile && !isMarked) {
                     Text(
                         text = "👇",
                         fontSize = 14.sp,
