@@ -70,6 +70,8 @@ sealed interface AppScreen {
     object BounceGame : AppScreen
     object BlockMaster : AppScreen
     object BingoGame : AppScreen
+    object ShadowHeroHome : AppScreen
+    object ShadowHeroGameplay : AppScreen
 }
 
 enum class AppTab {
@@ -132,6 +134,8 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
                 is AppScreen.BounceGame -> putString("type", "BounceGame")
                 is AppScreen.BlockMaster -> putString("type", "BlockMaster")
                 is AppScreen.BingoGame -> putString("type", "BingoGame")
+                is AppScreen.ShadowHeroHome -> putString("type", "ShadowHeroHome")
+                is AppScreen.ShadowHeroGameplay -> putString("type", "ShadowHeroGameplay")
             }
         }
     },
@@ -153,6 +157,8 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
             "BounceGame" -> AppScreen.BounceGame
             "BlockMaster" -> AppScreen.BlockMaster
             "BingoGame" -> AppScreen.BingoGame
+            "ShadowHeroHome" -> AppScreen.ShadowHeroHome
+            "ShadowHeroGameplay" -> AppScreen.ShadowHeroGameplay
             else -> AppScreen.MainTabs
         }
         NavEntry(screen, tab)
@@ -181,6 +187,8 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                     is AppScreen.BounceGame -> putString("type", "BounceGame")
                     is AppScreen.BlockMaster -> putString("type", "BlockMaster")
                     is AppScreen.BingoGame -> putString("type", "BingoGame")
+                    is AppScreen.ShadowHeroHome -> putString("type", "ShadowHeroHome")
+                    is AppScreen.ShadowHeroGameplay -> putString("type", "ShadowHeroGameplay")
                 }
             }
         }
@@ -205,6 +213,8 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                 "BounceGame" -> AppScreen.BounceGame
                 "BlockMaster" -> AppScreen.BlockMaster
                 "BingoGame" -> AppScreen.BingoGame
+                "ShadowHeroHome" -> AppScreen.ShadowHeroHome
+                "ShadowHeroGameplay" -> AppScreen.ShadowHeroGameplay
                 else -> AppScreen.MainTabs
             }
             list.add(NavEntry(screen, tab))
@@ -347,6 +357,13 @@ fun PlayWinMainFlow(viewModel: PlayWinViewModel) {
                 )
                 is AppScreen.BingoGame -> BingoHomeScreen(
                     onBack = navigateBack
+                )
+                is AppScreen.ShadowHeroHome -> com.myplaywin.app.shadowhero.ui.ShadowHeroHomeScreen(
+                    onPlayClick = { onNavigateToGame(AppScreen.ShadowHeroGameplay) },
+                    onBack = navigateBack
+                )
+                is AppScreen.ShadowHeroGameplay -> com.myplaywin.app.shadowhero.ui.ShadowHeroGameplayScene(
+                    onBackToHome = navigateBack
                 )
             }
         }
@@ -3763,6 +3780,17 @@ fun HomeScreen(
         // Premium Bingo Mini Game Card
         BingoMiniGameCard(
             onCardClick = { onNavigateToGame(AppScreen.BingoGame) }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Premium Shadow Hero Mini Game Card
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val shadowStats = remember { com.myplaywin.app.shadowhero.data.ShadowHeroProgressionManager.getStats(context) }
+        com.myplaywin.app.shadowhero.ui.ShadowHeroCard(
+            onCardClick = { onNavigateToGame(AppScreen.ShadowHeroHome) },
+            bestStage = shadowStats.bestStage,
+            highScore = shadowStats.highScore
         )
 
         /*
