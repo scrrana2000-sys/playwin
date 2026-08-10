@@ -70,6 +70,7 @@ sealed interface AppScreen {
     object BounceGame : AppScreen
     object BlockMaster : AppScreen
     object BingoGame : AppScreen
+    object LudoGame : AppScreen
     object ShadowHeroHome : AppScreen
     object ShadowHeroGameplay : AppScreen
 }
@@ -134,6 +135,7 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
                 is AppScreen.BounceGame -> putString("type", "BounceGame")
                 is AppScreen.BlockMaster -> putString("type", "BlockMaster")
                 is AppScreen.BingoGame -> putString("type", "BingoGame")
+                is AppScreen.LudoGame -> putString("type", "LudoGame")
                 is AppScreen.ShadowHeroHome -> putString("type", "ShadowHeroHome")
                 is AppScreen.ShadowHeroGameplay -> putString("type", "ShadowHeroGameplay")
             }
@@ -157,6 +159,7 @@ val NavEntrySaver = Saver<NavEntry, Bundle>(
             "BounceGame" -> AppScreen.BounceGame
             "BlockMaster" -> AppScreen.BlockMaster
             "BingoGame" -> AppScreen.BingoGame
+            "LudoGame" -> AppScreen.LudoGame
             "ShadowHeroHome" -> AppScreen.ShadowHeroHome
             "ShadowHeroGameplay" -> AppScreen.ShadowHeroGameplay
             else -> AppScreen.MainTabs
@@ -187,6 +190,7 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                     is AppScreen.BounceGame -> putString("type", "BounceGame")
                     is AppScreen.BlockMaster -> putString("type", "BlockMaster")
                     is AppScreen.BingoGame -> putString("type", "BingoGame")
+                    is AppScreen.LudoGame -> putString("type", "LudoGame")
                     is AppScreen.ShadowHeroHome -> putString("type", "ShadowHeroHome")
                     is AppScreen.ShadowHeroGameplay -> putString("type", "ShadowHeroGameplay")
                 }
@@ -213,6 +217,7 @@ val NavHistorySaver = Saver<SnapshotStateList<NavEntry>, List<Bundle>>(
                 "BounceGame" -> AppScreen.BounceGame
                 "BlockMaster" -> AppScreen.BlockMaster
                 "BingoGame" -> AppScreen.BingoGame
+                "LudoGame" -> AppScreen.LudoGame
                 "ShadowHeroHome" -> AppScreen.ShadowHeroHome
                 "ShadowHeroGameplay" -> AppScreen.ShadowHeroGameplay
                 else -> AppScreen.MainTabs
@@ -358,6 +363,61 @@ fun PlayWinMainFlow(viewModel: PlayWinViewModel) {
                 is AppScreen.BingoGame -> BingoHomeScreen(
                     onBack = navigateBack
                 )
+                is AppScreen.LudoGame -> {
+                    val ludoEngine = remember { com.myplaywin.app.ludo.data.repository.LudoEngine() }
+                    val ludoState by ludoEngine.gameState.collectAsStateWithLifecycle()
+                    val currentUser by viewModel.currentUserState.collectAsStateWithLifecycle()
+                    val walletState by viewModel.walletState.collectAsStateWithLifecycle()
+                    val uid = currentUser?.uid?.ifBlank { walletState.userId } ?: walletState.userId.ifBlank { "user_guest" }
+                    val name = currentUser?.displayName?.ifBlank { "Player" } ?: "Player"
+                    val avatar = currentUser?.photoUrl ?: ""
+
+                    com.myplaywin.app.ludo.ui.screens.LudoHomeScreen(
+                        gameState = ludoState,
+                        currentUserId = uid,
+                        currentUserName = name,
+                        currentUserAvatar = avatar,
+                        onStartLocalGame = {
+                            ludoEngine.startLocalMatch()
+                        },
+                        onCreateRoom = { mode, isPrivate, maxPlayers ->
+                            ludoEngine.createRoom(
+                                hostUid = uid,
+                                hostName = name,
+                                hostAvatar = avatar,
+                                gameMode = mode,
+                                isPrivate = isPrivate,
+                                maxPlayersOverride = maxPlayers
+                            )
+                        },
+                        onJoinRoom = { code ->
+                            ludoEngine.joinRoom(
+                                roomCode = code,
+                                userUid = uid,
+                                userName = name,
+                                userAvatar = avatar
+                            )
+                        },
+                        onStartMatch = {
+                            ludoEngine.startMatch(uid)
+                        },
+                        onRollDice = {
+                            val activeUid = ludoState?.currentTurnUid ?: uid
+                            ludoEngine.rollDice(activeUid)
+                        },
+                        onMoveToken = { tokenIdx ->
+                            val activeUid = ludoState?.currentTurnUid ?: uid
+                            ludoEngine.moveToken(activeUid, tokenIdx)
+                        },
+                        onResetGame = {
+                            ludoEngine.resetGame()
+                        },
+                        onBackClick = {
+                            ludoEngine.leaveRoom(uid)
+                            navigateBack()
+                        }
+                    )
+                }
                 is AppScreen.ShadowHeroHome -> com.myplaywin.app.shadowhero.ui.ShadowHeroHomeScreen(
                     onPlayClick = { onNavigateToGame(AppScreen.ShadowHeroGameplay) },
                     onBack = navigateBack
@@ -3774,6 +3834,13 @@ fun HomeScreen(
         // Premium Bingo Mini Game Card
         BingoMiniGameCard(
             onCardClick = { onNavigateToGame(AppScreen.BingoGame) }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Premium Ludo Mini Game Card
+        com.myplaywin.app.ludo.ui.components.LudoMiniGameCard(
+            onCardClick = { onNavigateToGame(AppScreen.LudoGame) }
         )
 
         Spacer(modifier = Modifier.height(12.dp))
