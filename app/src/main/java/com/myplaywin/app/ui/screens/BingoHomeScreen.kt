@@ -74,7 +74,6 @@ fun BingoHomeScreen(
     val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<BingoDialogType?>(null) }
     var activeDifficultyForMatch by remember { mutableStateOf<String?>(null) }
-    var isOnlineLobbyActive by remember { mutableStateOf(false) }
     var isOnlineGameplayActive by remember { mutableStateOf(false) }
     var isProgressionActive by remember { mutableStateOf(false) }
     var isLiveOpsActive by remember { mutableStateOf(false) }
@@ -96,13 +95,12 @@ fun BingoHomeScreen(
         }
     }
 
-    val isAnySubScreenActive = isSocialEventsActive || isLiveOpsActive || isProgressionActive || isOnlineLobbyActive
+    val isAnySubScreenActive = isSocialEventsActive || isLiveOpsActive || isProgressionActive
     androidx.activity.compose.BackHandler(enabled = isAnySubScreenActive) {
         when {
             isSocialEventsActive -> isSocialEventsActive = false
             isLiveOpsActive -> isLiveOpsActive = false
             isProgressionActive -> isProgressionActive = false
-            isOnlineLobbyActive -> isOnlineLobbyActive = false
         }
     }
 
@@ -145,19 +143,7 @@ fun BingoHomeScreen(
             engine = multiplayerEngine,
             onBackToLobby = {
                 isOnlineGameplayActive = false
-                isOnlineLobbyActive = true
-            }
-        )
-        return
-    }
-
-    if (isOnlineLobbyActive) {
-        BingoOnlineLobbyScreen(
-            engine = multiplayerEngine,
-            onBackClick = { isOnlineLobbyActive = false },
-            onStartOnlineGameplay = {
-                isOnlineLobbyActive = false
-                isOnlineGameplayActive = true
+                isSocialEventsActive = true
             }
         )
         return
@@ -309,23 +295,6 @@ fun BingoHomeScreen(
                     onPlayClick = {
                         initialSocialTabIndex = 1
                         isSocialEventsActive = true
-                    }
-                )
-
-                // CARD 2: ONLINE MULTIPLAYER
-                BingoOnlineCard(
-                    glowAlpha = glowAlpha,
-                    floatOffset = floatOffset,
-                    onPlayClick = {
-                        if (liveOpsConfig.isMaintenanceMode) {
-                            android.widget.Toast.makeText(
-                                context,
-                                liveOpsConfig.maintenanceMessage,
-                                android.widget.Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            isOnlineLobbyActive = true
-                        }
                     }
                 )
 
@@ -801,111 +770,6 @@ private fun BingoPrivateCard(
                 onClick = onPlayClick,
                 variant = BingoButtonVariant.PURPLE,
                 iconEmoji = "🎮",
-                modifier = Modifier.fillMaxWidth(),
-                height = 52.dp
-            )
-        }
-    }
-}
-
-// ==========================================
-// COMPONENT 3: ONLINE GAME MODE CARD
-// ==========================================
-@Composable
-private fun BingoOnlineCard(
-    glowAlpha: Float,
-    floatOffset: Float,
-    onPlayClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .offset(y = floatOffset.dp)
-            .shadow(12.dp, RoundedCornerShape(22.dp), spotColor = Color(0xFF2979FF)),
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(
-            1.5.dp,
-            Brush.horizontalGradient(
-                colors = listOf(
-                    Color(0xFF2979FF).copy(alpha = glowAlpha),
-                    Color(0xFFE040FB).copy(alpha = 0.8f),
-                    Color(0xFF2979FF).copy(alpha = 0.4f)
-                )
-            )
-        ),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF131B38).copy(alpha = 0.92f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Header Row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .background(
-                            Brush.radialGradient(listOf(Color(0xFF2979FF), Color(0xFF1A237E))),
-                            CircleShape
-                        )
-                        .border(1.5.dp, Color.White, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(text = "🌐", fontSize = 26.sp)
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "ONLINE MULTIPLAYER",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 18.sp,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = "Compete With Real Players",
-                        color = Color(0xFF80D8FF),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Surface(
-                    color = Color(0xFFFF1744),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "LIVE 1v4",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 10.sp,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-
-            // Feature Checklist Grid
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                BingoCheckItem(text = "Live Matchmaking with Global Players")
-                BingoCheckItem(text = "Win Massive Coin Jackpots")
-                BingoCheckItem(text = "Climb the Global Leaderboards")
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Glossy Blue PLAY ONLINE Button
-            AaaBingoButton(
-                text = "PLAY ONLINE",
-                onClick = onPlayClick,
-                variant = BingoButtonVariant.INFO,
-                icon = Icons.Default.Public,
                 modifier = Modifier.fillMaxWidth(),
                 height = 52.dp
             )
