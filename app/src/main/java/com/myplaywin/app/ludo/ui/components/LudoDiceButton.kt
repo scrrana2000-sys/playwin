@@ -62,6 +62,12 @@ fun LudoDiceButton(
         }
     }
 
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val handleRoll = {
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        onRollClick()
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -109,7 +115,7 @@ fun LudoDiceButton(
                     shape = RoundedCornerShape(16.dp)
                 )
                 .clickable(enabled = isMyTurn && !hasRolled && !isRollingAnim) {
-                    onRollClick()
+                    handleRoll()
                 },
             contentAlignment = Alignment.Center
         ) {
@@ -121,7 +127,7 @@ fun LudoDiceButton(
 
         // Roll Button
         Button(
-            onClick = onRollClick,
+            onClick = handleRoll,
             enabled = isMyTurn && !hasRolled && !isRollingAnim,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(0xFFFF9800),

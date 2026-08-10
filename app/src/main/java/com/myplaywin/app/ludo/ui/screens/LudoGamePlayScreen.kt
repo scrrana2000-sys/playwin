@@ -319,6 +319,16 @@ fun LudoGamePlayScreen(
                         Text("Exit to Lobby", fontWeight = FontWeight.Bold)
                     }
                 },
+                dismissButton = {
+                    if (onResetGame != null) {
+                        OutlinedButton(
+                            onClick = onResetGame,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD700))
+                        ) {
+                            Text("Play Again 🔄", color = Color(0xFFFFD700), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                },
                 containerColor = Color(0xFF231F3B),
                 shape = RoundedCornerShape(20.dp)
             )

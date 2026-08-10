@@ -84,16 +84,16 @@ object LudoBoardLayout {
 
     // Yard Coords for each player (token 0..3)
     val redYardCoords = listOf(
-        GridCoord(1.5f, 1.5f), GridCoord(1.5f, 3.5f), GridCoord(3.5f, 1.5f), GridCoord(3.5f, 3.5f)
+        GridCoord(2f, 2f), GridCoord(2f, 4f), GridCoord(4f, 2f), GridCoord(4f, 4f)
     )
     val greenYardCoords = listOf(
-        GridCoord(1.5f, 10.5f), GridCoord(1.5f, 12.5f), GridCoord(3.5f, 10.5f), GridCoord(3.5f, 12.5f)
+        GridCoord(2f, 11f), GridCoord(2f, 13f), GridCoord(4f, 11f), GridCoord(4f, 13f)
     )
     val yellowYardCoords = listOf(
-        GridCoord(10.5f, 10.5f), GridCoord(10.5f, 12.5f), GridCoord(12.5f, 10.5f), GridCoord(12.5f, 12.5f)
+        GridCoord(11f, 11f), GridCoord(11f, 13f), GridCoord(13f, 11f), GridCoord(13f, 13f)
     )
     val blueYardCoords = listOf(
-        GridCoord(10.5f, 1.5f), GridCoord(10.5f, 3.5f), GridCoord(12.5f, 1.5f), GridCoord(12.5f, 3.5f)
+        GridCoord(11f, 2f), GridCoord(11f, 4f), GridCoord(13f, 2f), GridCoord(13f, 4f)
     )
 
     /**

@@ -55,6 +55,8 @@ fun LudoBoardCanvas(
         label = "PulseScale"
     )
 
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
     BoxWithConstraints(
         modifier = modifier
             .aspectRatio(1f)
@@ -84,12 +86,14 @@ fun LudoBoardCanvas(
             )
             .padding(6.dp)
     ) {
-        val maxWidthPx = constraints.maxWidth
-        val boardSize = maxWidthPx.toFloat()
-        val cellSize = boardSize / 15f
+        val boardSizeDp = maxWidth - 12.dp
+        val cellSizeDp = boardSizeDp / 15f
+        val tokenSizeDp = cellSizeDp * 0.74f
 
         // 1. Draw Master Ludo Canvas
         Canvas(modifier = Modifier.fillMaxSize()) {
+            val boardSize = size.width
+            val cellSize = boardSize / 15f
             // Background Canvas Base Surface (Ivory/Cream)
             drawRect(
                 brush = Brush.radialGradient(
@@ -241,9 +245,13 @@ fun LudoBoardCanvas(
                 val tokenData = cellTokens[idx]
                 val baseCoord = tokenData.gridCoord
 
+                // Center coordinate in grid units
+                val centerCol = if (tokenData.stepCount <= 0) baseCoord.col else baseCoord.col + 0.5f
+                val centerRow = if (tokenData.stepCount <= 0) baseCoord.row else baseCoord.row + 0.5f
+
                 // Offset calculation for multiple stacked tokens on same cell
-                val (offsetX, offsetY) = if (count > 1 && tokenData.stepCount in 1..56) {
-                    val shift = (cellSize * 0.18f)
+                val (offsetXDp, offsetYDp) = if (count > 1 && tokenData.stepCount in 1..56) {
+                    val shift = cellSizeDp * 0.15f
                     when (idx % 4) {
                         0 -> Pair(-shift, -shift)
                         1 -> Pair(shift, shift)
@@ -251,12 +259,11 @@ fun LudoBoardCanvas(
                         else -> Pair(-shift, shift)
                     }
                 } else {
-                    Pair(0f, 0f)
+                    Pair(0.dp, 0.dp)
                 }
 
-                val pxX = (baseCoord.col * cellSize) + offsetX + (cellSize * 0.12f)
-                val pxY = (baseCoord.row * cellSize) + offsetY + (cellSize * 0.12f)
-                val tokenSizeDp = ((cellSize * 0.76f) / boardSize * maxWidthPx).dp
+                val topXDp = (cellSizeDp * centerCol) - (tokenSizeDp / 2f) + offsetXDp
+                val topYDp = (cellSizeDp * centerRow) - (tokenSizeDp / 2f) + offsetYDp
 
                 val currentTurnP = gameState.currentTurnPlayer
                 val isTurnOwner = tokenData.playerUid == gameState.currentTurnUid
@@ -271,13 +278,11 @@ fun LudoBoardCanvas(
 
                 Box(
                     modifier = Modifier
-                        .offset(
-                            x = (pxX / boardSize * maxWidthPx).dp,
-                            y = (pxY / boardSize * maxWidthPx).dp
-                        )
+                        .offset(x = topXDp, y = topYDp)
                         .size(tokenSizeDp)
                         .scale(tokenScale)
                         .clickable(enabled = isMovable) {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
                             onTokenClick(tokenData.tokenIndex)
                         },
                     contentAlignment = Alignment.Center

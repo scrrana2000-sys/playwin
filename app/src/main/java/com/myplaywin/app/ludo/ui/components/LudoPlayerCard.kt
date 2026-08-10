@@ -106,14 +106,40 @@ fun LudoPlayerCard(
             Spacer(modifier = Modifier.width(8.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = player.name,
-                    color = Color.White,
-                    fontWeight = if (isCurrentTurn) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = player.name,
+                        color = Color.White,
+                        fontWeight = if (isCurrentTurn) FontWeight.ExtraBold else FontWeight.Medium,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    if (isCurrentTurn) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFFFD700))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "TURN 🎲",
+                                color = Color(0xFF1B172E),
+                                fontWeight = FontWeight.Black,
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Color tag
