@@ -32,6 +32,12 @@ import android.widget.Toast
 import com.myplaywin.app.data.model.BingoMatchStatus
 import com.myplaywin.app.data.model.BingoMovePayload
 import com.myplaywin.app.data.repository.BingoMultiplayerEngine
+import com.myplaywin.app.data.voice.BingoVoiceChatManager
+import com.myplaywin.app.data.voice.VoiceConnectionState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import com.myplaywin.app.ui.components.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -56,6 +62,46 @@ fun BingoOnlineGameplayScreen(
     val matchStatus by engine.matchStatus.collectAsState()
     val pingMs by engine.networkLatencyMs.collectAsState()
     val antiCheatAlert by engine.antiCheatAlert.collectAsState()
+
+    val voiceConnectionState by BingoVoiceChatManager.connectionState.collectAsState()
+    val isVoiceMuted by BingoVoiceChatManager.isMuted.collectAsState()
+    val speakingPlayers by BingoVoiceChatManager.speakingPlayers.collectAsState()
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val code = currentRoom?.roomId ?: ""
+            if (code.isNotBlank()) {
+                BingoVoiceChatManager.joinVoiceRoom(context, code)
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission required for voice chat.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            BingoVoiceChatManager.leaveVoiceRoom(context)
+        }
+    }
+
+    LaunchedEffect(currentRoom?.roomId) {
+        val rId = currentRoom?.roomId
+        if (!rId.isNullOrBlank()) {
+            if (voiceConnectionState == VoiceConnectionState.DISCONNECTED) {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasPermission) {
+                    BingoVoiceChatManager.joinVoiceRoom(context, rId)
+                }
+            }
+        } else {
+            BingoVoiceChatManager.leaveVoiceRoom(context)
+        }
+    }
 
     // Default fallback board
     val defaultBoard = remember {
@@ -177,7 +223,9 @@ fun BingoOnlineGameplayScreen(
     )
 
     var showExitConfirmDialog by remember { mutableStateOf(false) }
-    var showOpponentBoardPreview by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = true) {
+        showExitConfirmDialog = true
+    }
 
     Scaffold(
         containerColor = Color(0xFF090616),
@@ -227,6 +275,35 @@ fun BingoOnlineGameplayScreen(
                     }
                 },
                 actions = {
+                    if (!currentRoom?.roomId.isNullOrBlank()) {
+                        IconButton(onClick = {
+                            val hasPermission = ContextCompat.checkSelfPermission(
+                                context,
+                                android.Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+
+                            if (!hasPermission) {
+                                micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            } else if (voiceConnectionState == VoiceConnectionState.CONNECTED) {
+                                BingoVoiceChatManager.toggleMute()
+                            } else {
+                                val code = currentRoom?.roomId ?: ""
+                                if (code.isNotBlank()) {
+                                    BingoVoiceChatManager.joinVoiceRoom(context, code)
+                                }
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (voiceConnectionState == VoiceConnectionState.CONNECTED && !isVoiceMuted) Icons.Default.Mic else Icons.Default.MicOff,
+                                contentDescription = "Voice Mic",
+                                tint = when (voiceConnectionState) {
+                                    VoiceConnectionState.CONNECTED -> if (isVoiceMuted) Color(0xFFEF4444) else Color(0xFF10B981)
+                                    VoiceConnectionState.CONNECTING -> Color(0xFFF59E0B)
+                                    else -> Color(0xFF94A3B8)
+                                }
+                            )
+                        }
+                    }
                     IconButton(onClick = { engine.simulateReconnection() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
@@ -399,8 +476,7 @@ fun BingoOnlineGameplayScreen(
                         aiProfile = aiProfileOfOpponent,
                         aiStatusText = oppStatusText,
                         aiCompletedLinesCount = opponent?.completedLinesCount ?: 0,
-                        aiDaubsCount = opponent?.markedCount ?: 0,
-                        onPeekBoard = { showOpponentBoardPreview = true }
+                        aiDaubsCount = opponent?.markedCount ?: 0
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -543,60 +619,6 @@ fun BingoOnlineGameplayScreen(
                         ) {
                             Text("QUIT MATCH", color = Color.White, fontWeight = FontWeight.Bold)
                         }
-                    }
-                }
-            }
-        }
-    }
-
-    // Opponent Board Peek Preview Dialog
-    if (showOpponentBoardPreview && opponent != null) {
-        val oppBoard = remember(opponent.card, currentRoom?.calledNumbers) {
-            listsToBoard(opponent.card, currentRoom?.calledNumbers ?: emptyList())
-        }
-        val oppLines = remember(oppBoard) {
-            evaluateLinesLocal(oppBoard)
-        }
-        Dialog(onDismissRequest = { showOpponentBoardPreview = false }) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth(0.95f)
-                    .padding(12.dp),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.5.dp, Color(0xFFE040FB)),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF130D2B))
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "PEEKING OPPONENT'S BOARD",
-                        color = Color(0xFFE040FB),
-                        fontWeight = FontWeight.Black,
-                        fontSize = 13.sp,
-                        letterSpacing = 1.sp
-                    )
-                    BingoMiniBoardGrid(
-                        title = opponent.displayName,
-                        subtitle = "Online Opponent",
-                        badgeText = "${oppLines.size} Lines",
-                        badgeColor = Color(0xFFE040FB),
-                        boardTiles = oppBoard,
-                        completedLines = oppLines,
-                        primaryAccentColor = Color(0xFFE040FB),
-                        markedColor = Color(0xFFAB47BC)
-                    )
-                    AaaGlossyButton(
-                        onClick = { showOpponentBoardPreview = false },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        containerColor = Color(0xFF334155),
-                        borderColor = Color(0xFF64748B)
-                    ) {
-                        Text("CLOSE PEEK", fontWeight = FontWeight.Bold)
                     }
                 }
             }

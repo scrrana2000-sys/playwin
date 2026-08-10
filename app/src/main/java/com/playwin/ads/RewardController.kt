@@ -71,8 +71,9 @@ object RewardController {
             RewardType.BLOCK_MASTER_POWERUP,
             RewardType.BINGO_DOUBLE_REWARD,
             RewardType.BINGO_SECOND_CHANCE,
-            RewardType.BINGO_DAILY_LOGIN_DOUBLE -> {
-                callback.onSuccess("Block Master/Bingo ad reward granted successfully!")
+            RewardType.BINGO_DAILY_LOGIN_DOUBLE,
+            RewardType.SHADOW_HERO_DOUBLE_REWARD -> {
+                callback.onSuccess("Ad reward granted successfully!")
             }
         }
     }

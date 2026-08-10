@@ -193,8 +193,11 @@ fun ShadowHeroCard(
 
     // Smooth press scale transition
     val cardScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1.0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        targetValue = if (isPressed) 0.96f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
         label = "CardPressScale"
     )
 
@@ -213,10 +216,11 @@ fun ShadowHeroCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .height(86.dp)
             .scale(cardScale)
             .shadow(
-                elevation = 12.dp * pulseGlow,
-                shape = RoundedCornerShape(24.dp),
+                elevation = (12 * pulseGlow).dp,
+                shape = RoundedCornerShape(20.dp),
                 spotColor = Color(0xFFA855F7),
                 ambientColor = Color(0xFF06B6D4)
             )
@@ -225,9 +229,9 @@ fun ShadowHeroCard(
                 indication = null,
                 onClick = onCardClick
             ),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         border = BorderStroke(
-            width = 1.8.dp,
+            width = 1.5.dp,
             brush = Brush.linearGradient(
                 colors = listOf(
                     Color(0xFFA855F7).copy(alpha = pulseGlow),
@@ -240,7 +244,7 @@ fun ShadowHeroCard(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
@@ -250,160 +254,107 @@ fun ShadowHeroCard(
                         )
                     )
                 )
-                .padding(18.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Thumbnail: Glowing purple hooded shadow hero avatar
                 Box(
                     modifier = Modifier
-                        .size(76.dp)
-                        .clip(RoundedCornerShape(18.dp))
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(14.dp))
                         .background(Color(0xFF1E1038))
                         .border(
                             1.dp,
                             Brush.sweepGradient(
                                 listOf(Color(0xFFA855F7), Color(0xFF06B6D4), Color(0xFFA855F7))
                             ),
-                            RoundedCornerShape(18.dp)
+                            RoundedCornerShape(14.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     ShadowHeroAvatarCanvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(4.dp),
+                            .padding(2.dp),
                         glowPulse = pulseGlow
                     )
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
+                // Title + Subtitle Column
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Header Row: Title & Future Ready Badge
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
                             text = "Shadow Hero",
                             color = Color.White,
                             fontWeight = FontWeight.Black,
-                            fontSize = 18.sp,
+                            fontSize = 16.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-
-                        // Future Ready badge
-                        Surface(
-                            color = Color(0xFF8B5CF6).copy(alpha = 0.25f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Color(0xFFA855F7))
-                        ) {
-                            Text(
-                                text = "FUTURE READY",
-                                color = Color(0xFFC084FC),
-                                fontWeight = FontWeight.Black,
-                                fontSize = 9.sp,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                            )
-                        }
                     }
+
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
                         text = "Dark Adventure",
                         color = Color(0xFF38BDF8),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
-                    // Stats Row: Best Stage & High Score
+                // Action Button: ▶ PLAY NOW
+                Box(
+                    modifier = Modifier
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF7C3AED),
+                                    Color(0xFF0284C7),
+                                    Color(0xFF6366F1)
+                                )
+                            )
+                        )
+                        .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        // Best Stage
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF1E1538), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "🗡️", fontSize = 10.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Best Stage: $bestStage",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-
-                        // High Score
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF1E1538), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = "👑", fontSize = 10.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "High: ${String.format("%,d", highScore)}",
-                                    color = Color(0xFFFFD700),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Action Row: ▶ PLAY NOW
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(0xFF7C3AED),
-                                        Color(0xFF0284C7),
-                                        Color(0xFF6366F1)
-                                    )
-                                )
-                            )
-                            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "▶",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "PLAY NOW",
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp,
-                                letterSpacing = 1.sp
-                            )
-                        }
+                        Text(
+                            text = "▶",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "PLAY NOW",
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            fontSize = 11.sp,
+                            letterSpacing = 0.5.sp
+                        )
                     }
                 }
             }

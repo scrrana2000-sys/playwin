@@ -190,7 +190,7 @@ object ShadowHeroPathValidator {
         val dx = exitBounds.center.x - fromBounds.center.x
         val dy = fromBounds.top - exitBounds.bottom // Positive if exit is higher
 
-        if (abs(dx) <= MAX_DASH_JUMP_DIST && dy <= MAX_JUMP_HEIGHT && dy >= -MAX_FALL_DROP) {
+        if (abs(dx) <= MAX_DASH_JUMP_DIST + 100f && dy <= MAX_JUMP_HEIGHT + 50f && dy >= -MAX_FALL_DROP) {
             return true
         }
         return false
@@ -207,34 +207,40 @@ object ShadowHeroPathValidator {
             else -> 0f // Overlapping horizontally
         }
 
-        // Vertical difference (positive if target is higher)
-        val heightDiff = b1.top - b2.top
-
-        // Wall Jump Shaft Exception: If both are vertical wall shaft walls
+        // Handle Vertical Walls (Wall slide & Wall jump traversal)
         if (fromPlat.isWall || toPlat.isWall) {
             val dx = abs(b2.center.x - b1.center.x)
-            if (dx in WALL_SHAFT_MIN_WIDTH..WALL_SHAFT_MAX_WIDTH) {
-                return true
+            if (dx <= MAX_DASH_JUMP_DIST) {
+                val verticalOverlap = max(0f, min(b1.bottom, b2.bottom) - max(b1.top, b2.top))
+                if (verticalOverlap > 0f || abs(b1.top - b2.top) <= MAX_JUMP_HEIGHT + 200f) {
+                    return true
+                }
             }
         }
 
+        // Effective tops considering wall height span
+        val effectiveFromTop = if (fromPlat.isWall) max(fromPlat.bounds.top, b2.top - MAX_JUMP_HEIGHT) else b1.top
+        val effectiveToTop = if (toPlat.isWall) max(toPlat.bounds.top, b1.top - MAX_JUMP_HEIGHT) else b2.top
+
+        // Vertical difference (positive if target is higher)
+        val heightDiff = effectiveFromTop - effectiveToTop
+
         // Case 1: Target platform is at similar height or lower
         if (heightDiff >= -MAX_FALL_DROP && heightDiff <= 0f) {
-            // Drop down / flat jump
             if (horizontalGap <= MAX_DASH_JUMP_DIST) {
                 return true
             }
         }
 
         // Case 2: Target platform is higher
-        if (heightDiff > 0f && heightDiff <= MAX_JUMP_HEIGHT) {
-            if (horizontalGap <= MAX_DOUBLE_JUMP_DIST) {
+        if (heightDiff > 0f && heightDiff <= MAX_JUMP_HEIGHT + 50f) {
+            if (horizontalGap <= MAX_DOUBLE_JUMP_DIST + 50f) {
                 return true
             }
         }
 
         // Case 3: High platform requiring dash jump
-        if (heightDiff in 0f..MAX_JUMP_HEIGHT && horizontalGap <= MAX_DASH_JUMP_DIST) {
+        if (heightDiff in 0f..(MAX_JUMP_HEIGHT + 100f) && horizontalGap <= MAX_DASH_JUMP_DIST) {
             return true
         }
 

@@ -92,11 +92,7 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         (spinWheelConfig.dailySpinLimit - wallet.dailySpinCount).coerceAtLeast(0)
     }
 
-    var rewardedAd by remember { mutableStateOf<com.google.android.gms.ads.rewarded.RewardedAd?>(null) }
-    var isLoadingAd by remember { mutableStateOf(false) }
-    var adWatchedCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
-
-    LaunchedEffect(wallet.dailySpinCount, wallet.remainingSpins, isSpinning, rewardedAd, showResultPopup) {
+    LaunchedEffect(wallet.dailySpinCount, wallet.remainingSpins, isSpinning, showResultPopup) {
         val currentSpinsLeft = (spinWheelConfig.dailySpinLimit - wallet.dailySpinCount).coerceAtLeast(0)
         val isAdRequired = wallet.dailySpinCount >= spinWheelConfig.dailyFreeSpins
         val btnState = if (isSpinning) "SPINNING" else if (currentSpinsLeft == 0) "TODAYS_SPINS_COMPLETED" else if (isAdRequired) "WATCH_AD" else "SPIN_NOW"
@@ -104,100 +100,6 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         android.util.Log.d("PlayWinDebug", "STATE_REFRESHED")
         android.util.Log.d("PlayWinDebug", "SPINS_LEFT=$currentSpinsLeft")
         android.util.Log.d("PlayWinDebug", "BUTTON_STATE=$btnState")
-        android.util.Log.d("PlayWinDebug", "AD_READY=${rewardedAd != null}")
-    }
-
-    val adController = remember(activity, isLoadingAd, rewardedAd, adWatchedCallback) {
-        object {
-            fun loadAd() {
-                val act = activity ?: return
-                if (isLoadingAd || rewardedAd != null) {
-                    if (rewardedAd != null) {
-                        android.util.Log.d("PlayWinDebug", "RewardedAd is already available (not null)")
-                    }
-                    return
-                }
-                isLoadingAd = true
-                android.util.Log.d("PlayWinDebug", "MobileAds initialized: verified on MainActivity onCreate. Initiating load.")
-                val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                val adUnitId = com.playwin.ads.AdConstants.REWARDED_AD_UNIT_ID
-
-                com.google.android.gms.ads.rewarded.RewardedAd.load(
-                    act,
-                    adUnitId,
-                    adRequest,
-                    object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                        override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
-                            android.util.Log.d("PlayWinDebug", "RewardedAd loaded successfully")
-                            isLoadingAd = false
-                            rewardedAd = ad
-                            android.util.Log.d("PlayWinDebug", "RewardedAd available: true")
-                            if (showAdLoadingDialog) {
-                                showAdLoadingDialog = false
-                                val callback = adWatchedCallback
-                                if (callback != null) {
-                                    adWatchedCallback = null
-                                    showAndPlayAd(callback)
-                                }
-                            }
-                        }
-
-                        override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                            android.util.Log.e("PlayWinDebug", "Rewarded Ad Failed to load. Complete LoadAdError: $loadAdError, code: ${loadAdError.code}, domain: ${loadAdError.domain}, message: ${loadAdError.message}")
-                            isLoadingAd = false
-                            rewardedAd = null
-                            if (showAdLoadingDialog) {
-                                showAdLoadingDialog = false
-                                errorMessage = "Failed to load ad. Please try again."
-                            }
-                            android.util.Log.d("PlayWinDebug", "Reload next RewardedAd scheduled in 5 seconds")
-                            coroutineScope.launch {
-                                delay(5000)
-                                loadAd()
-                            }
-                        }
-                    }
-                )
-            }
-
-            fun showAndPlayAd(onAdWatched: () -> Unit) {
-                val act = activity ?: return
-                adWatchedCallback = onAdWatched
-                val currentAd = rewardedAd
-                if (currentAd != null) {
-                    android.util.Log.d("PlayWinDebug", "RewardedAd available: true")
-                    android.util.Log.d("PlayWinDebug", "RewardedAd.show() called")
-                    showAdLoadingDialog = false
-                    currentAd.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                        override fun onAdDismissedFullScreenContent() {
-                            android.util.Log.d("PlayWinDebug", "onAdDismissed() called")
-                            rewardedAd = null
-                            android.util.Log.d("PlayWinDebug", "Reload next RewardedAd")
-                            loadAd()
-                        }
-
-                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                            android.util.Log.e("PlayWinDebug", "RewardedAd failed to show: ${error.message}")
-                            rewardedAd = null
-                            showAdLoadingDialog = false
-                            errorMessage = "Ad failed to show. Preloading another..."
-                            android.util.Log.d("PlayWinDebug", "Reload next RewardedAd")
-                            loadAd()
-                        }
-                    }
-
-                    currentAd.show(act, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
-                        android.util.Log.d("PlayWinDebug", "onUserEarnedReward() triggered")
-                        viewModel.grantAdSpinRewardLocally()
-                        onAdWatched()
-                    })
-                } else {
-                    android.util.Log.e("PlayWinDebug", "RewardedAd is NULL")
-                    showAdLoadingDialog = true
-                    loadAd()
-                }
-            }
-        }
     }
 
     // Premium theme color palette
@@ -227,7 +129,7 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
 
     LaunchedEffect(activity) {
         if (activity != null) {
-            adController.loadAd()
+            com.playwin.ads.RewardedManager.preload(activity)
         }
     }
 
@@ -724,8 +626,35 @@ fun LuckySpinScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                     onClick = {
                         if (!isSpinning) {
                             if (isAdRequired) {
-                                adController.showAndPlayAd {
-                                    startSpin(isAdSpin = true)
+                                if (activity != null) {
+                                    showAdLoadingDialog = !com.playwin.ads.RewardedManager.isAdReady(activity)
+                                    com.playwin.ads.RewardedManager.showAd(
+                                        activity = activity,
+                                        rewardType = com.playwin.ads.RewardType.SPIN,
+                                        callbacks = object : com.playwin.ads.RewardCallback {
+                                            override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                                showAdLoadingDialog = false
+                                                viewModel.grantAdSpinRewardLocally()
+                                                startSpin(isAdSpin = true)
+                                            }
+
+                                            override fun onAdFailedToLoad(errorCode: Int, errorMessageStr: String) {
+                                                showAdLoadingDialog = false
+                                                errorMessage = "Failed to load ad. Please try again."
+                                            }
+
+                                            override fun onAdFailedToShow(errorMessageStr: String) {
+                                                showAdLoadingDialog = false
+                                                errorMessage = "Ad failed to display. Please try again."
+                                            }
+
+                                            override fun onAdClosed(userEarnedReward: Boolean) {
+                                                showAdLoadingDialog = false
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    errorMessage = "Activity context is unavailable."
                                 }
                             } else {
                                 startSpin(isAdSpin = false)
@@ -1715,92 +1644,10 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
         }
     }
 
-    var rewardedAd by remember { mutableStateOf<com.google.android.gms.ads.rewarded.RewardedAd?>(null) }
-    var isLoadingAd by remember { mutableStateOf(false) }
-    var adWatchedCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
-
-    val adController = remember(activity, isLoadingAd, rewardedAd, adWatchedCallback) {
-        object {
-            fun loadAd() {
-                val act = activity ?: return
-                if (isLoadingAd || rewardedAd != null) {
-                    return
-                }
-                isLoadingAd = true
-                android.util.Log.d("PlayWinDebug", "Scratch preloading Ad started.")
-                val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                val adUnitId = com.playwin.ads.AdConstants.REWARDED_AD_UNIT_ID
-
-                com.google.android.gms.ads.rewarded.RewardedAd.load(
-                    act,
-                    adUnitId,
-                    adRequest,
-                    object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                        override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
-                            android.util.Log.d("PlayWinDebug", "Scratch Ad loaded successfully")
-                            isLoadingAd = false
-                            rewardedAd = ad
-                            if (showAdLoadingDialog) {
-                                showAdLoadingDialog = false
-                                val callback = adWatchedCallback
-                                if (callback != null) {
-                                    adWatchedCallback = null
-                                    showAndPlayAd(callback)
-                                }
-                            }
-                        }
-
-                        override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                            android.util.Log.e("PlayWinDebug", "Scratch Ad Failed to load: ${loadAdError.message}")
-                            isLoadingAd = false
-                            rewardedAd = null
-                            if (showAdLoadingDialog) {
-                                showAdLoadingDialog = false
-                                errorMessage = "Failed to load ad. Please try again."
-                            }
-                            coroutineScope.launch {
-                                delay(5000)
-                                loadAd()
-                            }
-                        }
-                    }
-                )
-            }
-
-            fun showAndPlayAd(onAdWatched: () -> Unit) {
-                val act = activity ?: return
-                adWatchedCallback = onAdWatched
-                val currentAd = rewardedAd
-                if (currentAd != null) {
-                    showAdLoadingDialog = false
-                    currentAd.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                        override fun onAdDismissedFullScreenContent() {
-                            rewardedAd = null
-                            loadAd()
-                        }
-
-                        override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                            rewardedAd = null
-                            showAdLoadingDialog = false
-                            errorMessage = "Ad failed to show. Preloading another..."
-                            loadAd()
-                        }
-                    }
-
-                    currentAd.show(act, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
-                        android.util.Log.d("PlayWinDebug", "Scratch onUserEarnedReward() triggered")
-                        onAdWatched()
-                    })
-                } else {
-                    showAdLoadingDialog = true
-                    loadAd()
-                }
-            }
+    LaunchedEffect(activity) {
+        if (activity != null) {
+            com.playwin.ads.RewardedManager.preload(activity)
         }
-    }
-
-    LaunchedEffect(Unit) {
-        adController.loadAd()
     }
 
     // Grid scratch area tracker (12x8 grid)
@@ -2381,15 +2228,41 @@ fun LuckyScratchUserScreen(viewModel: PlayWinViewModel, onBack: () -> Unit) {
                                 isStarted = false
                                 wonReward = null
                             } else if (needsAdToUnlock && !hasWatchedAdForCurrentCard) {
-                                adController.showAndPlayAd {
-                                    hasWatchedAdForCurrentCard = true
-                                    isStarted = true
-                                    errorMessage = null
-                                    scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
-                                    wonReward = viewModel.rollScratchRewardFromFirebase()
-                                    dragPoints.clear()
-                                    scratchedCells.clear()
-                                    android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
+                                if (activity != null) {
+                                    showAdLoadingDialog = !com.playwin.ads.RewardedManager.isAdReady(activity)
+                                    com.playwin.ads.RewardedManager.showAd(
+                                        activity = activity,
+                                        rewardType = com.playwin.ads.RewardType.BONUS_COINS,
+                                        callbacks = object : com.playwin.ads.RewardCallback {
+                                            override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                                showAdLoadingDialog = false
+                                                hasWatchedAdForCurrentCard = true
+                                                isStarted = true
+                                                errorMessage = null
+                                                scratchTxId = "scratch_${System.currentTimeMillis()}_${(100000..999999).random()}"
+                                                wonReward = viewModel.rollScratchRewardFromFirebase()
+                                                dragPoints.clear()
+                                                scratchedCells.clear()
+                                                android.widget.Toast.makeText(context, "Scratch Card Unlocked!", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+
+                                            override fun onAdFailedToLoad(errorCode: Int, errorMessageStr: String) {
+                                                showAdLoadingDialog = false
+                                                errorMessage = "Failed to load ad. Please try again."
+                                            }
+
+                                            override fun onAdFailedToShow(errorMessageStr: String) {
+                                                showAdLoadingDialog = false
+                                                errorMessage = "Ad failed to display. Please try again."
+                                            }
+
+                                            override fun onAdClosed(userEarnedReward: Boolean) {
+                                                showAdLoadingDialog = false
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    errorMessage = "Activity context is unavailable."
                                 }
                             } else if (!isStarted) {
                                 isStarted = true
@@ -3606,47 +3479,30 @@ fun AdRewardButton(
         onClick = {
             if (activity != null) {
                 showLoading(true)
-                val adRequest = com.google.android.gms.ads.AdRequest.Builder().build()
-                val adUnitId = com.playwin.ads.AdConstants.REWARDED_AD_UNIT_ID // AdMob Rewarded Ad Unit ID
-                
-                com.google.android.gms.ads.rewarded.RewardedAd.load(
-                    activity,
-                    adUnitId,
-                    adRequest,
-                    object : com.google.android.gms.ads.rewarded.RewardedAdLoadCallback() {
-                        override fun onAdLoaded(ad: com.google.android.gms.ads.rewarded.RewardedAd) {
+                com.playwin.ads.RewardedManager.showAd(
+                    activity = activity,
+                    rewardType = com.playwin.ads.RewardType.DAILY_TASK,
+                    callbacks = object : com.playwin.ads.RewardCallback {
+                        override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
                             showLoading(false)
-                            var earnedReward = false
-                            
-                            ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                                override fun onAdDismissedFullScreenContent() {
-                                    android.util.Log.d("PlayWinAds", "Scratch Ad dismissed")
-                                    if (earnedReward) {
-                                        onUnlocked()
-                                    } else {
-                                        onAdFailed("Ad skipped or closed early. No scratch unlocked.")
-                                    }
-                                }
-                                
-                                override fun onAdFailedToShowFullScreenContent(error: com.google.android.gms.ads.AdError) {
-                                    android.util.Log.e("PlayWinAds", "Failed to show scratch ad: ${error.message}")
-                                    // Fallback to simulation
-                                    setSecondsLeft(3)
-                                    showOverlay(true)
-                                }
-                            }
-                            
-                            ad.show(activity, com.google.android.gms.ads.OnUserEarnedRewardListener { rewardItem ->
-                                earnedReward = true
-                            })
+                            onUnlocked()
                         }
 
-                        override fun onAdFailedToLoad(loadAdError: com.google.android.gms.ads.LoadAdError) {
-                            android.util.Log.e("PlayWinAds", "Failed to load scratch ad: ${loadAdError.message}")
-                            // Fallback to simulation so user is not blocked
+                        override fun onAdFailedToLoad(errorCode: Int, errorMessageStr: String) {
                             showLoading(false)
-                            setSecondsLeft(3)
-                            showOverlay(true)
+                            onAdFailed("Ad failed to load: $errorMessageStr")
+                        }
+
+                        override fun onAdFailedToShow(errorMessageStr: String) {
+                            showLoading(false)
+                            onAdFailed("Ad failed to show: $errorMessageStr")
+                        }
+
+                        override fun onAdClosed(userEarnedReward: Boolean) {
+                            showLoading(false)
+                            if (!userEarnedReward) {
+                                onAdFailed("Ad skipped or closed early. No scratch unlocked.")
+                            }
                         }
                     }
                 )

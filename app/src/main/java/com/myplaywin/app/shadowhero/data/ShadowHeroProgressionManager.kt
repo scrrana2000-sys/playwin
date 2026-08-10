@@ -204,8 +204,10 @@ object ShadowHeroProgressionManager {
         val currentBestTime = prefs.getFloat(KEY_BEST_TIME, 0f)
         val currentStagesCompleted = prefs.getInt(KEY_STAGES_COMPLETED, 0)
 
+        val nextUnlockedStage = maxOf(currentBestStage, stage + 1)
+
         prefs.edit().apply {
-            if (stage > currentBestStage) putInt(KEY_BEST_STAGE, stage)
+            putInt(KEY_BEST_STAGE, nextUnlockedStage)
             if (currentBestTime == 0f || completionTime < currentBestTime) putFloat(KEY_BEST_TIME, completionTime)
             putInt(KEY_STAGES_COMPLETED, currentStagesCompleted + 1)
             apply()
@@ -263,23 +265,85 @@ object ShadowHeroProgressionManager {
             return
         }
 
-        // Balanced Stage Reward Formula
-        val baseReward = (10 + stage * 2).coerceAtMost(30)
-        val crystalBonus = crystalsCollected * 1
-        val fastBonus = if (completionTime > 0f && completionTime < 45f) 5 else 0
-        val noDeathBonus = if (deathsInStage == 0) 10 else 0
-
-        val totalCoins = baseReward + crystalBonus + fastBonus + noDeathBonus
+        val totalCoins = when {
+            stage % 3 == 1 -> ShadowHeroRewardConfig.LEVEL_EASY_REWARD
+            stage % 3 == 2 -> ShadowHeroRewardConfig.LEVEL_NORMAL_REWARD
+            else -> ShadowHeroRewardConfig.LEVEL_HARD_REWARD
+        }.coerceAtMost(ShadowHeroRewardConfig.MAX_LEVEL_REWARD)
 
         WalletService.updateWallet(
             userId = userId,
             coinsDelta = totalCoins,
-            source = "Shadow Hero: Stage $stage Clear",
-            type = "shadow_hero_stage",
+            source = "SHADOW_HERO",
+            type = "LEVEL_COMPLETE",
             onComplete = { success, _, _, error ->
                 if (success) {
                     prefs.edit().putBoolean(PREFIX_CLAIMED_TX + txKey, true).apply()
+                    
+                    // Award crystals collected as separate COLLECTIBLE transaction
+                    val collectibleCoins = (crystalsCollected * ShadowHeroRewardConfig.COLLECTIBLE_REWARD).coerceAtMost(5)
+                    if (collectibleCoins > 0) {
+                        WalletService.updateWallet(
+                            userId = userId,
+                            coinsDelta = collectibleCoins,
+                            source = "SHADOW_HERO",
+                            type = "COLLECTIBLE",
+                            onComplete = { _, _, _, _ -> }
+                        )
+                    }
+                    
                     onResult(true, totalCoins, null)
+                } else {
+                    onResult(false, 0, error ?: "Transaction failed")
+                }
+            }
+        )
+    }
+
+    fun isDoubleRewardClaimed(context: Context, userId: String, stage: Int, seed: Long): Boolean {
+        val txDoubleKey = "sh_stage_double_${userId}_${stage}_${seed}"
+        return getPrefs(context).getBoolean(PREFIX_CLAIMED_TX + txDoubleKey, false)
+    }
+
+    fun awardDoubleStageReward(
+        context: Context,
+        userId: String,
+        stage: Int,
+        seed: Long,
+        baseRewardAwarded: Int,
+        onResult: (Boolean, Int, String?) -> Unit
+    ) {
+        val txDoubleKey = "sh_stage_double_${userId}_${stage}_${seed}"
+        val prefs = getPrefs(context)
+        
+        if (prefs.getBoolean(PREFIX_CLAIMED_TX + txDoubleKey, false)) {
+            onResult(false, 0, "Double reward already claimed for this stage.")
+            return
+        }
+
+        val extraReward = baseRewardAwarded
+        val totalWithDouble = baseRewardAwarded + extraReward
+        
+        val cappedExtra = if (totalWithDouble > ShadowHeroRewardConfig.MAX_LEVEL_REWARD_WITH_AD) {
+            (ShadowHeroRewardConfig.MAX_LEVEL_REWARD_WITH_AD - baseRewardAwarded).coerceAtLeast(0)
+        } else {
+            extraReward
+        }
+
+        if (cappedExtra <= 0) {
+            onResult(false, 0, "Maximum ad reward already reached.")
+            return
+        }
+
+        WalletService.updateWallet(
+            userId = userId,
+            coinsDelta = cappedExtra,
+            source = "SHADOW_HERO",
+            type = "REWARDED_DOUBLE",
+            onComplete = { success, _, _, error ->
+                if (success) {
+                    prefs.edit().putBoolean(PREFIX_CLAIMED_TX + txDoubleKey, true).apply()
+                    onResult(true, cappedExtra, null)
                 } else {
                     onResult(false, 0, error ?: "Transaction failed")
                 }
@@ -326,13 +390,13 @@ object ShadowHeroProgressionManager {
         val m7Claim = prefs.getBoolean(PREFIX_MISSION_CLAIMED + "m_reach_stage5", false)
 
         return listOf(
-            ShadowHeroMission("m_play_1", "Awaken Shadow", "Play 1 Shadow Hero stage", 20, m1Prog, 1, m1Prog >= 1, m1Claim),
-            ShadowHeroMission("m_complete_3", "Void Conqueror", "Complete 3 stages", 50, m2Prog, 3, m2Prog >= 3, m2Claim),
-            ShadowHeroMission("m_crystals", "Crystal Collector", "Collect 20 crystals", 30, m3Prog, 20, m3Prog >= 20, m3Claim),
-            ShadowHeroMission("m_dash", "Shadow Speedster", "Perform 10 dashes", 25, m4Prog, 10, m4Prog >= 10, m4Claim),
-            ShadowHeroMission("m_checkpoint", "Anchor of Light", "Activate 1 checkpoint", 20, m5Prog, 1, m5Prog >= 1, m5Claim),
-            ShadowHeroMission("m_no_death", "Flawless Runner", "Clear a stage without dying", 40, m6Prog, 1, m6Prog >= 1, m6Claim),
-            ShadowHeroMission("m_reach_stage5", "Deep Descent", "Reach Stage 5 or higher", 60, m7Prog, 5, m7Prog >= 5, m7Claim)
+            ShadowHeroMission("m_play_1", "Awaken Shadow", "Play 1 Shadow Hero stage", 2, m1Prog, 1, m1Prog >= 1, m1Claim),
+            ShadowHeroMission("m_complete_3", "Void Conqueror", "Complete 3 stages", 5, m2Prog, 3, m2Prog >= 3, m2Claim),
+            ShadowHeroMission("m_crystals", "Crystal Collector", "Collect 20 crystals", 3, m3Prog, 20, m3Prog >= 20, m3Claim),
+            ShadowHeroMission("m_dash", "Shadow Speedster", "Perform 10 dashes", 2, m4Prog, 10, m4Prog >= 10, m4Claim),
+            ShadowHeroMission("m_checkpoint", "Anchor of Light", "Activate 1 checkpoint", 2, m5Prog, 1, m5Prog >= 1, m5Claim),
+            ShadowHeroMission("m_no_death", "Flawless Runner", "Clear a stage without dying", 4, m6Prog, 1, m6Prog >= 1, m6Claim),
+            ShadowHeroMission("m_reach_stage5", "Deep Descent", "Reach Stage 5 or higher", 5, m7Prog, 5, m7Prog >= 5, m7Claim)
         )
     }
 
@@ -357,11 +421,12 @@ object ShadowHeroProgressionManager {
             return
         }
 
+        val finalReward = rewardCoins.coerceAtMost(ShadowHeroRewardConfig.MISSION_MAX_REWARD)
         WalletService.updateWallet(
             userId = userId,
-            coinsDelta = rewardCoins,
-            source = "Shadow Hero Daily Mission",
-            type = "shadow_hero_mission",
+            coinsDelta = finalReward,
+            source = "SHADOW_HERO",
+            type = "MISSION",
             onComplete = { success, _, _, error ->
                 if (success) {
                     prefs.edit().putBoolean(claimKey, true).apply()
@@ -388,7 +453,7 @@ object ShadowHeroProgressionManager {
             title = "Daily Realm: Stage 5 Clear",
             description = "Reach and clear Stage 5 on today's deterministic realm seed.",
             goalStage = 5,
-            rewardCoins = 100,
+            rewardCoins = ShadowHeroRewardConfig.BOSS_MAX_REWARD,
             isCompleted = isCompleted,
             isClaimed = isClaimed
         )
@@ -425,11 +490,12 @@ object ShadowHeroProgressionManager {
             return
         }
 
+        val finalReward = challenge.rewardCoins.coerceAtMost(ShadowHeroRewardConfig.BOSS_MAX_REWARD)
         WalletService.updateWallet(
             userId = userId,
-            coinsDelta = challenge.rewardCoins,
-            source = "Shadow Hero Daily Challenge",
-            type = "shadow_hero_challenge",
+            coinsDelta = finalReward,
+            source = "SHADOW_HERO",
+            type = "BOSS",
             onComplete = { success, _, _, error ->
                 if (success) {
                     getPrefs(context).edit().putBoolean(KEY_DAILY_CHALLENGE_CLAIMED + challenge.dateString, true).apply()
@@ -447,14 +513,14 @@ object ShadowHeroProgressionManager {
         val prefs = getPrefs(context)
 
         val rawAchievements = listOf(
-            ShadowHeroAchievement("ach_first_shadow", "FIRST SHADOW", "Complete your first stage.", "🗡️", stats.stagesCompleted >= 1, rewardCoins = 50),
-            ShadowHeroAchievement("ach_crystal_hunter", "CRYSTAL HUNTER", "Collect 100 crystals.", "💎", stats.totalCrystals >= 100, rewardCoins = 100),
-            ShadowHeroAchievement("ach_wall_master", "WALL MASTER", "Perform 50 wall jumps.", "🧗", stats.totalWallJumps >= 50, rewardCoins = 100),
-            ShadowHeroAchievement("ach_shadow_dasher", "SHADOW DASHER", "Perform 100 dashes.", "⚡", stats.totalDashes >= 100, rewardCoins = 100),
-            ShadowHeroAchievement("ach_survivor", "SURVIVOR", "Complete 10 stages without using Continue.", "🛡️", stats.stagesCompleted >= 10 && stats.continueAdsUsed == 0, rewardCoins = 200),
-            ShadowHeroAchievement("ach_deep_explorer", "DEEP EXPLORER", "Reach Stage 50.", "🌌", stats.bestStage >= 50, rewardCoins = 300),
-            ShadowHeroAchievement("ach_shadow_legend", "SHADOW LEGEND", "Reach Stage 100.", "👑", stats.bestStage >= 100, rewardCoins = 500),
-            ShadowHeroAchievement("ach_infinite_runner", "INFINITE RUNNER", "Reach Stage 500.", "🪐", stats.bestStage >= 500, rewardCoins = 1000)
+            ShadowHeroAchievement("ach_first_shadow", "FIRST SHADOW", "Complete your first stage.", "🗡️", stats.stagesCompleted >= 1, rewardCoins = 5),
+            ShadowHeroAchievement("ach_crystal_hunter", "CRYSTAL HUNTER", "Collect 100 crystals.", "💎", stats.totalCrystals >= 100, rewardCoins = 10),
+            ShadowHeroAchievement("ach_wall_master", "WALL MASTER", "Perform 50 wall jumps.", "🧗", stats.totalWallJumps >= 50, rewardCoins = 10),
+            ShadowHeroAchievement("ach_shadow_dasher", "SHADOW DASHER", "Perform 100 dashes.", "⚡", stats.totalDashes >= 100, rewardCoins = 10),
+            ShadowHeroAchievement("ach_survivor", "SURVIVOR", "Complete 10 stages without using Continue.", "🛡️", stats.stagesCompleted >= 10 && stats.continueAdsUsed == 0, rewardCoins = 10),
+            ShadowHeroAchievement("ach_deep_explorer", "DEEP EXPLORER", "Reach Stage 50.", "🌌", stats.bestStage >= 50, rewardCoins = 10),
+            ShadowHeroAchievement("ach_shadow_legend", "SHADOW LEGEND", "Reach Stage 100.", "👑", stats.bestStage >= 100, rewardCoins = 10),
+            ShadowHeroAchievement("ach_infinite_runner", "INFINITE RUNNER", "Reach Stage 500.", "🪐", stats.bestStage >= 500, rewardCoins = 10)
         )
 
         return rawAchievements.map { ach ->
@@ -497,11 +563,12 @@ object ShadowHeroProgressionManager {
             return
         }
 
+        val finalReward = rewardCoins.coerceAtMost(ShadowHeroRewardConfig.ACHIEVEMENT_MAX_REWARD)
         WalletService.updateWallet(
             userId = userId,
-            coinsDelta = rewardCoins,
-            source = "Shadow Hero Achievement",
-            type = "shadow_hero_achievement",
+            coinsDelta = finalReward,
+            source = "SHADOW_HERO",
+            type = "ACHIEVEMENT",
             onComplete = { success, _, _, error ->
                 if (success) {
                     prefs.edit().putBoolean(claimKey, true).apply()

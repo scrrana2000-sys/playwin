@@ -96,6 +96,16 @@ fun BingoHomeScreen(
         }
     }
 
+    val isAnySubScreenActive = isSocialEventsActive || isLiveOpsActive || isProgressionActive || isOnlineLobbyActive
+    androidx.activity.compose.BackHandler(enabled = isAnySubScreenActive) {
+        when {
+            isSocialEventsActive -> isSocialEventsActive = false
+            isLiveOpsActive -> isLiveOpsActive = false
+            isProgressionActive -> isProgressionActive = false
+            isOnlineLobbyActive -> isOnlineLobbyActive = false
+        }
+    }
+
     if (isSocialEventsActive) {
         BingoLiveEventsAndSocialScreen(
             repository = liveEventsRepository,
@@ -415,10 +425,7 @@ fun BingoHomeScreen(
                     onSettingsClick = { activeDialog = BingoDialogType.Settings }
                 )
 
-                // Centralized Banner Ad
-                com.playwin.ads.BannerManager.BannerAd(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                )
+
 
                 Spacer(modifier = Modifier.height(16.dp))
             }

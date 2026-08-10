@@ -319,6 +319,9 @@ fun BingoGamePlayScreen(
     // Dialog flags
     var showPauseMenu by remember { mutableStateOf(false) }
     var showExitConfirmDialog by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = true) {
+        showExitConfirmDialog = true
+    }
     var showHowToPlayModal by remember { mutableStateOf(false) }
     var notificationMessage by remember { mutableStateOf<String?>(null) }
     var showRewardPopup by remember { mutableStateOf(false) }
@@ -341,7 +344,6 @@ fun BingoGamePlayScreen(
     var aiCompletedLines by remember { mutableStateOf<Set<BingoLineType>>(emptySet()) }
     var aiDaubsCount by remember { mutableIntStateOf(1) } // Free center tile starts marked
     var aiStatusText by remember { mutableStateOf("Waiting...") }
-    var showAiBoardPreview by remember { mutableStateOf(false) }
     var isReplayModeActive by remember { mutableStateOf(false) }
 
     // Called Numbers State
@@ -378,7 +380,6 @@ fun BingoGamePlayScreen(
         showPauseMenu = false
         showExitConfirmDialog = false
         showHowToPlayModal = false
-        showAiBoardPreview = false
         isReplayModeActive = false
     }
 
@@ -896,8 +897,7 @@ fun BingoGamePlayScreen(
                         aiProfile = aiProfile,
                         aiStatusText = aiStatusText,
                         aiCompletedLinesCount = aiCompletedLines.size,
-                        aiDaubsCount = aiDaubsCount,
-                        onPeekBoard = { showAiBoardPreview = true }
+                        aiDaubsCount = aiDaubsCount
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1067,16 +1067,6 @@ fun BingoGamePlayScreen(
                     aiBoardInitial = initialBoards.second,
                     calledNumbersHistory = calledNumbersHistory,
                     onClose = { isReplayModeActive = false }
-                )
-            }
-
-            // 5. Peek AI Board Dialog
-            if (showAiBoardPreview) {
-                BingoAiBoardPreviewDialog(
-                    aiProfile = aiProfile,
-                    aiBoardTiles = aiBoardTiles,
-                    aiCompletedLines = aiCompletedLines,
-                    onDismiss = { showAiBoardPreview = false }
                 )
             }
 
@@ -2097,8 +2087,7 @@ fun BingoAiOpponentHeader(
     aiProfile: AiPlayerProfile,
     aiStatusText: String,
     aiCompletedLinesCount: Int,
-    aiDaubsCount: Int,
-    onPeekBoard: () -> Unit
+    aiDaubsCount: Int
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2191,133 +2180,6 @@ fun BingoAiOpponentHeader(
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
-            }
-
-            // Peek AI Board Button
-            OutlinedButton(
-                onClick = onPeekBoard,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                modifier = Modifier.height(30.dp),
-                shape = RoundedCornerShape(15.dp),
-                border = BorderStroke(1.dp, Color(0xFFFF80AB))
-            ) {
-                Text(
-                    text = "PEEK 👁️",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun BingoAiBoardPreviewDialog(
-    aiProfile: AiPlayerProfile,
-    aiBoardTiles: List<List<BingoTile>>,
-    aiCompletedLines: Set<BingoLineType>,
-    onDismiss: () -> Unit
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(12.dp),
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.5.dp, Color(0xFFE040FB)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E0C2E))
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(text = aiProfile.avatarEmoji, fontSize = 24.sp)
-                        Column {
-                            Text(
-                                text = "${aiProfile.countryFlag} ${aiProfile.name}'s Board",
-                                color = Color.White,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "Live AI Progress Preview",
-                                color = Color(0xFFFF80AB),
-                                fontSize = 10.sp
-                            )
-                        }
-                    }
-
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                    }
-                }
-
-                // Mini 5x5 Board Grid
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF11071F)),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        aiBoardTiles.forEachIndexed { r, row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                row.forEachIndexed { c, tile ->
-                                    val isWinning = isTileInWinningLine(r, c, aiCompletedLines)
-                                    val tileBg = when {
-                                        isWinning -> Color(0xFFFFD700)
-                                        tile.isMarked -> Color(0xFFAB47BC)
-                                        else -> Color(0xFF2D1845)
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .aspectRatio(1f)
-                                            .background(tileBg, RoundedCornerShape(6.dp))
-                                            .border(
-                                                1.dp,
-                                                if (tile.isMarked) Color(0xFFFF80AB) else Color(0xFF4A2870),
-                                                RoundedCornerShape(6.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = if (tile.isFreeTile) "★" else "${tile.number}",
-                                            color = if (isWinning) Color.Black else Color.White,
-                                            fontSize = 10.sp,
-                                            fontWeight = if (tile.isMarked) FontWeight.Black else FontWeight.Normal
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE040FB)),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Text("CLOSE PREVIEW", color = Color.White, fontWeight = FontWeight.Bold)
-                }
             }
         }
     }

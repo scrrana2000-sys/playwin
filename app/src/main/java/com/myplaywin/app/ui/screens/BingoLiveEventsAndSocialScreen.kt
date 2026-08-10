@@ -37,6 +37,12 @@ import androidx.compose.ui.unit.sp
 import com.myplaywin.app.data.model.*
 import com.myplaywin.app.data.model.DailyMission
 import com.myplaywin.app.data.repository.BingoLiveEventsAndSocialRepository
+import com.myplaywin.app.data.voice.BingoVoiceChatManager
+import com.myplaywin.app.data.voice.VoiceConnectionState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
 import com.myplaywin.app.ui.components.AaaBingoAudioHaptics
 import kotlinx.coroutines.delay
 
@@ -98,11 +104,7 @@ fun BingoLiveEventsAndSocialScreen(
     }
 
     Scaffold(
-        bottomBar = {
-            com.playwin.ads.BannerManager.BannerAd(
-                modifier = Modifier.fillMaxWidth().background(Color(0xFF0D0B18))
-            )
-        },
+
         topBar = {
             TopAppBar(
                 title = {
@@ -417,6 +419,53 @@ private fun PrivateRoomsSection(
     val context = LocalContext.current
     var joinCodeInput by remember { mutableStateOf("") }
 
+    val voiceConnectionState by BingoVoiceChatManager.connectionState.collectAsState()
+    val isVoiceMuted by BingoVoiceChatManager.isMuted.collectAsState()
+    val voiceStatusMsg by BingoVoiceChatManager.statusMessage.collectAsState()
+    val speakingPlayers by BingoVoiceChatManager.speakingPlayers.collectAsState()
+    val roomParticipants by BingoVoiceChatManager.roomParticipants.collectAsState()
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val code = currentRoom?.roomCode ?: ""
+            if (code.isNotBlank()) {
+                BingoVoiceChatManager.joinVoiceRoom(context, code)
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission required for voice chat.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            BingoVoiceChatManager.leaveVoiceRoom(context)
+        }
+    }
+
+    LaunchedEffect(currentRoom?.roomCode) {
+        val roomCode = currentRoom?.roomCode
+        if (!roomCode.isNullOrBlank()) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (hasPermission) {
+                BingoVoiceChatManager.joinVoiceRoom(context, roomCode)
+            } else {
+                micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        } else {
+            BingoVoiceChatManager.leaveVoiceRoom(context)
+        }
+    }
+
+    val handleLeaveRoom = {
+        BingoVoiceChatManager.leaveVoiceRoom(context)
+        onLeaveRoom()
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -553,6 +602,96 @@ private fun PrivateRoomsSection(
                             }
                         }
 
+                        // Compact Voice Chat Bar
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF334155))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                when (voiceConnectionState) {
+                                                    VoiceConnectionState.CONNECTED -> if (isVoiceMuted) Color(0xFFEF4444) else Color(0xFF10B981)
+                                                    VoiceConnectionState.CONNECTING -> Color(0xFFF59E0B)
+                                                    else -> Color(0xFF475569)
+                                                }
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                val hasPermission = ContextCompat.checkSelfPermission(
+                                                    context,
+                                                    android.Manifest.permission.RECORD_AUDIO
+                                                ) == PackageManager.PERMISSION_GRANTED
+
+                                                if (!hasPermission) {
+                                                    micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                                } else if (voiceConnectionState == VoiceConnectionState.CONNECTED) {
+                                                    BingoVoiceChatManager.toggleMute()
+                                                } else {
+                                                    BingoVoiceChatManager.joinVoiceRoom(context, currentRoom.roomCode)
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isVoiceMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                                                contentDescription = "Microphone",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column {
+                                        Text(
+                                            text = when (voiceConnectionState) {
+                                                VoiceConnectionState.CONNECTED -> if (isVoiceMuted) "Mic Muted (Tap to Unmute)" else "Live Voice Chat Active"
+                                                VoiceConnectionState.CONNECTING -> "Connecting Voice..."
+                                                VoiceConnectionState.ERROR -> voiceStatusMsg.ifEmpty { "Voice Error" }
+                                                VoiceConnectionState.DISCONNECTED -> "Tap Mic to Join Voice"
+                                            },
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = if (voiceConnectionState == VoiceConnectionState.CONNECTED) {
+                                                if (speakingPlayers.isNotEmpty()) "${speakingPlayers.size} player(s) speaking" else "Room channel connected"
+                                            } else "WebRTC encrypted private room voice",
+                                            fontSize = 10.sp,
+                                            color = Color.LightGray
+                                        )
+                                    }
+                                }
+
+                                if (voiceConnectionState == VoiceConnectionState.CONNECTING) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = Color(0xFFFFD700),
+                                        strokeWidth = 2.dp
+                                    )
+                                }
+                            }
+                        }
+
                         if (currentRoom.status == "starting") {
                             var secsLeft by remember { mutableStateOf(3) }
                             LaunchedEffect(currentRoom.gameStartedAt) {
@@ -593,7 +732,7 @@ private fun PrivateRoomsSection(
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 AaaGlossyButton(
-                                    onClick = onLeaveRoom,
+                                    onClick = handleLeaveRoom,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(44.dp),
@@ -610,19 +749,54 @@ private fun PrivateRoomsSection(
                             Spacer(modifier = Modifier.height(8.dp))
 
                             currentRoom.players.forEach { p ->
+                                val isSpeaking = speakingPlayers.contains(p.uid)
+                                val pParticipant = roomParticipants[p.uid]
+                                val isMuted = pParticipant?.isMuted == true
+
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSpeaking) Color(0xFF10B981).copy(alpha = 0.25f) else Color.Transparent)
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "${p.displayName} ${if (p.isHost) "(HOST)" else ""}",
-                                        fontSize = 14.sp,
-                                        color = if (p.isHost) Color(0xFFFFD700) else Color.White,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isSpeaking) {
+                                            Icon(
+                                                imageVector = Icons.Default.VolumeUp,
+                                                contentDescription = "Speaking",
+                                                tint = Color(0xFF10B981),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        } else if (isMuted) {
+                                            Icon(
+                                                imageVector = Icons.Default.MicOff,
+                                                contentDescription = "Muted",
+                                                tint = Color.Red.copy(alpha = 0.8f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Mic,
+                                                contentDescription = "Mic On",
+                                                tint = Color.Gray,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        }
+
+                                        Text(
+                                            text = "${p.displayName} ${if (p.isHost) "(HOST)" else ""}",
+                                            fontSize = 14.sp,
+                                            color = if (isSpeaking) Color(0xFF34D399) else if (p.isHost) Color(0xFFFFD700) else Color.White,
+                                            fontWeight = if (isSpeaking || p.isHost) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
 
                                     if (!p.isHost) {
                                         IconButton(onClick = { onKickPlayer(p.uid) }) {
@@ -640,7 +814,7 @@ private fun PrivateRoomsSection(
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 AaaGlossyButton(
-                                    onClick = onLeaveRoom,
+                                    onClick = handleLeaveRoom,
                                     modifier = Modifier
                                         .weight(if (isUserHost) 1f else 2f)
                                         .height(44.dp),

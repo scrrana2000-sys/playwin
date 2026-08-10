@@ -323,6 +323,78 @@ object ShadowHeroAudioEngine {
         playCountdownBeep(if (isGo) 0 else 1)
     }
 
+    // --- COMBAT & ENEMIES (Phase 13) ---
+
+    fun playShadowStrike() {
+        if (!soundEnabled) return
+        triggerHaptic(20)
+        scope.launch {
+            playSynthToneInternal(startFreq = 300f, endFreq = 900f, durationMs = 120, volume = 0.45f * sfxVolume)
+        }
+    }
+
+    fun playShadowStrikeCombo() {
+        if (!soundEnabled) return
+        triggerHaptic(40)
+        scope.launch {
+            playSynthToneInternal(startFreq = 200f, endFreq = 1100f, durationMs = 180, volume = 0.55f * sfxVolume)
+        }
+    }
+
+    fun playPlayerHurt() {
+        if (!soundEnabled) return
+        triggerHaptic(60)
+        scope.launch {
+            playNoiseThumpInternal(durationMs = 140, volume = 0.6f * sfxVolume)
+            playSynthToneInternal(startFreq = 440f, endFreq = 150f, durationMs = 120, volume = 0.5f * sfxVolume)
+        }
+    }
+
+    fun playEnemyDetection() {
+        if (!soundEnabled) return
+        scope.launch {
+            playSynthToneInternal(startFreq = 600f, endFreq = 850f, durationMs = 100, volume = 0.35f * sfxVolume)
+        }
+    }
+
+    fun playEnemyAttack() {
+        if (!soundEnabled) return
+        scope.launch {
+            playSynthToneInternal(startFreq = 150f, endFreq = 400f, durationMs = 150, volume = 0.4f * sfxVolume)
+        }
+    }
+
+    fun playEnemyHurt() {
+        if (!soundEnabled) return
+        scope.launch {
+            playSynthToneInternal(startFreq = 300f, endFreq = 180f, durationMs = 90, volume = 0.45f * sfxVolume)
+        }
+    }
+
+    fun playEnemyDeath() {
+        if (!soundEnabled) return
+        scope.launch {
+            playNoiseThumpInternal(durationMs = 100, volume = 0.5f * sfxVolume)
+            playChimeSequenceInternal(intArrayOf(220, 165, 110), stepMs = 60, volume = 0.45f * sfxVolume)
+        }
+    }
+
+    fun playCriticalHit() {
+        if (!soundEnabled) return
+        triggerHaptic(40)
+        scope.launch {
+            playChimeSequenceInternal(intArrayOf(600, 900, 1200), stepMs = 35, volume = 0.65f * sfxVolume)
+        }
+    }
+
+    fun playChaserWarning() {
+        if (!soundEnabled) return
+        triggerHaptic(25)
+        scope.launch {
+            playSynthToneInternal(startFreq = 880f, endFreq = 880f, durationMs = 180, volume = 0.6f * sfxVolume)
+        }
+    }
+
     // --- UI SOUNDS ---
 
     fun playButtonClick() {

@@ -3347,53 +3347,47 @@ fun HomeScreen(
                                         adLoadingState = true
                                         viewModel.logUpgradedAdEvent("Ad Requested", "User clicked Watch Ad button.")
                                         
-                                        if (com.playwin.ads.RewardedManager.isAdReady(activity)) {
-                                            com.playwin.ads.RewardedManager.showAd(
-                                                activity,
-                                                com.playwin.ads.RewardType.PROFILE_REWARD,
-                                                object : com.playwin.ads.RewardCallback {
-                                                    override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
-                                                        viewModel.logUpgradedAdEvent("onUserEarnedReward", "Google callback received.")
-                                                        com.playwin.ads.RewardController.grantReward(
-                                                            viewModel,
-                                                            rewardType,
-                                                            token,
-                                                            object : com.playwin.ads.RewardController.RewardGrantCallback {
-                                                                override fun onSuccess(message: String) {
-                                                                    adFeedbackMessage = message
-                                                                    adLoadingState = false
-                                                                }
-                                                                override fun onFailure(error: String) {
-                                                                    adFeedbackMessage = error
-                                                                    adLoadingState = false
-                                                                }
+                                        com.playwin.ads.RewardedManager.showAd(
+                                            activity,
+                                            com.playwin.ads.RewardType.PROFILE_REWARD,
+                                            object : com.playwin.ads.RewardCallback {
+                                                override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
+                                                    viewModel.logUpgradedAdEvent("onUserEarnedReward", "Google callback received.")
+                                                    com.playwin.ads.RewardController.grantReward(
+                                                        viewModel,
+                                                        rewardType,
+                                                        token,
+                                                        object : com.playwin.ads.RewardController.RewardGrantCallback {
+                                                            override fun onSuccess(message: String) {
+                                                                adFeedbackMessage = message
+                                                                adLoadingState = false
                                                             }
-                                                        )
-                                                    }
-
-                                                    override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
-                                                        adLoadingState = false
-                                                        viewModel.logUpgradedAdEvent("Ad Load Failed", "Error: ")
-                                                        adFeedbackMessage = "Ad failed to load. Please verify your connection and try again."
-                                                    }
-
-                                                    override fun onAdFailedToShow(errorMessage: String) {
-                                                        viewModel.logUpgradedAdEvent("Ad Play Failed", "Error: $errorMessage")
-                                                        adLoadingState = false
-                                                        adFeedbackMessage = "Failed to display ad.\nPlease try again."
-                                                    }
-
-                                                    override fun onAdClosed(userEarnedReward: Boolean) {
-                                                        viewModel.logUpgradedAdEvent("Ad Dismissed", "User dismissed the full-screen ad.")
-                                                        adLoadingState = false
-                                                    }
+                                                            override fun onFailure(error: String) {
+                                                                adFeedbackMessage = error
+                                                                adLoadingState = false
+                                                            }
+                                                        }
+                                                    )
                                                 }
-                                            )
-                                        } else {
-                                            com.playwin.ads.RewardedManager.preload(activity)
-                                            adLoadingState = false
-                                            adFeedbackMessage = "Secure stream is buffering. Please tap again in a moment."
-                                        }
+
+                                                override fun onAdFailedToLoad(errorCode: Int, errorMessage: String) {
+                                                    adLoadingState = false
+                                                    viewModel.logUpgradedAdEvent("Ad Load Failed", "Error: $errorMessage")
+                                                    adFeedbackMessage = "Ad failed to load ($errorMessage). Please try again."
+                                                }
+
+                                                override fun onAdFailedToShow(errorMessage: String) {
+                                                    viewModel.logUpgradedAdEvent("Ad Play Failed", "Error: $errorMessage")
+                                                    adLoadingState = false
+                                                    adFeedbackMessage = "Failed to display ad.\nPlease try again."
+                                                }
+
+                                                override fun onAdClosed(userEarnedReward: Boolean) {
+                                                    viewModel.logUpgradedAdEvent("Ad Dismissed", "User dismissed the full-screen ad.")
+                                                    adLoadingState = false
+                                                }
+                                            }
+                                        )
                                     } else {
                                         adFeedbackMessage = "Activity context is unavailable."
                                     }
@@ -3880,11 +3874,6 @@ fun HomeScreen(
             }
         }
         */
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- BANNER AD (AdMob) ---
-        com.playwin.ads.BannerManager.BannerAd()
 
         Spacer(modifier = Modifier.height(16.dp))
 

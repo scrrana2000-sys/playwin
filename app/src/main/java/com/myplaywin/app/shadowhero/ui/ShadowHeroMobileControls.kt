@@ -42,6 +42,7 @@ fun ShadowHeroMobileControls(
     onRightPressChange: (Boolean) -> Unit,
     onJumpClick: () -> Unit,
     onDashClick: () -> Unit,
+    onAttackClick: () -> Unit,
     dashCooldownFraction: Float,
     modifier: Modifier = Modifier
 ) {
@@ -87,10 +88,10 @@ fun ShadowHeroMobileControls(
             )
         }
 
-        // --- RIGHT SIDE: JUMP & DASH BUTTONS ---
+        // --- RIGHT SIDE: JUMP, DASH & ATTACK BUTTONS ---
         Row(
             modifier = Modifier.align(Alignment.BottomEnd),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             // Dash Button [ DASH ] with Cooldown Arc
@@ -98,6 +99,14 @@ fun ShadowHeroMobileControls(
                 dashCooldownFraction = dashCooldownFraction,
                 onClick = {
                     onDashClick()
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                }
+            )
+
+            // Attack Button [ ATTACK ] (Phase 13)
+            AttackControlButton(
+                onClick = {
+                    onAttackClick()
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 }
             )
@@ -285,6 +294,56 @@ private fun DashControlButton(
                 text = "DASH",
                 color = if (isReady) Color.White else Color.Gray,
                 fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.8.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttackControlButton(
+    onClick: () -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.88f else 1.0f,
+        animationSpec = spring(stiffness = 500f),
+        label = "AttackScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(76.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        Color(0xFFEC4899).copy(alpha = if (isPressed) 0.9f else 0.7f),
+                        Color(0xFFBE185D).copy(alpha = 0.5f)
+                    )
+                )
+            )
+            .border(2.5.dp, Color(0xFFF472B6), CircleShape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        onClick()
+                        tryAwaitRelease()
+                        isPressed = false
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = "⚔️", fontSize = 20.sp)
+            Text(
+                text = "ATTACK",
+                color = Color.White,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 0.8.sp
             )

@@ -17,11 +17,14 @@ object AdConstants {
     private const val TEST_REWARDED = "ca-app-pub-3940256099942544/5224354917"
     private const val TEST_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
 
-    val BANNER_AD_UNIT_ID: String = PROD_BANNER
+    // Toggle for using Google Test Unit IDs vs Production Unit IDs
+    private const val USE_TEST_ADS = true
 
-    val NATIVE_AD_UNIT_ID: String = PROD_NATIVE
+    val BANNER_AD_UNIT_ID: String = if (USE_TEST_ADS) TEST_BANNER else PROD_BANNER
 
-    val REWARDED_AD_UNIT_ID: String = PROD_REWARDED
+    val NATIVE_AD_UNIT_ID: String = if (USE_TEST_ADS) TEST_NATIVE else PROD_NATIVE
 
-    val INTERSTITIAL_AD_UNIT_ID: String = PROD_INTERSTITIAL
+    val REWARDED_AD_UNIT_ID: String = if (USE_TEST_ADS) TEST_REWARDED else PROD_REWARDED
+
+    val INTERSTITIAL_AD_UNIT_ID: String = if (USE_TEST_ADS) TEST_INTERSTITIAL else PROD_INTERSTITIAL
 }
