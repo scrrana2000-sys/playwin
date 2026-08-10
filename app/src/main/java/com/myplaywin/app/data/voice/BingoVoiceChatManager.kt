@@ -82,6 +82,8 @@ object BingoVoiceChatManager {
     private var iceCandidatesListener: ValueEventListener? = null
 
     private var statsJob: Job? = null
+    @Volatile
+    private var lastLocalAudioLevel: Double = 0.0
 
     fun initializeWebRTC(context: Context) {
         if (peerConnectionFactory != null) return
@@ -149,7 +151,7 @@ object BingoVoiceChatManager {
 
         val auth = FirebaseAuth.getInstance()
         myUserId = auth.currentUser?.uid ?: "user_${System.currentTimeMillis().toString().takeLast(6)}"
-        myDisplayName = displayName
+        myDisplayName = if (displayName != "Player") displayName else (auth.currentUser?.displayName?.ifBlank { null } ?: "Player")
 
         try {
             initializeWebRTC(context)
@@ -160,7 +162,7 @@ object BingoVoiceChatManager {
             audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager?.isSpeakerphoneOn = true
 
-            val database = FirebaseDatabase.getInstance()
+            val database = FirebaseDatabase.getInstance("https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app")
             dbRef = database.getReference("private_voice_rooms").child(cleanRoomCode)
 
             // Register presence
@@ -455,12 +457,12 @@ object BingoVoiceChatManager {
     }
 
     private fun startStatsAndSpeakingCheck() {
+        lastLocalAudioLevel = 0.0
         statsJob?.cancel()
         statsJob = scope.launch {
             while (_connectionState.value == VoiceConnectionState.CONNECTED) {
                 try {
                     if (!_isMuted.value && myUserId.isNotBlank() && dbRef != null) {
-                        var maxAudioLevel = 0.0
                         val activePeerUids = ArrayList(peerConnections.keys)
                         for (idx in 0 until activePeerUids.size) {
                             val pUid = activePeerUids[idx]
@@ -468,24 +470,26 @@ object BingoVoiceChatManager {
                             pc.getStats(object : org.webrtc.RTCStatsCollectorCallback {
                                 override fun onStatsDelivered(report: org.webrtc.RTCStatsReport?) {
                                     if (report != null) {
+                                        var currentMax = 0.0
                                         val statsMap = report.statsMap
                                         if (statsMap != null) {
                                             for ((_, stats) in statsMap) {
                                                 val members = stats.members
                                                 if (members != null) {
-                                                    val level = members["audioInputLevel"] ?: members["audioOutputLevel"]
+                                                    val level = members["audioInputLevel"]
                                                     (level as? Number)?.toDouble()?.let { lvl ->
-                                                        if (lvl > maxAudioLevel) maxAudioLevel = lvl
+                                                        if (lvl > currentMax) currentMax = lvl
                                                     }
                                                 }
                                             }
                                         }
+                                        lastLocalAudioLevel = currentMax
                                     }
                                 }
                             })
                         }
 
-                        val isSpeakingNow = maxAudioLevel > 200.0
+                        val isSpeakingNow = lastLocalAudioLevel > 200.0
                         dbRef?.child("participants")?.child(myUserId)?.child("isSpeaking")?.setValue(isSpeakingNow)
                     }
                 } catch (e: Exception) {
