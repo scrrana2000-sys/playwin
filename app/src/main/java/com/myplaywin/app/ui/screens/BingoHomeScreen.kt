@@ -144,6 +144,7 @@ fun BingoHomeScreen(
             onBackToLobby = {
                 isOnlineGameplayActive = false
                 isSocialEventsActive = true
+                liveEventsRepository.leavePrivateRoom()
             }
         )
         return

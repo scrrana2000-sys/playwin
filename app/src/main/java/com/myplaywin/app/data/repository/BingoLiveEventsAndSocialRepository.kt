@@ -106,15 +106,25 @@ class BingoLiveEventsAndSocialRepository(
 
     fun listenToPrivateRoom(code: String) {
         val cleanCode = code.uppercase().trim()
+        if (cleanCode.isBlank()) return
+
         privateRoomListener?.let { listener ->
             activeRoomCode?.let { oldCode ->
-                database.child("private_rooms").child(oldCode).removeEventListener(listener)
+                try {
+                    database.child("private_rooms").child(oldCode).removeEventListener(listener)
+                } catch (e: Exception) {
+                    Log.e("LiveEventsRepo", "Error removing old listener: ${e.message}")
+                }
             }
         }
         activeRoomCode = cleanCode
         privateRoomListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (activeRoomCode != cleanCode) return
+                if (!snapshot.exists()) {
+                    _currentPrivateRoom.value = null
+                    return
+                }
                 val room = snapshot.getValue(PrivateRoomDetails::class.java)
                 if (room == null) {
                     _currentPrivateRoom.value = null
@@ -122,6 +132,15 @@ class BingoLiveEventsAndSocialRepository(
                 }
                 activeRoomHostUid = room.hostUid
                 _currentPrivateRoom.value = room
+
+                val currentUid = auth.currentUser?.uid ?: ""
+                if (currentUid.isNotBlank() && currentUid == room.hostUid) {
+                    try {
+                        database.child("private_rooms").child(cleanCode).onDisconnect().removeValue()
+                    } catch (e: Exception) {
+                        Log.e("LiveEventsRepo", "Failed setting onDisconnect: ${e.message}")
+                    }
+                }
             }
 
             override fun onCancelled(error: DatabaseError) {}
@@ -158,8 +177,9 @@ class BingoLiveEventsAndSocialRepository(
         _currentPrivateRoom.value = room
 
         try {
-            database.child("private_rooms").child(code).setValue(room)
-            database.child("private_rooms").child(code).onDisconnect().removeValue()
+            val roomRef = database.child("private_rooms").child(code)
+            roomRef.setValue(room)
+            roomRef.onDisconnect().removeValue()
         } catch (e: Exception) {
             Log.e("LiveEventsRepo", "Firebase private room sync failed: ${e.message}")
         }
@@ -218,45 +238,64 @@ class BingoLiveEventsAndSocialRepository(
         }
     }
 
-    fun leavePrivateRoom() {
-        val code = activeRoomCode ?: _currentPrivateRoom.value?.roomCode ?: return
-        val hostUid = activeRoomHostUid ?: _currentPrivateRoom.value?.hostUid ?: ""
-        val userUid = auth.currentUser?.uid ?: ""
+    fun leavePrivateRoom(roomCodeOverride: String? = null) {
+        val targetCode = (roomCodeOverride ?: activeRoomCode ?: _currentPrivateRoom.value?.roomCode ?: "").uppercase().trim()
+        if (targetCode.isBlank()) return
 
-        activeRoomCode = null
-        activeRoomHostUid = null
-        _currentPrivateRoom.value = null
+        val userUid = auth.currentUser?.uid ?: ""
+        val cachedHostUid = activeRoomHostUid ?: _currentPrivateRoom.value?.hostUid ?: ""
+
+        if (targetCode == activeRoomCode || targetCode == _currentPrivateRoom.value?.roomCode) {
+            activeRoomCode = null
+            activeRoomHostUid = null
+            _currentPrivateRoom.value = null
+        }
 
         privateRoomListener?.let { listener ->
-            database.child("private_rooms").child(code).removeEventListener(listener)
+            try {
+                database.child("private_rooms").child(targetCode).removeEventListener(listener)
+            } catch (e: Exception) {
+                Log.e("LiveEventsRepo", "Error removing listener for $targetCode: ${e.message}")
+            }
         }
         privateRoomListener = null
 
-        val roomRef = database.child("private_rooms").child(code)
-        roomRef.onDisconnect().cancel()
+        val roomRef = database.child("private_rooms").child(targetCode)
+        try {
+            roomRef.onDisconnect().cancel()
+        } catch (e: Exception) {
+            Log.e("LiveEventsRepo", "Error cancelling onDisconnect: ${e.message}")
+        }
 
-        if (hostUid == userUid || hostUid.isBlank() || userUid.isBlank()) {
-            roomRef.removeValue()
-        } else {
-            roomRef.get().addOnSuccessListener { snapshot ->
-                if (!snapshot.exists()) return@addOnSuccessListener
-                val playersSnap = snapshot.child("players")
-                val playersList = mutableListOf<PrivateRoomPlayer>()
-                for (pSnap in playersSnap.children) {
-                    pSnap.getValue(PrivateRoomPlayer::class.java)?.let { playersList.add(it) }
+        roomRef.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists()) return@addOnSuccessListener
+
+            val room = snapshot.getValue(PrivateRoomDetails::class.java)
+            val currentHostUid = room?.hostUid ?: cachedHostUid
+            val isHost = (userUid.isNotBlank() && userUid == currentHostUid)
+
+            if (isHost || room?.isMatchStarted == true || room?.status == "playing" || room?.status == "completed" || currentHostUid.isBlank()) {
+                roomRef.removeValue().addOnSuccessListener {
+                    Log.d("LiveEventsRepo", "Private room $targetCode completely deleted from Firebase.")
+                }.addOnFailureListener { e ->
+                    Log.e("LiveEventsRepo", "Failed to remove private room $targetCode: ${e.message}")
                 }
-
-                val updatedPlayers = playersList.filter { it.uid != userUid }
-                if (updatedPlayers.isEmpty() || hostUid == userUid) {
+            } else {
+                val currentPlayers = room?.players ?: emptyList()
+                val updatedPlayers = currentPlayers.filter { it.uid != userUid }
+                if (updatedPlayers.isEmpty()) {
                     roomRef.removeValue()
                 } else {
-                    roomRef.child("players").setValue(updatedPlayers)
-                    roomRef.child("currentPlayersCount").setValue(updatedPlayers.size)
+                    val updates = mapOf(
+                        "players" to updatedPlayers,
+                        "currentPlayersCount" to updatedPlayers.size
+                    )
+                    roomRef.updateChildren(updates)
                 }
-            }.addOnFailureListener {
-                if (hostUid == userUid) {
-                    roomRef.removeValue()
-                }
+            }
+        }.addOnFailureListener {
+            if (userUid == cachedHostUid || cachedHostUid.isBlank()) {
+                roomRef.removeValue()
             }
         }
     }

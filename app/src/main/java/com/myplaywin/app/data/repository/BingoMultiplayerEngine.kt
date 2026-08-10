@@ -460,6 +460,7 @@ class BingoMultiplayerEngine(private val context: Context) {
         )
         db.getReference().updateChildren(updates).addOnCompleteListener {
             _matchStatus.value = BingoMatchStatus.VICTORY
+            db.getReference("private_rooms/$roomId").removeValue()
         }
     }
 
@@ -490,6 +491,7 @@ class BingoMultiplayerEngine(private val context: Context) {
                 }
             }
         }
+        db.getReference("private_rooms/$roomId").removeValue()
     }
 
     // ==========================================
