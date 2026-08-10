@@ -66,9 +66,20 @@ fun BingoLiveEventsAndSocialScreen(
 
     val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
+    androidx.activity.compose.BackHandler(enabled = true) {
+        if (privateRoom != null) {
+            BingoVoiceChatManager.leaveVoiceRoom(context)
+            repository.leavePrivateRoom()
+        } else {
+            onBack()
+        }
+    }
+
     LaunchedEffect(privateRoom) {
         val room = privateRoom
-        if (room != null && room.status == "playing" && room.gameSession != null) {
+        if (room == null) {
+            BingoVoiceChatManager.leaveVoiceRoom(context)
+        } else if (room.status == "playing" && room.gameSession != null) {
             android.util.Log.d("BINGO_ONLINE", "GAME_SESSION_RECEIVED")
             android.util.Log.d("BINGO_ONLINE", "OPENING_MULTIPLAYER_SCREEN")
             onStartPrivateMatch(room)
@@ -123,7 +134,14 @@ fun BingoLiveEventsAndSocialScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        if (privateRoom != null) {
+                            BingoVoiceChatManager.leaveVoiceRoom(context)
+                            repository.leavePrivateRoom()
+                        } else {
+                            onBack()
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -221,7 +239,10 @@ fun BingoLiveEventsAndSocialScreen(
                             }
                         }
                     },
-                    onLeaveRoom = { repository.leavePrivateRoom() },
+                    onLeaveRoom = {
+                        BingoVoiceChatManager.leaveVoiceRoom(context)
+                        repository.leavePrivateRoom()
+                    },
                     onStartMatch = { room ->
                         repository.startPrivateCountdown()
                     },

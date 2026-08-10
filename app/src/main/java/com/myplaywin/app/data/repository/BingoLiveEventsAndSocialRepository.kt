@@ -25,7 +25,8 @@ class BingoLiveEventsAndSocialRepository(
 ) {
 
     private val auth = FirebaseAuth.getInstance()
-    private val database = FirebaseDatabase.getInstance().reference
+    private val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+    private val database = FirebaseDatabase.getInstance(dbUrl).reference
     private val prefs = context.getSharedPreferences("bingo_social_liveops_prefs", Context.MODE_PRIVATE)
 
     // 1. Daily & Weekly Missions State
@@ -100,24 +101,32 @@ class BingoLiveEventsAndSocialRepository(
     // 3. PRIVATE ROOM ENGINE
     // ==========================================
     private var privateRoomListener: ValueEventListener? = null
+    private var activeRoomCode: String? = null
+    private var activeRoomHostUid: String? = null
 
     fun listenToPrivateRoom(code: String) {
-        privateRoomListener?.let {
-            database.child("private_rooms").child(code).removeEventListener(it)
+        val cleanCode = code.uppercase().trim()
+        privateRoomListener?.let { listener ->
+            activeRoomCode?.let { oldCode ->
+                database.child("private_rooms").child(oldCode).removeEventListener(listener)
+            }
         }
+        activeRoomCode = cleanCode
         privateRoomListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                if (activeRoomCode != cleanCode) return
                 val room = snapshot.getValue(PrivateRoomDetails::class.java)
                 if (room == null) {
                     _currentPrivateRoom.value = null
                     return
                 }
+                activeRoomHostUid = room.hostUid
                 _currentPrivateRoom.value = room
             }
 
             override fun onCancelled(error: DatabaseError) {}
         }
-        database.child("private_rooms").child(code).addValueEventListener(privateRoomListener!!)
+        database.child("private_rooms").child(cleanCode).addValueEventListener(privateRoomListener!!)
     }
 
     fun createPrivateRoom(maxPlayers: Int = 4): PrivateRoomDetails {
@@ -126,6 +135,9 @@ class BingoLiveEventsAndSocialRepository(
         val hostUid = currentUser?.uid ?: "HOST_${System.currentTimeMillis()}"
 
         val code = generateRoomCode()
+        activeRoomCode = code
+        activeRoomHostUid = hostUid
+
         val room = PrivateRoomDetails(
             roomCode = code,
             hostUid = hostUid,
@@ -170,6 +182,9 @@ class BingoLiveEventsAndSocialRepository(
         database.child("private_rooms").child(cleanCode).get().addOnSuccessListener { snapshot ->
             val room = snapshot.getValue(PrivateRoomDetails::class.java)
             if (room != null && !room.isMatchStarted && room.players.size < room.maxPlayers) {
+                activeRoomCode = cleanCode
+                activeRoomHostUid = room.hostUid
+
                 if (room.players.any { it.uid == userUid }) {
                     listenToPrivateRoom(cleanCode)
                     onComplete(true)
@@ -204,22 +219,45 @@ class BingoLiveEventsAndSocialRepository(
     }
 
     fun leavePrivateRoom() {
-        val current = _currentPrivateRoom.value ?: return
-        val code = current.roomCode
+        val code = activeRoomCode ?: _currentPrivateRoom.value?.roomCode ?: return
+        val hostUid = activeRoomHostUid ?: _currentPrivateRoom.value?.hostUid ?: ""
         val userUid = auth.currentUser?.uid ?: ""
 
-        privateRoomListener?.let {
-            database.child("private_rooms").child(code).removeEventListener(it)
-            privateRoomListener = null
-        }
+        activeRoomCode = null
+        activeRoomHostUid = null
         _currentPrivateRoom.value = null
 
-        val updatedPlayers = current.players.filter { it.uid != userUid }
-        if (updatedPlayers.isEmpty() || current.hostUid == userUid) {
-            database.child("private_rooms").child(code).removeValue()
+        privateRoomListener?.let { listener ->
+            database.child("private_rooms").child(code).removeEventListener(listener)
+        }
+        privateRoomListener = null
+
+        val roomRef = database.child("private_rooms").child(code)
+        roomRef.onDisconnect().cancel()
+
+        if (hostUid == userUid || hostUid.isBlank() || userUid.isBlank()) {
+            roomRef.removeValue()
         } else {
-            database.child("private_rooms").child(code).child("players").setValue(updatedPlayers)
-            database.child("private_rooms").child(code).child("currentPlayersCount").setValue(updatedPlayers.size)
+            roomRef.get().addOnSuccessListener { snapshot ->
+                if (!snapshot.exists()) return@addOnSuccessListener
+                val playersSnap = snapshot.child("players")
+                val playersList = mutableListOf<PrivateRoomPlayer>()
+                for (pSnap in playersSnap.children) {
+                    pSnap.getValue(PrivateRoomPlayer::class.java)?.let { playersList.add(it) }
+                }
+
+                val updatedPlayers = playersList.filter { it.uid != userUid }
+                if (updatedPlayers.isEmpty() || hostUid == userUid) {
+                    roomRef.removeValue()
+                } else {
+                    roomRef.child("players").setValue(updatedPlayers)
+                    roomRef.child("currentPlayersCount").setValue(updatedPlayers.size)
+                }
+            }.addOnFailureListener {
+                if (hostUid == userUid) {
+                    roomRef.removeValue()
+                }
+            }
         }
     }
 

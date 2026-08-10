@@ -75,6 +75,13 @@ object BingoVoiceChatManager {
     private val peerConnections = ConcurrentHashMap<String, PeerConnection>()
     private val pendingIceCandidates = ConcurrentHashMap<String, MutableList<IceCandidate>>()
 
+    private val handledOffers = ConcurrentHashMap<String, String>()
+    private val handledAnswers = ConcurrentHashMap<String, String>()
+    private val handledCandidates = ConcurrentHashMap<String, MutableSet<String>>()
+
+    private var originalAudioMode: Int = AudioManager.MODE_NORMAL
+    private var originalSpeakerphoneOn: Boolean = false
+
     private var dbRef: DatabaseReference? = null
     private var participantsListener: ValueEventListener? = null
     private var offersListener: ValueEventListener? = null
@@ -86,37 +93,44 @@ object BingoVoiceChatManager {
     private var lastLocalAudioLevel: Double = 0.0
 
     fun initializeWebRTC(context: Context) {
-        if (peerConnectionFactory != null) return
-        try {
-            val initOptions = PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
-                .setEnableInternalTracer(false)
-                .createInitializationOptions()
-            PeerConnectionFactory.initialize(initOptions)
+        if (peerConnectionFactory == null) {
+            try {
+                val initOptions = PeerConnectionFactory.InitializationOptions.builder(context.applicationContext)
+                    .setEnableInternalTracer(false)
+                    .createInitializationOptions()
+                PeerConnectionFactory.initialize(initOptions)
 
-            val adm = org.webrtc.audio.JavaAudioDeviceModule.builder(context.applicationContext)
-                .setUseHardwareAcousticEchoCanceler(true)
-                .setUseHardwareNoiseSuppressor(true)
-                .createAudioDeviceModule()
-            audioDeviceModule = adm
+                val adm = org.webrtc.audio.JavaAudioDeviceModule.builder(context.applicationContext)
+                    .setUseHardwareAcousticEchoCanceler(true)
+                    .setUseHardwareNoiseSuppressor(true)
+                    .createAudioDeviceModule()
+                audioDeviceModule = adm
 
-            val options = PeerConnectionFactory.Options()
-            peerConnectionFactory = PeerConnectionFactory.builder()
-                .setAudioDeviceModule(adm)
-                .setOptions(options)
-                .createPeerConnectionFactory()
-
-            val audioConstraints = MediaConstraints().apply {
-                mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
-                mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
-                mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
-                mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+                val options = PeerConnectionFactory.Options()
+                peerConnectionFactory = PeerConnectionFactory.builder()
+                    .setAudioDeviceModule(adm)
+                    .setOptions(options)
+                    .createPeerConnectionFactory()
+            } catch (e: Exception) {
+                android.util.Log.e("BingoVoiceChat", "Failed to initialize WebRTC engine factory", e)
             }
+        }
 
-            audioSource = peerConnectionFactory?.createAudioSource(audioConstraints)
-            localAudioTrack = peerConnectionFactory?.createAudioTrack("ARDAMSa0", audioSource)
-            localAudioTrack?.setEnabled(!_isMuted.value)
-        } catch (e: Exception) {
-            android.util.Log.e("BingoVoiceChat", "Failed to initialize WebRTC engine", e)
+        if (localAudioTrack == null) {
+            try {
+                val audioConstraints = MediaConstraints().apply {
+                    mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+                    mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+                    mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+                    mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+                }
+
+                audioSource = peerConnectionFactory?.createAudioSource(audioConstraints)
+                localAudioTrack = peerConnectionFactory?.createAudioTrack("ARDAMSa0", audioSource)
+                localAudioTrack?.setEnabled(!_isMuted.value)
+            } catch (e: Exception) {
+                android.util.Log.e("BingoVoiceChat", "Failed to create local AudioTrack", e)
+            }
         }
     }
 
@@ -159,13 +173,16 @@ object BingoVoiceChatManager {
 
             // Audio Manager config for communication
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            originalAudioMode = audioManager?.mode ?: AudioManager.MODE_NORMAL
+            originalSpeakerphoneOn = audioManager?.isSpeakerphoneOn ?: false
+
             audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager?.isSpeakerphoneOn = true
 
             val database = FirebaseDatabase.getInstance("https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app")
             dbRef = database.getReference("private_voice_rooms").child(cleanRoomCode)
 
-            // Register presence
+            // Register presence and clear any old signaling data on disconnect
             val myParticipantRef = dbRef?.child("participants")?.child(myUserId)
             val pData = HashMap<String, Any>()
             pData["uid"] = myUserId
@@ -176,6 +193,9 @@ object BingoVoiceChatManager {
 
             myParticipantRef?.setValue(pData)
             myParticipantRef?.onDisconnect()?.removeValue()
+            dbRef?.child("signaling")?.child("offers")?.child(myUserId)?.onDisconnect()?.removeValue()
+            dbRef?.child("signaling")?.child("answers")?.child(myUserId)?.onDisconnect()?.removeValue()
+            dbRef?.child("signaling")?.child("ice_candidates")?.child(myUserId)?.onDisconnect()?.removeValue()
 
             setupListeners(context, cleanRoomCode)
             startStatsAndSpeakingCheck()
@@ -304,6 +324,12 @@ object BingoVoiceChatManager {
     }
 
     private fun addIceCandidateToPeer(peerUid: String, candidate: IceCandidate) {
+        val candidatesSet = handledCandidates.getOrPut(peerUid) { ConcurrentHashMap.newKeySet() }
+        if (candidatesSet.contains(candidate.sdp)) {
+            return
+        }
+        candidatesSet.add(candidate.sdp)
+
         val pc = peerConnections[peerUid]
         if (pc != null && pc.remoteDescription != null) {
             pc.addIceCandidate(candidate)
@@ -402,6 +428,11 @@ object BingoVoiceChatManager {
     }
 
     private fun handleIncomingOffer(context: Context, senderUid: String, sdpStr: String, typeStr: String) {
+        if (handledOffers[senderUid] == sdpStr) {
+            return
+        }
+        handledOffers[senderUid] = sdpStr
+
         val pc = createPeerConnectionForUser(context, senderUid) ?: return
         val sdp = SessionDescription(SessionDescription.Type.fromCanonicalForm(typeStr.lowercase()), sdpStr)
 
@@ -434,6 +465,11 @@ object BingoVoiceChatManager {
     }
 
     private fun handleIncomingAnswer(senderUid: String, sdpStr: String, typeStr: String) {
+        if (handledAnswers[senderUid] == sdpStr) {
+            return
+        }
+        handledAnswers[senderUid] = sdpStr
+
         val pc = peerConnections[senderUid] ?: return
         val sdp = SessionDescription(SessionDescription.Type.fromCanonicalForm(typeStr.lowercase()), sdpStr)
         pc.setRemoteDescription(object : SimpleSdpObserver() {
@@ -516,9 +552,13 @@ object BingoVoiceChatManager {
             answersListener = null
             iceCandidatesListener = null
 
-            // Remove presence
-            if (myUserId.isNotBlank() && dbRef != null) {
-                dbRef?.child("participants")?.child(myUserId)?.removeValue()
+            // Remove presence and signaling data
+            val root = dbRef
+            if (myUserId.isNotBlank() && root != null) {
+                root.child("participants").child(myUserId).removeValue()
+                root.child("signaling").child("offers").child(myUserId).removeValue()
+                root.child("signaling").child("answers").child(myUserId).removeValue()
+                root.child("signaling").child("ice_candidates").child(myUserId).removeValue()
             }
 
             // Close peer connections
@@ -527,16 +567,26 @@ object BingoVoiceChatManager {
             }
             peerConnections.clear()
 
-            // Disable local microphone capture
+            // Disable and dispose local audio track/source to release physical microphone completely
             localAudioTrack?.setEnabled(false)
+            localAudioTrack?.dispose()
+            localAudioTrack = null
 
-            // Reset Audio Manager mode
+            audioSource?.dispose()
+            audioSource = null
+
+            // Restore Audio Manager original mode and speakerphone settings
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            audioManager?.mode = AudioManager.MODE_NORMAL
-            audioManager?.isSpeakerphoneOn = false
+            audioManager?.mode = originalAudioMode
+            audioManager?.isSpeakerphoneOn = originalSpeakerphoneOn
 
             activeRoomCode = null
             dbRef = null
+
+            handledOffers.clear()
+            handledAnswers.clear()
+            handledCandidates.clear()
+            pendingIceCandidates.clear()
 
             _connectionState.value = VoiceConnectionState.DISCONNECTED
             _statusMessage.value = ""

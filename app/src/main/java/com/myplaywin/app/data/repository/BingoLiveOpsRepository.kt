@@ -32,7 +32,8 @@ import javax.crypto.spec.SecretKeySpec
 class BingoLiveOpsRepository(private val context: Context) {
 
     private val auth = FirebaseAuth.getInstance()
-    private val database = FirebaseDatabase.getInstance().reference
+    private val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+    private val database = FirebaseDatabase.getInstance(dbUrl).reference
     private val prefs = context.getSharedPreferences("bingo_liveops_prefs", Context.MODE_PRIVATE)
 
     // Current Server Region State

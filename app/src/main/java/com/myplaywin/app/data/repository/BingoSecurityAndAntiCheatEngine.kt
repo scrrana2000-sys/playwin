@@ -20,7 +20,8 @@ import java.io.File
 class BingoSecurityAndAntiCheatEngine(private val context: Context) {
 
     private val auth = FirebaseAuth.getInstance()
-    private val database = FirebaseDatabase.getInstance().reference
+    private val dbUrl = "https://play-win-e01bc-default-rtdb.asia-southeast1.firebasedatabase.app"
+    private val database = FirebaseDatabase.getInstance(dbUrl).reference
 
     private val _threatLogs = MutableStateFlow<List<SecurityThreatReport>>(emptyList())
     val threatLogs: StateFlow<List<SecurityThreatReport>> = _threatLogs.asStateFlow()
