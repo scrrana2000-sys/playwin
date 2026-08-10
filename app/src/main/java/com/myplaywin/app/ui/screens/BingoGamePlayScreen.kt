@@ -1036,23 +1036,7 @@ fun BingoGamePlayScreen(
                         difficulty = difficulty,
                         onPlayAgain = { startNewMatch() },
                         onReturnHome = {
-                            val completedCount = prefs.getInt("completed_matches_count_v2", 0) + 1
-                            prefs.edit().putInt("completed_matches_count_v2", completedCount).apply()
-                            val activity = context as? Activity ?: run {
-                                var actContext = context
-                                while (actContext is android.content.ContextWrapper) {
-                                    if (actContext is Activity) break
-                                    actContext = actContext.baseContext
-                                }
-                                actContext as? Activity
-                            }
-                            if (completedCount % 4 == 0 && activity != null && com.playwin.ads.InterstitialManager.isAdReady(context)) {
-                                com.playwin.ads.InterstitialManager.showAd(activity) {
-                                    onExitGame()
-                                }
-                            } else {
-                                onExitGame()
-                            }
+                            onExitGame()
                         },
                         onWatchReplay = { isReplayModeActive = true }
                     )

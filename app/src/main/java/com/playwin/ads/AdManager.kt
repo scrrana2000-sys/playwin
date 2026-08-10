@@ -17,7 +17,6 @@ object AdManager {
     val Banner = BannerManager
     val Native = NativeManager
     val Rewarded = RewardedManager
-    val Interstitial = InterstitialManager
     val Logger = AdLogger
     val Analytics = AdAnalytics
     val RewardAnalytics = com.playwin.ads.RewardAnalytics
@@ -45,7 +44,6 @@ object AdManager {
                 Banner.loadBanner(appContext)
                 Native.preload(appContext)
                 Rewarded.preload(appContext)
-                Interstitial.preload(appContext)
             }
 
             MobileAds.initialize(appContext) { status: InitializationStatus ->
@@ -60,7 +58,6 @@ object AdManager {
                 Banner.loadBanner(appContext)
                 Native.preload(appContext)
                 Rewarded.preload(appContext)
-                Interstitial.preload(appContext)
             }
         } catch (e: Exception) {
             AdLogger.e("Critical error initializing MobileAds SDK", e)
