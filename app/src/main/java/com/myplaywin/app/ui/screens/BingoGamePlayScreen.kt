@@ -293,6 +293,20 @@ fun BingoGamePlayScreen(
     val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("bingo_game_prefs", Context.MODE_PRIVATE) }
 
+    val gameStartTime = remember { System.currentTimeMillis() }
+
+    LaunchedEffect(Unit) {
+        com.playwin.ads.TelemetryManager.logGameActivity(
+            game = "BINGO",
+            eventType = "gameStarted",
+            gameSessionDuration = 0L,
+            rewardedAdShown = false,
+            rewardEarned = false,
+            coinsEarned = 0,
+            score = 0
+        )
+    }
+
     // First-time Tutorial state
     var hasSeenTutorial by remember { mutableStateOf(prefs.getBoolean("has_seen_bingo_tutorial", false)) }
     var isTutorialActive by remember { mutableStateOf(false) }
@@ -1004,6 +1018,18 @@ fun BingoGamePlayScreen(
                         onClaimed = { coinsDelta, wasAdClaimed ->
                             showRewardPopup = false
                             isResultProcessed = true
+                            
+                            val duration = (System.currentTimeMillis() - gameStartTime) / 1000L
+                            com.playwin.ads.TelemetryManager.logGameActivity(
+                                game = "BINGO",
+                                eventType = "gameCompleted",
+                                gameSessionDuration = duration,
+                                rewardedAdShown = wasAdClaimed,
+                                rewardEarned = (coinsDelta > 0),
+                                coinsEarned = coinsDelta,
+                                score = if (matchState == BingoMatchState.VICTORY) 1 else 0
+                            )
+                            
                             progressionRepo.processMatchResult(
                                 matchType = "OFFLINE",
                                 difficulty = difficulty.uppercase(),

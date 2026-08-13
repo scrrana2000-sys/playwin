@@ -3703,12 +3703,32 @@ fun TriviaQuizScreen(
             viewModel.generateQuizForCategory(categoryId) { questions ->
                 quizQuestions = questions
                 isLoading = false
+                com.playwin.ads.TelemetryManager.logQuizActivity(
+                    eventType = "quizStarted",
+                    questionsAnswered = 0,
+                    correctAnswers = 0,
+                    wrongAnswers = 0,
+                    lifelineUsed = false,
+                    rewardedLifelineAd = false,
+                    coinsEarned = 0,
+                    duration = 0L
+                )
             }
         } else {
             val matchingQuiz = quizzes.find { it.id == quizSetId }
             if (matchingQuiz != null) {
                 quizQuestions = matchingQuiz.questions
                 isLoading = false
+                com.playwin.ads.TelemetryManager.logQuizActivity(
+                    eventType = "quizStarted",
+                    questionsAnswered = 0,
+                    correctAnswers = 0,
+                    wrongAnswers = 0,
+                    lifelineUsed = false,
+                    rewardedLifelineAd = false,
+                    coinsEarned = 0,
+                    duration = 0L
+                )
             } else if (quizzes.isNotEmpty()) {
                 isLoading = false
             }
@@ -3780,6 +3800,7 @@ fun TriviaQuizScreen(
     var isTimerActive by remember { mutableStateOf(true) }
 
     // Scoring & Tracking
+    val quizStartTime = remember { System.currentTimeMillis() }
     var score by remember { mutableStateOf(0) }
     val answeredQuestionIds = remember { mutableStateListOf<String>() }
     var isQuizFinished by remember { mutableStateOf(false) }
@@ -3904,6 +3925,7 @@ fun TriviaQuizScreen(
                                         com.playwin.ads.RewardedManager.showAd(
                                             activity = activity,
                                             rewardType = com.playwin.ads.RewardType.QUIZ_LIFELINE,
+                                            source = "QUIZ_LIFELINE",
                                             callbacks = object : com.playwin.ads.RewardCallback {
                                                 override fun onRewardEarned(rewardType: com.playwin.ads.RewardType, amount: Int, token: String) {
                                                     // Grant +2 lifelines.
@@ -4049,6 +4071,18 @@ fun TriviaQuizScreen(
             ) { totalEarned ->
                 earnedCoins = totalEarned
                 isSubmitting = false
+                
+                val wrong = answeredQuestionIds.size - score
+                com.playwin.ads.TelemetryManager.logQuizActivity(
+                    eventType = "quizCompleted",
+                    questionsAnswered = answeredQuestionIds.size,
+                    correctAnswers = score,
+                    wrongAnswers = wrong,
+                    lifelineUsed = (wrong > 0),
+                    rewardedLifelineAd = (adRefillCount > 0),
+                    coinsEarned = totalEarned,
+                    duration = (System.currentTimeMillis() - quizStartTime) / 1000L
+                )
             }
         }
 

@@ -52,6 +52,66 @@ service cloud.firestore {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid === ${'$'}uid"
       }
+    },
+    "users": {
+      "${'$'}uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === ${'$'}uid"
+      }
+    },
+    "adTelemetry": {
+      "${'$'}uid": {
+        ".read": "auth != null && (auth.uid === ${'$'}uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "${'$'}eventId": {
+          ".write": "auth != null && auth.uid === ${'$'}uid && newData.exists() && (!data.exists() || (newData.child('uid').val() === data.child('uid').val() && newData.child('eventId').val() === data.child('eventId').val() && newData.child('timestamp').val() === data.child('timestamp').val() && newData.child('adUnitId').val() === data.child('adUnitId').val() && newData.child('source').val() === data.child('source').val() && (!data.child('valueMicros').exists() || data.child('valueMicros').val() === 0 || newData.child('valueMicros').val() === data.child('valueMicros').val())))",
+          ".validate": "newData.child('uid').val() === auth.uid"
+        }
+      }
+    },
+    "coinRewardEvents": {
+      "${'$'}uid": {
+        ".read": "auth != null && (auth.uid === ${'$'}uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "${'$'}eventId": {
+          ".write": "auth != null && auth.uid === ${'$'}uid && !data.exists() && newData.exists()",
+          ".validate": "newData.child('uid').val() === auth.uid"
+        }
+      }
+    },
+    "gameTelemetry": {
+      "${'$'}uid": {
+        ".read": "auth != null && (auth.uid === ${'$'}uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "${'$'}eventId": {
+          ".write": "auth != null && auth.uid === ${'$'}uid && !data.exists() && newData.exists()",
+          ".validate": "newData.child('uid').val() === auth.uid"
+        }
+      }
+    },
+    "userSessions": {
+      "${'$'}uid": {
+        ".read": "auth != null && (auth.uid === ${'$'}uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "${'$'}sessionId": {
+          ".write": "auth != null && auth.uid === ${'$'}uid && newData.exists()",
+          ".validate": "newData.child('uid').val() === auth.uid"
+        }
+      }
+    },
+    "userDailyEconomy": {
+      "${'$'}uid": {
+        ".read": "auth != null && (auth.uid === ${'$'}uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "${'$'}date": {
+          ".write": "auth != null && auth.uid === ${'$'}uid && newData.exists()",
+          ".validate": "newData.child('uid').val() === auth.uid || !newData.child('uid').exists()",
+          "coinsEarned": {
+            ".validate": "newData.val() <= 100000"
+          },
+          "reportedRevenueMicros": {
+            ".validate": "newData.val() <= 5000000"
+          },
+          "totalAdImpressions": {
+            ".validate": "newData.val() <= 1000"
+          }
+        }
+      }
     }
   }
 }

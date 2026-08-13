@@ -99,6 +99,8 @@ fun ShadowHeroGameplayScene(
     val engine = remember { ShadowHeroEngine() }
     val stats = remember { ShadowHeroProgressionManager.getStats(context) }
 
+    val gameStartTime = remember { System.currentTimeMillis() }
+
     // Load saved progression stage on start adventure launch & preload ads
     LaunchedEffect(Unit) {
         val targetStage = stats.bestStage.coerceAtLeast(1)
@@ -106,7 +108,17 @@ fun ShadowHeroGameplayScene(
             engine.loadStage(targetStage)
         }
         com.playwin.ads.RewardedManager.preload(context)
+        com.playwin.ads.TelemetryManager.logGameActivity(
+            game = "SHADOW_HERO",
+            eventType = "gameStarted",
+            gameSessionDuration = 0L,
+            rewardedAdShown = false,
+            rewardEarned = false,
+            coinsEarned = 0,
+            score = 0
+        )
     }
+
 
     // Pause & Developer Debug Overlay Visibility States
     var isPaused by remember { mutableStateOf(false) }
@@ -124,6 +136,16 @@ fun ShadowHeroGameplayScene(
             stageReached = engine.currentStage,
             score = (engine.currentStage * 1000) + (engine.collectedCrystalIds.size * 200),
             enemiesDefeated = 0
+        )
+        val duration = if (gameStartTime > 0L) (System.currentTimeMillis() - gameStartTime) / 1000L else 0L
+        com.playwin.ads.TelemetryManager.logGameActivity(
+            game = "SHADOW_HERO",
+            eventType = "gameCompleted",
+            gameSessionDuration = duration,
+            rewardedAdShown = false,
+            rewardEarned = false,
+            coinsEarned = 0,
+            score = (engine.currentStage * 1000) + (engine.collectedCrystalIds.size * 200)
         )
         // Restore Portrait Orientation before navigating
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT

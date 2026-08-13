@@ -848,6 +848,62 @@ fun SnakeClassicScreen(
         com.playwin.ads.RewardedManager.preload(context)
     }
 
+    var gameStartTime by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(currentScreenState) {
+        if (currentScreenState == "GAMEPLAY") {
+            gameStartTime = System.currentTimeMillis()
+            com.playwin.ads.TelemetryManager.logGameActivity(
+                game = "SNAKE",
+                eventType = "gameStarted",
+                gameSessionDuration = 0L,
+                rewardedAdShown = false,
+                rewardEarned = false,
+                coinsEarned = 0,
+                score = 0
+            )
+        }
+    }
+
+    LaunchedEffect(isGameOver) {
+        if (isGameOver) {
+            val baseCoins = (score / 10 * 5).coerceAtMost(100)
+            val isDCActive = isDoubleCoinsActive || (doubleCoinsTimeLeft > 0)
+            val computedCoins = if (isDCActive) baseCoins * 2 else baseCoins
+            val duration = if (gameStartTime > 0L) (System.currentTimeMillis() - gameStartTime) / 1000L else 0L
+            com.playwin.ads.TelemetryManager.logGameActivity(
+                game = "SNAKE",
+                eventType = "gameCompleted",
+                gameSessionDuration = duration,
+                rewardedAdShown = false,
+                rewardEarned = (computedCoins > 0),
+                coinsEarned = if (isAdventureMode) 0 else computedCoins,
+                score = score
+            )
+        }
+    }
+
+    LaunchedEffect(isLevelCompleted) {
+        if (isLevelCompleted) {
+            val stars = when {
+                levelTimeElapsedSeconds <= 35 -> 3
+                levelTimeElapsedSeconds <= 60 -> 2
+                else -> 1
+            }
+            val levelCoins = 10 + stars
+            val duration = if (gameStartTime > 0L) (System.currentTimeMillis() - gameStartTime) / 1000L else 0L
+            com.playwin.ads.TelemetryManager.logGameActivity(
+                game = "SNAKE",
+                eventType = "gameCompleted",
+                gameSessionDuration = duration,
+                rewardedAdShown = false,
+                rewardEarned = true,
+                coinsEarned = levelCoins,
+                score = score
+            )
+        }
+    }
+
     // Pulsing Food Glow Animation
     val infiniteTransition = rememberInfiniteTransition(label = "food_glow")
     val foodPulseScale by infiniteTransition.animateFloat(

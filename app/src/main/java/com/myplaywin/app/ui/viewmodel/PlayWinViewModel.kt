@@ -2707,6 +2707,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
             },
             onComplete = { success, coinsBefore, coinsAfter, errorMsg ->
                 if (success) {
+                    com.playwin.ads.TelemetryManager.logSpinPlay(rewardAmount, isAdSpin)
                     android.util.Log.d("PlayWinDebug", "Reward granted: ${selectedReward.name} of type ${selectedReward.type} (value: ${selectedReward.value})")
                     android.util.Log.d("PlayWinDebug", "Wallet updated: coinsBefore = $coinsBefore, coinsAfter = $coinsAfter")
 
@@ -3738,6 +3739,7 @@ class PlayWinViewModel(application: Application) : AndroidViewModel(application)
                                    !typeSafe.contains("luck", ignoreCase = true) && 
                                    ((rolledReward.value ?: "0").toIntOrNull() ?: 0) > 0)
                     val rewardValueCoins = if (isCoins) (rolledReward.value ?: "0").toIntOrNull() ?: 0 else 0
+                    com.playwin.ads.TelemetryManager.logScratchPlay(rewardValueCoins, isAdScratch)
                     val updatedWallet = currentWallet.copy(
                         coins = coinsAfter,
                         totalScratchRewards = currentWallet.totalScratchRewards + rewardValueCoins

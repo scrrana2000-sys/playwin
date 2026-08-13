@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 object BannerManager {
     private var preloadedAdView: AdView? = null
@@ -57,9 +58,26 @@ object BannerManager {
 
         try {
             val adSize = getAdSize(appContext)
+            var currentBannerEventId = UUID.randomUUID().toString()
+
             val adView = AdView(appContext).apply {
                 adUnitId = AdConstants.BANNER_AD_UNIT_ID
                 setAdSize(adSize)
+
+                setOnPaidEventListener { value ->
+                    AdLogger.i("Banner: Revenue captured: ${value.valueMicros} ${value.currencyCode} (eventId=$currentBannerEventId)")
+                    TelemetryManager.logOrUpdateAdTelemetry(
+                        eventId = currentBannerEventId,
+                        adFormat = "BANNER",
+                        adUnitId = AdConstants.BANNER_AD_UNIT_ID,
+                        source = "HOME",
+                        valueMicros = value.valueMicros,
+                        currencyCode = value.currencyCode,
+                        precision = value.precisionType,
+                        revenueStatus = if (value.valueMicros > 0) "CONFIRMED" else "ZERO_VALUE"
+                    )
+                }
+
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         AdLogger.i("Banner ad loaded successfully.")
@@ -85,8 +103,16 @@ object BannerManager {
                     }
 
                     override fun onAdImpression() {
-                        AdLogger.d("Banner ad impression registered.")
+                        AdLogger.d("Banner ad impression registered (eventId=$currentBannerEventId).")
                         callbacks?.onAdImpression()
+                        TelemetryManager.logOrUpdateAdTelemetry(
+                            eventId = currentBannerEventId,
+                            adFormat = "BANNER",
+                            adUnitId = AdConstants.BANNER_AD_UNIT_ID,
+                            source = "HOME",
+                            revenueStatus = "UNAVAILABLE"
+                        )
+                        currentBannerEventId = UUID.randomUUID().toString()
                     }
                 }
             }
@@ -137,9 +163,25 @@ object BannerManager {
                 loadBanner(context) // Preload the next banner in background
                 preloaded
             } else {
+                var localBannerEventId = UUID.randomUUID().toString()
                 AdView(context).apply {
                     adUnitId = AdConstants.BANNER_AD_UNIT_ID
                     setAdSize(getAdSize(context))
+
+                    setOnPaidEventListener { value ->
+                        AdLogger.i("Banner fallback: Revenue captured: ${value.valueMicros} ${value.currencyCode} (eventId=$localBannerEventId)")
+                        TelemetryManager.logOrUpdateAdTelemetry(
+                            eventId = localBannerEventId,
+                            adFormat = "BANNER",
+                            adUnitId = AdConstants.BANNER_AD_UNIT_ID,
+                            source = "HOME",
+                            valueMicros = value.valueMicros,
+                            currencyCode = value.currencyCode,
+                            precision = value.precisionType,
+                            revenueStatus = if (value.valueMicros > 0) "CONFIRMED" else "ZERO_VALUE"
+                        )
+                    }
+
                     adListener = object : AdListener() {
                         override fun onAdLoaded() {
                             AdLogger.i("Fallback local banner ad loaded.")
@@ -160,6 +202,14 @@ object BannerManager {
 
                         override fun onAdImpression() {
                             callbacks?.onAdImpression()
+                            TelemetryManager.logOrUpdateAdTelemetry(
+                                eventId = localBannerEventId,
+                                adFormat = "BANNER",
+                                adUnitId = AdConstants.BANNER_AD_UNIT_ID,
+                                source = "HOME",
+                                revenueStatus = "UNAVAILABLE"
+                            )
+                            localBannerEventId = UUID.randomUUID().toString()
                         }
                     }
                     loadAd(AdRequest.Builder().build())

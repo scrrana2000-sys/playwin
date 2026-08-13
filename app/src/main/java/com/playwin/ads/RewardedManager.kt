@@ -36,7 +36,8 @@ object RewardedManager {
     private data class PendingShowRequest(
         val activityRef: WeakReference<Activity>,
         val rewardType: RewardType,
-        val callbacks: RewardCallback
+        val callbacks: RewardCallback,
+        val source: String
     )
 
     private val pendingShowRequests = mutableListOf<PendingShowRequest>()
@@ -100,16 +101,6 @@ object RewardedManager {
                     retryCount = 0
                     RewardAnalytics.logRewardLoaded(AdConstants.REWARDED_AD_UNIT_ID)
 
-                    ad.onPaidEventListener = com.google.android.gms.ads.OnPaidEventListener { value ->
-                        AdLogger.i("Rewarded: Revenue captured: ${value.valueMicros} ${value.currencyCode}")
-                        RewardAnalytics.logRevenue(
-                            adUnitId = AdConstants.REWARDED_AD_UNIT_ID,
-                            valueMicros = value.valueMicros,
-                            currencyCode = value.currencyCode,
-                            precision = value.precisionType
-                        )
-                    }
-
                     // Flush pending load callbacks
                     val loadCallbacks = pendingLoadCallbacks.toList()
                     pendingLoadCallbacks.clear()
@@ -120,7 +111,7 @@ object RewardedManager {
                         val request = pendingShowRequests.removeAt(0)
                         val act = request.activityRef.get()
                         if (act != null && !act.isFinishing && !act.isDestroyed) {
-                            showAdInternal(act, request.rewardType, request.callbacks)
+                            showAdInternal(act, request.rewardType, request.callbacks, request.source)
                         } else {
                             request.callbacks.onAdFailedToShow("Activity context is no longer valid.")
                         }
@@ -198,8 +189,21 @@ object RewardedManager {
     fun showAd(
         activity: Activity,
         rewardType: RewardType,
-        callbacks: RewardCallback
+        callbacks: RewardCallback,
+        source: String? = null
     ) {
+        val resolvedSource = source ?: when (rewardType) {
+            RewardType.SPIN -> "SPIN"
+            RewardType.DAILY_TASK -> "WATCH_EARN"
+            RewardType.QUIZ_LIFELINE -> "QUIZ_LIFELINE"
+            RewardType.BINGO_SECOND_CHANCE -> "BINGO_SECOND_CHANCE"
+            RewardType.BINGO_DOUBLE_REWARD -> "BINGO_DOUBLE_REWARD"
+            RewardType.BINGO_DAILY_LOGIN_DOUBLE -> "BINGO_DAILY_LOGIN_DOUBLE"
+            RewardType.SHADOW_HERO_DOUBLE_REWARD -> "SHADOW_HERO_DOUBLE_REWARD"
+            RewardType.BLOCK_MASTER_CONTINUE -> "SHADOW_HERO_REVIVE"
+            else -> "OTHER"
+        }
+
         if (activity.isFinishing || activity.isDestroyed) {
             AdLogger.e("Rewarded: SHOW_FAILED Activity invalid")
             callbacks.onAdFailedToShow("Activity is no longer valid.")
@@ -207,14 +211,14 @@ object RewardedManager {
         }
 
         if (isAdReady(activity)) {
-            showAdInternal(activity, rewardType, callbacks)
+            showAdInternal(activity, rewardType, callbacks, resolvedSource)
         } else {
             if (isLoading || adState == AdState.LOADING) {
                 AdLogger.i("Rewarded: Ad is currently loading. Show request queued.")
-                pendingShowRequests.add(PendingShowRequest(WeakReference(activity), rewardType, callbacks))
+                pendingShowRequests.add(PendingShowRequest(WeakReference(activity), rewardType, callbacks, resolvedSource))
             } else {
                 AdLogger.i("Rewarded: Ad not preloaded. Initiating single load operation and queuing show.")
-                pendingShowRequests.add(PendingShowRequest(WeakReference(activity), rewardType, callbacks))
+                pendingShowRequests.add(PendingShowRequest(WeakReference(activity), rewardType, callbacks, resolvedSource))
                 preload(activity)
             }
         }
@@ -223,7 +227,8 @@ object RewardedManager {
     private fun showAdInternal(
         activity: Activity,
         rewardType: RewardType,
-        callbacks: RewardCallback
+        callbacks: RewardCallback,
+        resolvedSource: String
     ) {
         val currentAd = rewardedAd
         if (currentAd == null) {
@@ -245,11 +250,41 @@ object RewardedManager {
         val activityRef = WeakReference(activity)
         var rewardGranted = false
         val token = RewardQueue.generateUniqueToken()
+        val adEventId = java.util.UUID.randomUUID().toString()
+
+        currentAd.onPaidEventListener = com.google.android.gms.ads.OnPaidEventListener { value ->
+            AdLogger.i("Rewarded: Revenue captured: ${value.valueMicros} ${value.currencyCode} (eventId=$adEventId)")
+            RewardAnalytics.logRevenue(
+                adUnitId = AdConstants.REWARDED_AD_UNIT_ID,
+                valueMicros = value.valueMicros,
+                currencyCode = value.currencyCode,
+                precision = value.precisionType
+            )
+            TelemetryManager.logOrUpdateAdTelemetry(
+                eventId = adEventId,
+                adFormat = "REWARDED",
+                adUnitId = AdConstants.REWARDED_AD_UNIT_ID,
+                source = resolvedSource,
+                rewardType = rewardType.name,
+                valueMicros = value.valueMicros,
+                currencyCode = value.currencyCode,
+                precision = value.precisionType,
+                revenueStatus = if (value.valueMicros > 0) "CONFIRMED" else "ZERO_VALUE"
+            )
+        }
 
         currentAd.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdShowedFullScreenContent() {
-                AdLogger.i("Rewarded: SHOW_START for $rewardType")
+                AdLogger.i("Rewarded: SHOW_START for $rewardType (eventId=$adEventId)")
                 RewardAnalytics.logRewardOpened(AdConstants.REWARDED_AD_UNIT_ID, rewardType.name)
+                TelemetryManager.logOrUpdateAdTelemetry(
+                    eventId = adEventId,
+                    adFormat = "REWARDED",
+                    adUnitId = AdConstants.REWARDED_AD_UNIT_ID,
+                    source = resolvedSource,
+                    rewardType = rewardType.name,
+                    revenueStatus = "PENDING"
+                )
             }
 
             override fun onAdFailedToShowFullScreenContent(error: AdError) {
@@ -258,14 +293,25 @@ object RewardedManager {
                 callbacks.onAdFailedToShow(error.message)
                 RewardAnalytics.logRewardFailed(AdConstants.REWARDED_AD_UNIT_ID, error.code, error.message)
                 
+                TelemetryManager.logOrUpdateAdTelemetry(
+                    eventId = adEventId,
+                    adFormat = "REWARDED",
+                    adUnitId = AdConstants.REWARDED_AD_UNIT_ID,
+                    source = resolvedSource,
+                    rewardType = rewardType.name,
+                    revenueStatus = "UNAVAILABLE"
+                )
+
                 preload(activityRef.get() ?: activity)
             }
 
             override fun onAdDismissedFullScreenContent() {
                 adState = AdState.IDLE
                 AdLogger.i("Rewarded: DISMISSED for $rewardType")
+
+                TelemetryManager.finalizeAdEventIfPending(adEventId)
+
                 callbacks.onAdClosed(rewardGranted)
-                
                 preload(activityRef.get() ?: activity)
             }
         }
@@ -284,6 +330,13 @@ object RewardedManager {
                 rewardGranted = true
                 AdLogger.i("Rewarded: REWARD_GRANTED for type $rewardType: ${rewardItem.amount} ${rewardItem.type}")
                 RewardAnalytics.logRewardEarned(rewardType.name, rewardItem.amount)
+
+                TelemetryManager.logOrUpdateAdTelemetry(
+                    eventId = adEventId,
+                    rewardGranted = true,
+                    rewardValue = rewardItem.amount
+                )
+
                 callbacks.onRewardEarned(rewardType, rewardItem.amount, token)
             }
         }

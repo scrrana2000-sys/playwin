@@ -74,6 +74,22 @@ object NativeManager {
                     loadTime = System.currentTimeMillis()
                     isLoading = false
                     retryCount = 0
+
+                    val nativeEventId = java.util.UUID.randomUUID().toString()
+                    nativeAd.setOnPaidEventListener { value ->
+                        AdLogger.i("Native: Revenue captured: ${value.valueMicros} ${value.currencyCode} (eventId=$nativeEventId)")
+                        TelemetryManager.logOrUpdateAdTelemetry(
+                            eventId = nativeEventId,
+                            adFormat = "NATIVE",
+                            adUnitId = AdConstants.NATIVE_AD_UNIT_ID,
+                            source = "OTHER",
+                            valueMicros = value.valueMicros,
+                            currencyCode = value.currencyCode,
+                            precision = value.precisionType,
+                            revenueStatus = if (value.valueMicros > 0) "CONFIRMED" else "ZERO_VALUE"
+                        )
+                    }
+
                     callbacks?.onAdLoaded()
                     AdAnalytics.logNativeLoaded(AdConstants.NATIVE_AD_UNIT_ID)
                 }
@@ -96,6 +112,15 @@ object NativeManager {
                         AdLogger.i("Native Ad impression registered.")
                         callbacks?.onAdImpression()
                         AdAnalytics.logNativeImpression(AdConstants.NATIVE_AD_UNIT_ID)
+                        TelemetryManager.logAdImpression(
+                            adFormat = "NATIVE",
+                            adUnitId = AdConstants.NATIVE_AD_UNIT_ID,
+                            source = "OTHER",
+                            valueMicros = 0L,
+                            currencyCode = "USD",
+                            precision = 0,
+                            revenueStatus = "UNAVAILABLE"
+                        )
                     }
                 })
                 .build()
@@ -156,6 +181,21 @@ object NativeManager {
 
         val adLoader = AdLoader.Builder(appContext, AdConstants.NATIVE_AD_UNIT_ID)
             .forNativeAd { nativeAd ->
+                val nativeEventId = java.util.UUID.randomUUID().toString()
+                nativeAd.setOnPaidEventListener { value ->
+                    AdLogger.i("Native: Revenue captured: ${value.valueMicros} ${value.currencyCode} (eventId=$nativeEventId)")
+                    TelemetryManager.logOrUpdateAdTelemetry(
+                        eventId = nativeEventId,
+                        adFormat = "NATIVE",
+                        adUnitId = AdConstants.NATIVE_AD_UNIT_ID,
+                        source = "OTHER",
+                        valueMicros = value.valueMicros,
+                        currencyCode = value.currencyCode,
+                        precision = value.precisionType,
+                        revenueStatus = if (value.valueMicros > 0) "CONFIRMED" else "ZERO_VALUE"
+                    )
+                }
+
                 onAdLoaded(nativeAd)
                 callbacks?.onAdLoaded()
                 AdAnalytics.logNativeLoaded(AdConstants.NATIVE_AD_UNIT_ID)
@@ -172,6 +212,15 @@ object NativeManager {
                 override fun onAdImpression() {
                     callbacks?.onAdImpression()
                     AdAnalytics.logNativeImpression(AdConstants.NATIVE_AD_UNIT_ID)
+                    TelemetryManager.logAdImpression(
+                        adFormat = "NATIVE",
+                        adUnitId = AdConstants.NATIVE_AD_UNIT_ID,
+                        source = "OTHER",
+                        valueMicros = 0L,
+                        currencyCode = "USD",
+                        precision = 0,
+                        revenueStatus = "UNAVAILABLE"
+                    )
                 }
             })
             .build()

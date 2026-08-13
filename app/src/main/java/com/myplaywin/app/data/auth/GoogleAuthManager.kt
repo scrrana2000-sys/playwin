@@ -52,7 +52,7 @@ object GoogleAuthManager {
                 val webClientId = try {
                     context.getString(R.string.default_web_client_id)
                 } catch (e: Exception) {
-                    "228349425977-e2mjc70g7lp8qj4r8rkvm0cu46odohf8.apps.googleusercontent.com"
+                    "905375006278-mautv4ecul75cbedkl5rlit5c04i05na.apps.googleusercontent.com"
                 }
 
                 val googleIdOption = GetGoogleIdOption.Builder()

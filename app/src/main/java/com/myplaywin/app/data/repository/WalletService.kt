@@ -74,11 +74,13 @@ object WalletService {
                 if (committed && error == null) {
                     Log.d("WalletService", "[SUCCESS] Unified Wallet Transaction Committed: $coinsBefore -> $coinsAfter")
 
+                    var generatedTxId = ""
                     try {
                         // 1. Save Transaction Record under transactions/{userId}/{txId}
                         val txRef = database.getReference("transactions").child(userId).push()
+                        generatedTxId = txRef.key ?: ""
                         val tx = FirebaseTransaction(
-                            id = txRef.key ?: "",
+                            id = generatedTxId,
                             userId = userId,
                             type = type,
                             title = source,
@@ -116,7 +118,7 @@ object WalletService {
                         Log.e("WalletService", "Error writing unified history records: ${e.message}")
                     }
 
-                    onComplete(true, coinsBefore, coinsAfter, null)
+                    onComplete(true, coinsBefore, coinsAfter, generatedTxId)
                 } else {
                     val msg = error?.message ?: errorMessage ?: "Transaction aborted."
                     Log.e("WalletService", "[FAILED] Unified Wallet Transaction Failed: $msg")

@@ -395,7 +395,33 @@ class FirebaseDbManager {
             type = type,
             extraCheck = { null },
             extraUpdate = { null },
-            onComplete = { success, coinsBefore, coinsAfter, _ ->
+            onComplete = { success, coinsBefore, coinsAfter, txId ->
+                if (success && amount != 0) {
+                    val finalSource = when {
+                        source.contains("Daily", ignoreCase = true) || source.contains("CheckIn", ignoreCase = true) || source.contains("Check_In", ignoreCase = true) -> "DAILY_CHECKIN"
+                        source.contains("Spin", ignoreCase = true) -> "SPIN"
+                        source.contains("Scratch", ignoreCase = true) -> "SCRATCH"
+                        source.contains("quiz_completion", ignoreCase = true) || source.contains("quiz completion", ignoreCase = true) -> "QUIZ_COMPLETION"
+                        source.contains("quiz_bonus", ignoreCase = true) || source.contains("quiz bonus", ignoreCase = true) -> "QUIZ_BONUS"
+                        source.contains("quiz", ignoreCase = true) -> "QUIZ"
+                        source.contains("snake", ignoreCase = true) -> "SNAKE"
+                        source.contains("bounce", ignoreCase = true) -> "BOUNCE"
+                        source.contains("bingo", ignoreCase = true) -> "BINGO"
+                        source.contains("shadow", ignoreCase = true) || source.contains("hero", ignoreCase = true) -> "SHADOW_HERO"
+                        source.contains("referral", ignoreCase = true) -> "REFERRAL"
+                        source.contains("task", ignoreCase = true) -> "TASK"
+                        source.contains("achievement", ignoreCase = true) -> "ACHIEVEMENT"
+                        source.contains("bonus", ignoreCase = true) || source.contains("watch_earn", ignoreCase = true) || source.contains("video", ignoreCase = true) || source.contains("ad", ignoreCase = true) -> "WATCH_EARN"
+                        else -> "OTHER"
+                    }
+                    val refId = if (txId != null && txId.isNotEmpty()) txId else "tx_${userId}_${System.currentTimeMillis()}_${amount}"
+                    com.playwin.ads.TelemetryManager.logCoinReward(
+                        source = finalSource,
+                        coins = amount,
+                        rewardType = type,
+                        referenceId = refId
+                    )
+                }
                 onComplete(success, coinsBefore, coinsAfter)
             }
         )

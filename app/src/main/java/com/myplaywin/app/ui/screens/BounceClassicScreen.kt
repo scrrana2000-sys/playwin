@@ -3173,6 +3173,37 @@ fun BounceClassicScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var selectedLevelNum by remember { mutableIntStateOf(1) }
 
+    var gameStartTime by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            gameStartTime = System.currentTimeMillis()
+            com.playwin.ads.TelemetryManager.logGameActivity(
+                game = "BOUNCE",
+                eventType = "gameStarted",
+                gameSessionDuration = 0L,
+                rewardedAdShown = false,
+                rewardEarned = false,
+                coinsEarned = 0,
+                score = 0
+            )
+        } else {
+            if (gameStartTime > 0L) {
+                val duration = (System.currentTimeMillis() - gameStartTime) / 1000L
+                gameStartTime = 0L
+                com.playwin.ads.TelemetryManager.logGameActivity(
+                    game = "BOUNCE",
+                    eventType = "gameCompleted",
+                    gameSessionDuration = duration,
+                    rewardedAdShown = false,
+                    rewardEarned = false,
+                    coinsEarned = 0,
+                    score = 0
+                )
+            }
+        }
+    }
+
     // Infinite Campaign levels are generated on-the-fly
 
     val totalStarsEarned = remember(levelStarsMap) { levelStarsMap.values.sum() }

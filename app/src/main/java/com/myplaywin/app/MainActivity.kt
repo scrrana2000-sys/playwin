@@ -105,6 +105,24 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        if (uid.isNotEmpty()) {
+            com.playwin.ads.TelemetryManager.onSessionStart(uid)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) {
+            val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+            if (uid.isNotEmpty()) {
+                com.playwin.ads.TelemetryManager.onSessionEnd(uid)
+            }
+        }
+    }
 }
 
 @Composable
